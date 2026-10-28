@@ -4,7 +4,7 @@
 	"name": "Split Large Messages",
 	"description": "Automatically splits messages longer than 2000 (4000 with Nitro) characters into several messages.",
 	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"

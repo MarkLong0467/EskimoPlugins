@@ -34,26 +34,32 @@ export default plugin({
 								return Reflect.apply(original, this, args)
 
 							const parts = splitMessage(message.content, limit)
-							// Attachments and replies stay on the first message. The nonce must be unique per message.
+							// The reply stays on the first message and attachments go with the last one.
+							// The nonce must be unique per message.
+							const { attachmentsToUpload, onAttachmentUploadError, ...firstOptions } =
+								(options ?? {}) as Record<string, unknown>
+							const lastOptions = attachmentsToUpload
+								? { attachmentsToUpload, onAttachmentUploadError }
+								: {}
 							let sent: Promise<unknown> = Promise.resolve(
 								Reflect.apply(original, this, [
 									channelId,
 									{ ...message, content: parts[0] },
 									clearDraft,
-									options,
+									{ ...firstOptions, attachmentsToUpload: [] },
 								]),
 							)
-							for (const content of parts.slice(1)) {
+							parts.slice(1).forEach((content, i, rest) => {
 								sent = sent.then(() => {
-									const { nonce: _nonce, ...rest } = message
+									const { nonce: _nonce, ...base } = message
 									return Reflect.apply(original, this, [
 										channelId,
-										{ ...rest, content },
+										{ ...base, content },
 										clearDraft,
-										{},
+										i === rest.length - 1 ? lastOptions : {},
 									])
 								})
-							}
+							})
 							return sent
 						}),
 					)
