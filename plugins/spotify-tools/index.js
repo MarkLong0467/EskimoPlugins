@@ -314,9 +314,9 @@
 			var hits = 0
 			for (var i = 0; i < c.length; i++) {
 				var el = c[i]
+				if (el && el.key === 'spotify-invite') return result
 				var label = el && el.props && el.props.label
 				if (typeof label !== 'string') continue
-				if (el.key === 'spotify-invite') return result
 				if (MENU_LABELS[label] === 1) {
 					hits++
 					if (!template) template = el
@@ -325,8 +325,11 @@
 			if (hits < 2 || !enabled('sendInvite')) return result
 			var React = valenced.react.React
 			var Icon = findIcon(['SpotifyNeutralIcon', 'MusicIcon', 'PlayIcon'])
+			var RN = valenced.react.ReactNative
 			var icon = template.props.icon
+			var assetId = valenced.assets.getAssetIdByName('ic_spotify_white_16px')
 			if (Icon && React.isValidElement(icon)) icon = React.cloneElement(icon, { IconComponent: Icon })
+			else if (assetId != null && RN.Image) icon = h(RN.Image, { source: assetId, style: { width: 24, height: 24 } })
 			var lastPress = 0
 			var press = function () {
 				// One tap can reach more than one of these handlers, so only the first one counts.
@@ -348,7 +351,22 @@
 				else if (typeof value === 'string' && /^(accessibilityLabel|title|description|sublabel|subLabel)$/.test(name)) overrides[name] = name === 'accessibilityLabel' || name === 'title' ? 'Spotify invite' : undefined
 			})
 			overrides.onPress = press
-			var row = React.cloneElement(template, overrides)
+			var look = React.cloneElement(template, overrides)
+			// Discord's row keeps its own way of reacting to taps (that is what opened the camera), so
+			// it can never be trusted to run our action. Show it for looks only, and put our own tap
+			// area over it. The row below it can no longer receive the touch.
+			var Tap = RN.Pressable || RN.TouchableOpacity
+			var row = h(
+				RN.View,
+				{ key: 'spotify-invite' },
+				h(RN.View, { pointerEvents: 'none' }, look),
+				h(Tap, {
+					accessibilityRole: 'button',
+					accessibilityLabel: 'Spotify invite',
+					onPress: press,
+					style: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+				}),
+			)
 			counters.popup++
 			if (!status.popup || !status.popup.ok) setStatus('popup', true, 'row props [' + propNames.join(', ') + '], added to the popup that has ' + Object.keys(MENU_LABELS).filter(function (l) { return c.some(function (x) { return x && x.props && x.props.label === l }) }).join(', '))
 			return React.cloneElement(result, {}, ...c, row)
