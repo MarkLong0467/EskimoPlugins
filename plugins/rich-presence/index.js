@@ -297,7 +297,7 @@
 
 	function scheduleApply(resetTimer) {
 		clearTimeout(applyTimer)
-		applyTimer = setTimeout(function () { apply(resetTimer) }, 400)
+		applyTimer = setTimeout(function () { apply(resetTimer) }, 200)
 	}
 
 	function restartRefresh() {
@@ -306,6 +306,114 @@
 		var seconds = num(read().refreshSeconds) || 0
 		if (seconds > 0)
 			refreshTimer = setInterval(function () { apply(false) }, Math.max(15, seconds) * 1000)
+	}
+
+	// ---- Live preview ------------------------------------------------------------------------
+	var previewStyles
+
+	function typeLabel(type) {
+		var t = TYPES.filter(function (x) { return x.v === Number(type) })[0]
+		return t ? t.l : 'Playing'
+	}
+
+	/** What the presence will say, from a profile that may include text still being typed. */
+	function describe(p) {
+		var name = text(p.name)
+		var lines = []
+		var state = text(p.state)
+		var cur = num(p.partyCurrent)
+		var max = num(p.partyMax)
+		if (state && cur !== undefined && max !== undefined && max > 0) state += ' (' + Math.min(cur, max) + ' of ' + max + ')'
+		var timer
+		var now = new Date()
+		if (p.timestampMode === 'elapsed') timer = '0:00 elapsed'
+		else if (p.timestampMode === 'clock') timer = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ' elapsed'
+		else if (p.timestampMode === 'countdown') timer = (num(p.countdownMinutes) || 0) + ':00 left'
+		else if (p.timestampMode === 'custom') {
+			var a = parseTime(p.customStart)
+			var b = parseTime(p.customEnd)
+			timer = a !== undefined && b !== undefined && b > a ? 'looping timer' : a !== undefined || b !== undefined ? 'custom timer' : undefined
+		}
+		var buttons = []
+		;[[p.button1Label, p.button1Url], [p.button2Label, p.button2Url]].forEach(function (b) {
+			var label = text(b[0])
+			var link = text(b[1])
+			if (label && link && /^https?:\/\//i.test(link)) buttons.push(label)
+		})
+		var image = text(p.largeImage)
+		return {
+			name: name,
+			title: name ? typeLabel(p.type) + ' ' + name : undefined,
+			details: text(p.details),
+			state: state,
+			timer: timer,
+			buttons: buttons,
+			image: image && /^https?:\/\//i.test(image) ? image : undefined,
+			hasImage: !!image,
+			smallImage: text(p.smallImage) && /^https?:\/\//i.test(text(p.smallImage)) ? text(p.smallImage) : undefined,
+		}
+	}
+
+	function PreviewCard(props) {
+		var Design = valenced.discord.design.Design
+		var RN = valenced.react.ReactNative
+		var Tokens = valenced.discord.common.tokens.Tokens
+		if (!previewStyles)
+			previewStyles = Design.createStyles({
+				band: { backgroundColor: Tokens.default.colors.BACKGROUND_SURFACE_HIGH, paddingHorizontal: 16, paddingVertical: 12 },
+				row: { flexDirection: 'row', alignItems: 'center' },
+				art: { width: 64, height: 64, borderRadius: 8, marginRight: 12, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', backgroundColor: Tokens.default.colors.BACKGROUND_SURFACE_HIGHEST },
+				artImage: { width: 64, height: 64 },
+				badge: { position: 'absolute', right: 6, bottom: 0, width: 24, height: 24, borderRadius: 12, overflow: 'hidden' },
+				text: { flex: 1 },
+				buttons: { flexDirection: 'row', marginTop: 8 },
+				button: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, marginRight: 8, backgroundColor: Tokens.default.colors.BACKGROUND_SURFACE_HIGHEST },
+			})
+		var st = previewStyles()
+		var d = props.info
+		function line(content, variant, color) {
+			return content ? h(Design.Text, { variant: variant, color: color }, content) : null
+		}
+		return h(
+			RN.View,
+			{ style: st.band },
+			h(Design.Text, { variant: 'text-xs/semibold', color: 'text-muted' }, 'LIVE PREVIEW'),
+			d.name
+				? h(
+						RN.View,
+						{ style: [st.row, { marginTop: 8 }] },
+						h(
+							RN.View,
+							null,
+							h(
+								RN.View,
+								{ style: st.art },
+								d.image
+									? h(RN.Image, { source: { uri: d.image }, style: st.artImage })
+									: h(Design.Text, { variant: 'text-xs/medium', color: 'text-muted' }, d.hasImage ? 'image' : ''),
+							),
+							d.smallImage ? h(RN.View, { style: st.badge }, h(RN.Image, { source: { uri: d.smallImage }, style: { width: 24, height: 24 } })) : null,
+						),
+						h(
+							RN.View,
+							{ style: st.text },
+							line(d.title, 'text-md/semibold'),
+							line(d.details, 'text-sm/medium'),
+							line(d.state, 'text-sm/medium'),
+							line(d.timer, 'text-sm/medium', 'text-muted'),
+						),
+				  )
+				: h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'Nothing is shown yet. Enter an Activity name to turn your presence on.'),
+			d.name && d.buttons.length
+				? h(
+						RN.View,
+						{ style: st.buttons },
+						d.buttons.map(function (label, i) {
+							return h(RN.View, { key: 'b' + i, style: st.button }, h(Design.Text, { variant: 'text-sm/semibold' }, label))
+						}),
+				  )
+				: null,
+		)
 	}
 
 	// ---- Settings screen ---------------------------------------------------------------------
@@ -328,7 +436,7 @@
 		React.useEffect(
 			function () {
 				if (value === (props.value == null ? '' : String(props.value))) return
-				var timer = setTimeout(function () { props.onCommit(value) }, 500)
+				var timer = setTimeout(function () { props.onCommit(value) }, 300)
 				return function () { clearTimeout(timer) }
 			},
 			[value],
@@ -340,7 +448,10 @@
 			size: 'md',
 			maxLength: props.maxLength,
 			value: value,
-			onChange: setValue,
+			onChange: function (v) {
+				setValue(v)
+				if (props.onDraft) props.onDraft(v)
+			},
 		})
 	}
 
@@ -352,6 +463,17 @@
 		storage = store
 		var settings = merge(store.use())
 		var profile = currentProfile(settings)
+		var draftState = valenced.react.React.useState({ id: null, values: {} })
+		var draft = draftState[0]
+		var setDraft = draftState[1]
+		var live = Object.assign({}, profile, draft.id === profile.id ? draft.values : {})
+		function onDraft(key, value) {
+			setDraft(function (prev) {
+				var next = Object.assign({}, prev.id === profile.id ? prev.values : {})
+				next[key] = value
+				return { id: profile.id, values: next }
+			})
+		}
 
 		function save(patch, reset) {
 			return Promise.resolve(store.set(Object.assign({}, read(), patch), true)).then(function () {
@@ -376,6 +498,7 @@
 				description: description,
 				maxLength: maxLength,
 				value: profile[key],
+				onDraft: function (value) { onDraft(key, value) },
 				onCommit: function (value) { update(defineOne(key, value), key === 'timestampMode') },
 			})
 		}
@@ -520,20 +643,13 @@
 			field('partyCurrent', 'Party size', '1', 'Current players. Set the maximum below as well.', 4),
 			field('partyMax', 'Party maximum', '4', '', 4),
 			section(
-				'Preview',
-				row(
-					text(profile.name)
-						? TYPES.filter(function (t) { return t.v === Number(profile.type) })[0].l + ' ' + text(profile.name)
-						: 'Nothing is shown yet',
-					[text(profile.details), text(profile.state)].filter(Boolean).join(' · ') || 'Add details or state lines above.',
-				),
-			),
-			section(
 				'Good to know',
 				row('Your own buttons', "Discord doesn't show buttons on your own profile. Other people can see them on desktop, not always on mobile."),
 				row('Share activity', 'Your presence only shows if Discord is allowed to share your activity in your privacy settings.'),
 				row('Fancy text', 'Unusual unicode text can stop a presence from showing. Try normal letters.'),
 				row('Image problems', 'Not every image works. Try a smaller one, or a direct link ending in .png or .jpg.'),
+				row('Photos from your phone', 'Upload the photo to catbox.moe or imgur.com, copy the direct link ending in .png or .jpg, and paste it into Large image. Discord links stop working after about a day.'),
+				row('Asset keys', 'Or upload art in your application on discord.com/developers under Rich Presence, then type its key (the asset name) into Large image and set the Application ID.'),
 			),
 			section(
 				'Variables',
@@ -556,7 +672,8 @@
 		]
 		return h(
 			RN.ScrollView,
-			{ style: { flex: 1 }, contentContainerStyle: { paddingBottom: 38 } },
+			{ style: { flex: 1 }, contentContainerStyle: { paddingBottom: 38 }, stickyHeaderIndices: [0], keyboardShouldPersistTaps: 'handled' },
+			h(PreviewCard, { info: describe(live) }),
 			h(
 				Design.Stack,
 				{ style: { paddingVertical: 24, paddingHorizontal: 12 }, spacing: 24 },
