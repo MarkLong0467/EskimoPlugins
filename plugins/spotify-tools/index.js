@@ -133,6 +133,26 @@
 	}
 
 	// ---- Listen along -------------------------------------------------------------------------
+	/**
+	 * What you are listening to. Discord's Spotify store is empty on some phones even while Spotify is
+	 * playing, so fall back to your own presence, the activity other people see.
+	 */
+	function mySpotifyActivity() {
+		var spotify = store('SpotifyStore')
+		var own = spotify && spotify.getActivity && spotify.getActivity()
+		if (own && own.party && own.party.id) return own
+		try {
+			var self = store('UserStore').getCurrentUser()
+			var presence = store('PresenceStore')
+			var list = (self && presence && presence.getActivities && presence.getActivities(self.id)) || []
+			for (var i = 0; i < list.length; i++) {
+				var a = list[i]
+				if (a && a.type === 2 && (a.name === 'Spotify' || String(a.id || '').indexOf('spotify') === 0)) return a
+			}
+		} catch (e) {}
+		return own
+	}
+
 	function userIdOf(activity) {
 		var id = activity && activity.party && activity.party.id
 		return typeof id === 'string' && id.indexOf(':') > 0 ? id.split(':')[1] : undefined
@@ -142,7 +162,7 @@
 	function disabledReason(activity, userId) {
 		var self = store('UserStore').getCurrentUser()
 		var spotify = store('SpotifyStore')
-		var mine = spotify.getActivity()
+		var mine = mySpotifyActivity()
 		if (self && self.id === userId) return 'Listen along with someone else, not yourself.'
 		if (mine && mine.party && mine.party.id === activity.party.id) return "You're already along for this ride."
 		var protocol = store('SpotifyProtocolStore')
@@ -294,7 +314,7 @@
 
 	// ---- Send invite --------------------------------------------------------------------------
 	function sendInvite() {
-		var activity = store('SpotifyStore').getActivity()
+		var activity = mySpotifyActivity()
 		if (!activity || !activity.party || !activity.party.id) return toast('Play something on Spotify first.')
 		var f = finders()
 		var messages = f.lookupModule(f.filters.withProps('sendMessage', 'revealMessage'))[0]
@@ -323,7 +343,7 @@
 	function currentTrack() {
 		var spotify = store('SpotifyStore')
 		var track = spotify.getTrack && spotify.getTrack()
-		var activity = spotify.getActivity()
+		var activity = mySpotifyActivity()
 		var meta = (activity && activity.metadata) || {}
 		var albumId = (track && track.album && track.album.id) || meta.album_id
 		if (!albumId && typeof meta.context_uri === 'string') {
@@ -370,7 +390,7 @@
 				return payload
 			})
 		}, [])
-		var activity = store('SpotifyStore').getActivity()
+		var activity = mySpotifyActivity()
 		var disabled = !(activity && activity.party && activity.party.id)
 		var assetId = valenced.assets.getAssetIdByName('ic_spotify_white_16px')
 		var Icon = findIcon(['SpotifyNeutralIcon', 'MusicIcon'])
@@ -539,13 +559,19 @@
 		var json = props.api.jsonStorage
 		storage = json
 		useRefresh()
+		// The diagnostics should follow what is happening, so redraw every couple of seconds.
+		var ticker = valenced.react.React.useState(0)
+		valenced.react.React.useEffect(function () {
+			var id = setInterval(function () { ticker[1](function (n) { return n + 1 }) }, 2000)
+			return function () { clearInterval(id) }
+		}, [])
 		var settings = Object.assign({}, defaults, json.use())
 		function row(label, subLabel) {
 			return h(Design.TableRow, { key: label, label: label, subLabel: subLabel })
 		}
-		function state(key, label) {
+		function state(key, label, waiting) {
 			var s = status[key]
-			return row(label, !s ? 'Waiting for Discord to load this part' : s.ok ? 'Working: ' + s.detail : 'Problem: ' + s.detail)
+			return row(label, !s ? waiting || 'Waiting for Discord to load this part' : s.ok ? 'Working: ' + s.detail : 'Problem: ' + s.detail)
 		}
 		return h(
 			RN.ScrollView,
@@ -612,16 +638,19 @@
 				h(
 					Design.TableRowGroup,
 					{ title: 'Diagnostics' },
-					state('method', 'Last listen along'),
-					state('controls', 'Discord Spotify controls (optional)'),
+					state('method', 'Last listen along', 'Not used yet. Tap the music button on a friend\'s Spotify card.'),
+					state('controls', 'Discord Spotify controls (optional)', 'Not found. That is fine, Spotify is used directly instead.'),
 					state('listenClassic', 'Listen Along (activity card)'),
-					state('listenSimple', 'Listen Along (small button)'),
-					state('messageMenu', 'Hold-down message menu'),
-					state('popup', 'Attachment popup (experimental)'),
-					state('invite', 'Send Invite (older attachment menu)'),
+					state('listenSimple', 'Listen Along (small button)', 'Not in this version of Discord. That is fine.'),
+					state('messageMenu', 'Hold-down message menu', 'Discord loads this the first time you hold down a message. Do that once, then come back.'),
+					state('popup', 'Attachment popup (experimental)', 'Off unless you turn on the experimental switch.'),
+					state('invite', 'Send Invite (older attachment menu)', 'Not in this version of Discord. That is fine.'),
 					row('Spotify right now', (function () {
-						var a = store('SpotifyStore') && store('SpotifyStore').getActivity()
-						return a && a.party && a.party.id ? 'Playing, listen along is possible' : 'Nothing playing, or no listen along party'
+						var a = mySpotifyActivity()
+						if (!a) return 'Nothing found. Is Spotify playing, and linked in Discord?'
+						var from = store('SpotifyStore') && store('SpotifyStore').getActivity && store('SpotifyStore').getActivity() === a ? "Discord's Spotify store" : 'your presence'
+						var name = [a.details, a.state].filter(Boolean).join(' by ') || 'a track'
+						return name + (a.party && a.party.id ? '. Sending and listening along are possible (from ' + from + ').' : '. No listen along party on it (from ' + from + ').')
 					})()),
 					row('Last chat you had open', (function () {
 						var id = store('SelectedChannelStore') && store('SelectedChannelStore').getChannelId()
