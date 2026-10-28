@@ -2,10 +2,10 @@
 	"format": 1,
 	"id": "marklong.spotify-tools",
 	"name": "Spotify Tools",
-	"description": "A Listen Along button on Spotify activities, and send what you are playing as a listen along invite, a song link or an album link from the hold-down message menu or the + menu.",
+	"description": "A Listen Along button on Spotify activities, and send what you are playing as a listen along invite, a song link or an album link from the + menu.",
 	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
 	"contributors": ["nexpid (https://github.com/nexpid \"Original idea and approach\")"],
-	"version": "2.1.0",
+	"version": "2.2.0",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"

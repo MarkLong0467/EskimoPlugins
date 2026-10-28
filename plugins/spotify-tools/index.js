@@ -1,7 +1,7 @@
 (function (exports) {
 	/*
 	 * Spotify Tools for Valenced: Listen Along, and sending your song as a listen along invite, a song
-	 * link or an album link.
+	 * link or an album link from the + menu.
 	 * Based on the "Add Listen Along" and "Send Spotify invite" modules of nexpid's NexxUtils for
 	 * Revenge (CC BY 4.0), https://github.com/nexpid/RevengePlugins. Rewritten for Valenced.
 	 * Shipped as written. Keep `(function` as the first thing in this file: Valenced loads it
@@ -13,19 +13,13 @@
 		sendInvite: true,
 		sendSongLink: true,
 		sendAlbumLink: true,
-		messageMenu: true,
 		plusMenu: true,
 	}
 
 	var storage
 	var spotifyActions
-	// Rows of the + menu, and of the menu you get when you hold down a message.
+	// Rows of the + menu.
 	var PLUS_LABELS = { Camera: 1, Photos: 1, Poll: 1, Files: 1, Apps: 1 }
-	var MESSAGE_LABELS = {
-		'Reply': 1, 'Copy Text': 1, 'Mark Unread': 1, 'Copy Message Link': 1, 'Pin Message': 1, 'Unpin Message': 1,
-		'Edit Message': 1, 'Delete Message': 1, 'Add Reaction': 1, 'Forward': 1, 'Report Message': 1,
-		'Create Thread': 1, 'Copy Message ID': 1, 'Speak Message': 1, 'Remind Me': 1, 'Bookmark': 1,
-	}
 
 	function finders() { return valenced.modules.finders }
 	function store(name) { return valenced.discord.flux.Stores[name] }
@@ -410,8 +404,6 @@
 		return strong ? Object.keys(found).length : 0
 	}
 
-	var inMessageSheet = 0
-
 	function countLabels(list, labels) {
 		var hits = 0
 		for (var i = 0; i < list.length; i++) {
@@ -427,10 +419,8 @@
 	 * options are added to that list, before the menu draws anything.
 	 */
 	function decorateItems(result, items) {
-		var setting
-		if (countLabels(items, PLUS_LABELS) >= 2 || plusScore(items) >= 3) setting = 'plusMenu'
-		else if (countLabels(items, MESSAGE_LABELS) >= 2 || (inMessageSheet > 0 && items.length >= 2)) setting = 'messageMenu'
-		if (!setting || !enabled(setting)) return result
+		if (!enabled('plusMenu')) return result
+		if (countLabels(items, PLUS_LABELS) < 2 && plusScore(items) < 3) return result
 		var wanted = wantedOptions()
 		if (!wanted.length) return result
 		for (var i = 0; i < items.length; i++)
@@ -465,101 +455,14 @@
 		return valenced.react.React.cloneElement(result, { items: items.concat(extra) })
 	}
 
-	/**
-	 * Menus made of ready rows get one more row of the same kind, with just a label, an icon and a tap
-	 * action. Rows that know their place in a list belong to a data driven menu, handled by its items.
-	 */
-	function decorateRows(result, rows) {
-		if (!enabled('messageMenu')) return result
-		var template
-		var hits = 0
-		for (var i = 0; i < rows.length; i++) {
-			var el = rows[i]
-			var label = el && el.props && el.props.label
-			if (typeof label !== 'string') continue
-			if (PLUS_LABELS[label] === 1) return result
-			if (typeof el.props.index === 'number' || 'lastInSection' in el.props) return result
-			if (MESSAGE_LABELS[label] === 1) {
-				hits++
-				if (!template) template = el
-			}
-		}
-		if (hits < 2 || !template || typeof template.type === 'string') return result
-		var wanted = wantedOptions()
-		if (!wanted.length) return result
-		var React = valenced.react.React
-		var Icon = findIcon(['UserPlayIcon', 'MusicIcon', 'PlayIcon'])
-		var baseIcon = template.props.icon
-		var icon = Icon && React.isValidElement(baseIcon) ? React.cloneElement(baseIcon, { IconComponent: Icon }) : baseIcon
-		var Row = template.type
-		var added = wanted.map(function (option) {
-			return h(Row, {
-				key: 'spotify-' + option.setting,
-				label: option.label,
-				icon: icon,
-				onPress: function () {
-					try { valenced.discord.actions.ActionSheetActionCreators.hideAllActionSheets() } catch (e) {}
-					setTimeout(option.run, 0)
-				},
-			})
-		})
-		return React.cloneElement(result, {}, ...rows, ...added)
-	}
-
-	/**
-	 * Ready-made rows of the hold-down message menu, added the way Valenced's Quoter plugin adds its row:
-	 * find the group of rows that has icons and add one more row of the same kind.
-	 */
-	function addToSheet(result) {
-		if (!enabled('messageMenu')) return result
-		var wanted = wantedOptions()
-		if (!wanted.length) return result
-		var React = valenced.react.React
-		var inserted = false
-		function hasLabel(child) { return React.isValidElement(child) && typeof child.props.label === 'string' }
-		function add(node) {
-			if (!React.isValidElement(node)) return node
-			var kids = React.Children.toArray(node.props.children)
-			if (kids.some(function (c) { return c && typeof c.key === 'string' && c.key.indexOf('spotify-') >= 0 })) {
-				inserted = true
-				return node
-			}
-			if (!inserted && node.props.hasIcons && kids.some(hasLabel)) {
-				var template = kids.find(hasLabel)
-				if (typeof template.type === 'string' || typeof template.props.index === 'number' || 'lastInSection' in template.props) return node
-				var Icon = findIcon(['UserPlayIcon', 'MusicIcon', 'PlayIcon'])
-				var baseIcon = template.props.icon
-				var icon = Icon && React.isValidElement(baseIcon) ? React.cloneElement(baseIcon, { IconComponent: Icon }) : baseIcon
-				inserted = true
-				var Row = template.type
-				return React.cloneElement(node, {}, ...kids, ...wanted.map(function (option) {
-					return h(Row, {
-						key: 'spotify-' + option.setting,
-						label: option.label,
-						icon: icon,
-						onPress: function () {
-							try { valenced.discord.actions.ActionSheetActionCreators.hideAllActionSheets() } catch (e) {}
-							setTimeout(option.run, 0)
-						},
-					})
-				}))
-			}
-			return React.cloneElement(node, {}, React.Children.map(node.props.children, add))
-		}
-		return add(result)
-	}
-
-	/** Looks at every element Discord creates, and adds the options to the menus above. */
+	/** Looks at every element Discord creates, and adds the options to the + menu. */
 	function decorateMenu(result) {
 		try {
 			var props = result && result.props
 			if (!props) return result
 			if (Array.isArray(props.items) && props.items.length >= 2 && props.items.length <= 24)
 				return decorateItems(result, props.items)
-			var rows = props.children
-			if (!Array.isArray(rows) || rows.length < 2 || rows.length > 20) return result
-			if (rows.some(function (x) { return x && typeof x.key === 'string' && x.key.indexOf('spotify-') === 0 })) return result
-			return decorateRows(result, rows)
+			return result
 		} catch (e) {
 			return result
 		}
@@ -613,9 +516,8 @@
 				),
 				h(
 					Design.TableRowGroup,
-					{ title: 'Where they show up' },
-					toggle('messageMenu', 'Hold-down message menu', 'The menu you get when you hold down a message'),
-					toggle('plusMenu', '+ menu', 'The menu you get when you tap + next to the message box'),
+					{ title: 'Where it shows up' },
+					toggle('plusMenu', '+ menu', 'Adds the send options to the menu you get when you tap + next to the message box'),
 				),
 				h(
 					Design.TableRowGroup,
@@ -655,33 +557,6 @@
 				)
 			})
 			cleanup(function () { spotifyActions = undefined })
-
-			// The hold-down message menu, by Discord's name for it. The same in every language.
-			cleanup(
-				f.getModules(
-					f.filters.withName('LongPressMessageActionSheet'),
-					function (module) {
-						if (!module || typeof module.default !== 'function') return
-						cleanup(
-							valenced.patcher.instead(module, 'default', function (args, original) {
-								var result
-								inMessageSheet++
-								try {
-									result = Reflect.apply(original, this, args)
-								} finally {
-									inMessageSheet--
-								}
-								try {
-									return addToSheet(result)
-								} catch (e) {
-									return result
-								}
-							}),
-						)
-					},
-					{ returnNamespace: true },
-				),
-			)
 
 			try {
 				installMenuHook(cleanup)
