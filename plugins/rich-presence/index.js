@@ -9,6 +9,8 @@
 	var SOCKET = 'EskimoRichPresence'
 	var PID = 1337
 	var TOAST = 'ESKIMO_RICH_PRESENCE'
+	// Used when you set no Application ID, so image links and buttons work out of the box.
+	var FALLBACK_APP_ID = '1054951789318909972'
 
 	var TYPES = [
 		{ v: 0, l: 'Playing' },
@@ -146,23 +148,28 @@
 		var v = fill(value)
 		if (typeof v !== 'string' || !(v = v.trim())) return undefined
 		if (!/^https?:\/\//i.test(v)) return v
-		if (!appId) return undefined
+		appId = appId || FALLBACK_APP_ID
 		var key = appId + '|' + v
 		if (assetCache.has(key)) return assetCache.get(key)
-		var utils = valenced.modules.finders.lookupModule(
-			valenced.modules.finders.filters.withProps('fetchAssetIds'),
-		)[0]
+		var finders = valenced.modules.finders
+		var utils =
+			finders.lookupModule(finders.filters.withProps('fetchAssetIds'))[0] ||
+			finders.lookupModule(finders.filters.withProps('getAssetIds'))[0]
 		if (!utils) return undefined
-		var ids = await utils.fetchAssetIds(appId, [v])
+		var ids
+		try {
+			ids = utils.getAssetIds && utils.getAssetIds(appId, [v])
+		} catch (e) {}
+		if (!ids || !ids.length) ids = await utils.fetchAssetIds(appId, [v])
 		var id = ids && ids[0]
 		if (id) assetCache.set(key, id)
 		return id
 	}
 
 	async function buildActivity(p) {
-		var activity = { name: text(p.name) || 'Eskimo', type: Number(p.type) || 0 }
-		var appId = String(p.applicationId || '').trim()
-		if (appId) activity.application_id = appId
+		var activity = { name: text(p.name) || 'Eskimo', type: Number(p.type) || 0, flags: 0 }
+		var appId = String(p.applicationId || '').trim() || FALLBACK_APP_ID
+		activity.application_id = appId
 		var details = text(p.details)
 		var state = text(p.state)
 		if (details) activity.details = details
@@ -439,7 +446,7 @@
 			profile.type === 1
 				? field('streamUrl', 'Stream URL', 'https://twitch.tv/name', 'A Twitch or YouTube link.', 300)
 				: null,
-			field('applicationId', 'Application ID', '', 'Needed for images and buttons. Create an application at discord.com/developers.', 24),
+			field('applicationId', 'Application ID', '', 'Optional. Use your own application for asset keys. Image links and buttons work without one.', 24),
 			field('largeImage', 'Large image', 'https://… or asset key', 'A direct image link or an asset key.', 300),
 			field('largeText', 'Large image text', '', 'Shown when hovering the large image.', 128),
 			field('smallImage', 'Small image', 'https://… or asset key', 'Shown in the corner of the large image.', 300),
