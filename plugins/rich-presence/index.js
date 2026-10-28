@@ -1,10 +1,9 @@
-/**
- * Rich Presence for Valenced.
- *
- * This file is shipped as written: it is the same code Valenced loads, so there is no build step.
- * It follows the bundle shape Valenced's own plugins use (`plugin({...})` and `valenced.*` globals).
- */
 (function (exports) {
+	/*
+	 * Rich Presence for Valenced. Shipped as written, there is no build step.
+	 * It follows the bundle shape Valenced's own plugins use (`plugin({...})` and `valenced.*` globals).
+	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
+	 */
 	var TAG = '[rich-presence]'
 	var SOCKET = 'EskimoRichPresence'
 	var PID = 1337
@@ -309,7 +308,7 @@
 		var profile = currentProfile(settings)
 
 		function save(patch, reset) {
-			return Promise.resolve(store.set(patch)).then(function () {
+			return Promise.resolve(store.set(Object.assign({}, read(), patch), true)).then(function () {
 				scheduleApply(!!reset)
 				restartRefresh()
 			})
