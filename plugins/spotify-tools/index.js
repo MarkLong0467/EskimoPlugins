@@ -10,6 +10,7 @@
 	var defaults = { listenAlong: true, sendInvite: true }
 
 	var storage
+	var spotifyActions
 	var status = {}
 	var counters = { shown: 0, skipped: 0, popup: 0 }
 	var MENU_LABELS = { Camera: 1, Photos: 1, Poll: 1, Files: 1, Apps: 1 }
@@ -145,14 +146,23 @@
 		return false
 	}
 
+	/** Starts listening along. Returns true when something was started. */
 	function listen(reason, activity, userId) {
-		if (typeof reason === 'string') return toast(reason)
+		if (typeof reason === 'string') return toast(reason), false
 		var f = finders()
-		var actions = f.lookupModule(f.filters.withProps('play', 'sync'))[0]
-		if (!actions) return toast('Spotify controls were not found')
-		if (store('SpotifyStore').getActivity()) return actions.sync(activity, userId)
-		onceAfterPlayerState(function () { actions.sync(activity, userId) })
-		actions.play(activity, userId)
+		var actions = spotifyActions || f.lookupModule(f.filters.withProps('play', 'sync'))[0]
+		if (!actions) return toast('Spotify controls were not found. Open a Spotify activity card and try again.'), false
+		try {
+			if (store('SpotifyStore').getActivity()) actions.sync(activity, userId)
+			else {
+				onceAfterPlayerState(function () { actions.sync(activity, userId) })
+				actions.play(activity, userId)
+			}
+			return true
+		} catch (e) {
+			toast('Listen along failed: ' + String((e && e.message) || e))
+			return false
+		}
 	}
 
 	function findIcon(names) {
@@ -181,8 +191,7 @@
 		var Icon = findIcon(['UserPlayIcon', 'MusicIcon', 'PlayIcon'])
 		var press = function () {
 			if (loading) return
-			listen(reason, activity, userId)
-			if (!reason) {
+			if (listen(reason, activity, userId)) {
 				loadingState[1](true)
 				setTimeout(function () { loadingState[1](false) }, 5000)
 			}
@@ -393,6 +402,7 @@
 				h(
 					Design.TableRowGroup,
 					{ title: 'Diagnostics' },
+					state('controls', 'Spotify controls (play and sync)'),
 					state('listenClassic', 'Listen Along (activity card)'),
 					state('listenSimple', 'Listen Along (small button)'),
 					state('popup', 'Send Invite (attachment popup)'),
@@ -444,6 +454,17 @@
 
 			install('listenClassic', f.filters.withProps('SpotifyPlayButton'), 'SpotifyPlayButton', decorateListen, 'Spotify play button')
 			install('listenSimple', f.filters.withProps('PlayOnSpotifyButton'), 'PlayOnSpotifyButton', decorateListen, 'Play on Spotify button')
+			// Valenced only finds parts Discord has loaded, so catch the Spotify controls as they load.
+			;[['play', 'sync'], ['sync', 'pause']].forEach(function (names) {
+				cleanup(
+					f.getModules(f.filters.withProps.apply(null, names), function (module) {
+						if (spotifyActions) return
+						spotifyActions = module
+						setStatus('controls', true, 'found (' + Object.keys(module).filter(function (k) { return typeof module[k] === 'function' }).slice(0, 8).join(', ') + ')')
+					}),
+				)
+			})
+			cleanup(function () { spotifyActions = undefined })
 			try {
 				installPopupHook(cleanup)
 			} catch (e) {
