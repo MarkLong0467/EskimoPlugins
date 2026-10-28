@@ -1,0 +1,19 @@
+{
+	"format": 1,
+	"id": "marklong.one-ping-per-dm",
+	"name": "One Ping Per DM",
+	"description": "If someone sends you several unread messages in a DM, you only hear one notification sound. Read the chat to reset it.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
