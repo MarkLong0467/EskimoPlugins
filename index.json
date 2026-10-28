@@ -146,6 +146,29 @@
           }
         }
       }
+    },
+    "marklong.hypesquad": {
+      "name": "HypeSquad Switcher",
+      "description": "Switch your HypeSquad house (Bravery, Brilliance or Balance) or leave it with one tap from a HypeSquad section in Discord's settings.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.hypesquad@1.0.0.zip",
+          "sha256": "f7e668d88cdede66f0947626e8c8879e5544f4874b0c4cd0cf89e4beb57909f1",
+          "size": 3291,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
     }
   }
 }
