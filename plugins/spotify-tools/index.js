@@ -235,6 +235,7 @@
 		var drafts = f.lookupModule(f.filters.withProps('clearDraft'))[0]
 		if (!messages) return toast('Could not send the invite.')
 		var channel = store('SelectedChannelStore').getChannelId()
+		if (!channel) return toast('Open a chat first, then try again.')
 		var draft = store('DraftStore')
 		messages.sendMessage(
 			channel,
@@ -248,6 +249,8 @@
 			{ activityAction: { activity: activity, type: 3 } },
 		)
 		if (drafts) drafts.clearDraft(channel, 0)
+		var info = store('ChannelStore') && store('ChannelStore').getChannel(channel)
+		toast('Invite sent' + (info && info.name ? ' to #' + info.name : ''))
 	}
 
 	function InviteButton() {
@@ -291,10 +294,10 @@
 	function SettingsComponent(props) {
 		var Design = valenced.discord.design.Design
 		var RN = valenced.react.ReactNative
-		var store = props.api.jsonStorage
-		storage = store
+		var json = props.api.jsonStorage
+		storage = json
 		useRefresh()
-		var settings = Object.assign({}, defaults, store.use())
+		var settings = Object.assign({}, defaults, json.use())
 		function row(label, subLabel) {
 			return h(Design.TableRow, { key: label, label: label, subLabel: subLabel })
 		}
@@ -315,13 +318,23 @@
 						label: 'Listen Along',
 						subLabel: 'A button on Spotify activities to listen along with someone',
 						value: settings.listenAlong,
-						onValueChange: function (listenAlong) { store.set({ listenAlong: listenAlong }) },
+						onValueChange: function (listenAlong) { json.set({ listenAlong: listenAlong }) },
 					}),
 					h(Design.TableSwitchRow, {
 						label: 'Send Spotify Invite',
 						subLabel: 'A button in the attachment menu to invite a channel to listen along to you',
 						value: settings.sendInvite,
-						onValueChange: function (sendInvite) { store.set({ sendInvite: sendInvite }) },
+						onValueChange: function (sendInvite) { json.set({ sendInvite: sendInvite }) },
+					}),
+				),
+				h(
+					Design.TableRowGroup,
+					{ title: 'Actions' },
+					h(Design.TableRow, {
+						key: 'send',
+						label: 'Send invite now',
+						subLabel: 'Invite the last chat you had open to listen along to your Spotify. Works even if the attachment menu button is missing.',
+						onPress: sendInvite,
 					}),
 				),
 				h(
@@ -330,6 +343,15 @@
 					state('listenClassic', 'Listen Along (activity card)'),
 					state('listenSimple', 'Listen Along (small button)'),
 					state('invite', 'Send Invite (attachment menu)'),
+					row('Spotify right now', (function () {
+						var a = store('SpotifyStore') && store('SpotifyStore').getActivity()
+						return a && a.party && a.party.id ? 'Playing, listen along is possible' : 'Nothing playing, or no listen along party'
+					})()),
+					row('Last chat you had open', (function () {
+						var id = store('SelectedChannelStore') && store('SelectedChannelStore').getChannelId()
+						var c = id && store('ChannelStore') && store('ChannelStore').getChannel(id)
+						return c ? (c.name ? '#' + c.name : 'a direct message') : 'none'
+					})()),
 					row('Buttons added so far', counters.shown + ' shown, ' + counters.skipped + ' skipped (no listener found)'),
 				),
 				h(
