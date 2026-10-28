@@ -1,0 +1,20 @@
+{
+	"format": 1,
+	"id": "marklong.server-info",
+	"name": "Server Info",
+	"description": "Hold down a server icon and tap Server Info to see its members, roles, channels, boosts, owner, friends in it and more.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": ["fshin (https://github.com/kmmiio99o/revenge-plugins \"Original Server Info plugin for Revenge, CC0\")"],
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
