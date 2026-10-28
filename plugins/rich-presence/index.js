@@ -300,7 +300,7 @@
 
 	function SettingsComponent(props) {
 		var Design = valenced.discord.design.Design
-		var Page = valenced.components.Page
+		var RN = valenced.react.ReactNative
 		var Clipboard = valenced.externals.ReactNativeClipboard.Clipboard
 		var store = props.api.jsonStorage
 		storage = store
@@ -486,9 +486,13 @@
 			),
 		]
 		return h(
-			Page,
-			null,
-			children.reduce(function (all, item) { return all.concat(item) }, []),
+			RN.ScrollView,
+			{ style: { flex: 1 }, contentContainerStyle: { paddingBottom: 38 } },
+			h(
+				Design.Stack,
+				{ style: { paddingVertical: 24, paddingHorizontal: 12 }, spacing: 24 },
+				children.reduce(function (all, item) { return all.concat(item) }, []),
+			),
 		)
 	}
 
