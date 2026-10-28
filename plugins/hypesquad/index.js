@@ -1,20 +1,18 @@
 (function (exports) {
 	/*
 	 * HypeSquad Switcher for Valenced.
-	 * Adds a HypeSquad section to Discord's settings with one row per house. Tapping a row joins that
-	 * house, and the row for your current house shows "Current".
+	 * The plugin's settings page lists the three houses. Tapping one joins it, and the row for your
+	 * current house shows "Current". There is also a row to leave HypeSquad.
 	 * Shipped as written. Keep `(function` as the first thing in this file: Valenced loads it
 	 * as `return <file>`.
 	 */
 	var TOAST = 'MARKLONG_HYPESQUAD'
-	var SECTION = 'MARKLONG_HYPESQUAD'
 	// house_id is what Discord's API calls them. The flag is how your profile says which one you are in.
 	var HOUSES = [
-		{ id: 1, name: 'Bravery', flag: 64, icons: ['HypeSquadBraveryIcon', 'ic_hypesquad_bravery', 'hypesquad_bravery'] },
-		{ id: 2, name: 'Brilliance', flag: 128, icons: ['HypeSquadBrillianceIcon', 'ic_hypesquad_brilliance', 'hypesquad_brilliance'] },
-		{ id: 3, name: 'Balance', flag: 256, icons: ['HypeSquadBalanceIcon', 'ic_hypesquad_balance', 'hypesquad_balance'] },
+		{ id: 1, name: 'Bravery', flag: 64 },
+		{ id: 2, name: 'Brilliance', flag: 128 },
+		{ id: 3, name: 'Balance', flag: 256 },
 	]
-	var FALLBACK_ICONS = ['HypeSquadIcon', 'ic_hypesquad', 'SparklesIcon', 'StarIcon', 'PuzzlePieceIcon']
 
 	var optimistic // The house we just switched to, until Discord's profile data catches up.
 	var busy = false
@@ -111,42 +109,7 @@
 		}
 	}
 
-	// ---- Discord's settings menu ---------------------------------------------------------------
-	function iconFor(names) {
-		var all = names.concat(FALLBACK_ICONS)
-		for (var i = 0; i < all.length; i++) if (valenced.assets.getAssetIdByName(all[i]) != null) return all[i]
-	}
-
-	function settingsItems() {
-		var items = {}
-		var keys = []
-		HOUSES.forEach(function (house) {
-			var key = SECTION + '_' + house.id
-			keys.push(key)
-			items[key] = {
-				parent: null,
-				type: 'pressable',
-				IconComponent: function () { return h(valenced.components.TableRowAssetIcon, { name: iconFor(house.icons) }) },
-				useTitle: function () { return house.name },
-				useTrailing: function () { return useHouse() === house.id ? 'Current' : undefined },
-				onPress: function () { change(house.id) },
-			}
-		})
-		var leaveKey = SECTION + '_LEAVE'
-		keys.push(leaveKey)
-		items[leaveKey] = {
-			parent: null,
-			type: 'pressable',
-			variant: 'danger',
-			IconComponent: function () { return h(valenced.components.TableRowAssetIcon, { name: iconFor([]) }) },
-			useTitle: function () { return 'Leave HypeSquad' },
-			usePredicate: function () { return useHouse() !== 0 },
-			onPress: function () { change(0) },
-		}
-		return { items: items, keys: keys }
-	}
-
-	// ---- The plugin's own settings screen, in case the main menu entry is not there ------------
+	// ---- Settings ------------------------------------------------------------------------------
 	function SettingsComponent() {
 		var Design = valenced.discord.design.Design
 		var RN = valenced.react.ReactNative
@@ -178,25 +141,10 @@
 	exports.default = plugin({
 		SettingsComponent: SettingsComponent,
 		start: function (api) {
-			var cleanup = api.cleanup
-			var settings = valenced.discord.modules.settings
-			var undo = []
-			cleanup(function () {
-				// Take the section out first, then redraw settings without it.
-				undo.forEach(function (fn) { try { fn() } catch (e) {} })
-				undo = []
+			api.cleanup(function () {
 				optimistic = undefined
 				busy = false
-				try { settings.refreshSettings() } catch (e) {}
 			})
-			cleanup(
-				settings.onSettingsModulesLoaded(function () {
-					var built = settingsItems()
-					undo.push(settings.registerSettingsItems(built.items))
-					undo.push(settings.registerSettingsSection(SECTION, { label: 'HypeSquad', settings: built.keys, index: 2 }))
-					settings.refreshSettings()
-				}),
-			)
 		},
 	})
 	return exports
