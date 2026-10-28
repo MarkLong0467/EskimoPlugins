@@ -1,8 +1,8 @@
 {
 	"format": 1,
-	"id": "marklong.spotify-listen-along",
-	"name": "Spotify Listen Along",
-	"description": "Adds a Listen Along button to Spotify activities on mobile.",
+	"id": "marklong.spotify-tools",
+	"name": "Spotify Tools",
+	"description": "Listen Along buttons on Spotify activities and a Send Spotify Invite button in the attachment menu, with toggles and diagnostics.",
 	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
 	"contributors": ["nexpid (https://github.com/nexpid \"Original idea and approach\")"],
 	"version": "1.0.0",
