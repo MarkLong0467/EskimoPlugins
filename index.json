@@ -97,19 +97,19 @@
     },
     "marklong.spotify-tools": {
       "name": "Spotify Tools",
-      "description": "Listen Along buttons on Spotify activities, plus send the listen along card, song link or album link from the menu you get when you hold down a message, with toggles and diagnostics.",
+      "description": "A Listen Along button on Spotify activities, and send what you are playing as a listen along invite, a song link or an album link from the hold-down message menu or the + menu.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "contributors": [
         "nexpid (https://github.com/nexpid \"Original idea and approach\")"
       ],
       "channels": {
-        "latest": "1.5.0"
+        "latest": "2.0.0"
       },
       "versions": {
-        "1.5.0": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.spotify-tools@1.5.0.zip",
-          "sha256": "f86829628f00f4d059fdf377864841722bdc5dd469f3359174910edde5af5f9e",
-          "size": 10192,
+        "2.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.spotify-tools@2.0.0.zip",
+          "sha256": "c3fd6db0746b71ab856ad8fab071a4c3e795a30a08b4567ae1d83e5a6c71e83c",
+          "size": 7679,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
