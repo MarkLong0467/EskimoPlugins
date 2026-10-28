@@ -2,9 +2,9 @@
 	"format": 1,
 	"id": "marklong.rich-presence",
 	"name": "Rich Presence",
-	"description": "Fully customizable rich presence: profiles, every activity field, images, timestamps, party size, buttons and live text variables.",
+	"description": "Fully customizable rich presence: profiles, every activity field, images, timer, party size, buttons and live text variables. Shows nothing until you set it up.",
 	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-	"version": "1.0.3",
+	"version": "1.0.4",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"

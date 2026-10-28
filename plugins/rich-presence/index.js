@@ -8,7 +8,7 @@
 	var SOCKET = 'EskimoRichPresence'
 	var PID = 1337
 	var TOAST = 'ESKIMO_RICH_PRESENCE'
-	// Used when you set no Application ID, so image links and buttons work out of the box.
+	// Used for image links and buttons when you set no Application ID of your own.
 	var FALLBACK_APP_ID = '1054951789318909972'
 
 	var TYPES = [
@@ -34,7 +34,7 @@
 
 	function newProfile(id, label) {
 		return {
-			id: id, label: label, name: 'Eskimo', type: 0, details: '', state: '',
+			id: id, label: label, name: '', type: 0, details: '', state: '',
 			applicationId: '', streamUrl: '',
 			largeImage: '', largeText: '', smallImage: '', smallText: '',
 			timestampMode: 'none', customStart: '', customEnd: '', countdownMinutes: '30',
@@ -166,9 +166,11 @@
 	}
 
 	async function buildActivity(p) {
-		var activity = { name: text(p.name) || 'Eskimo', type: Number(p.type) || 0, flags: 0 }
-		var appId = String(p.applicationId || '').trim() || FALLBACK_APP_ID
-		activity.application_id = appId
+		var name = text(p.name)
+		if (!name) return null
+		var activity = { name: name, type: Number(p.type) || 0, flags: 0 }
+		var ownAppId = String(p.applicationId || '').trim()
+		var appId = ownAppId
 		var details = text(p.details)
 		var state = text(p.state)
 		if (details) activity.details = details
@@ -218,6 +220,10 @@
 				urls.push(link)
 			}
 		})
+		// The default application is only attached when images or buttons need one, so a plain
+		// presence carries no application icon.
+		if (ownAppId) activity.application_id = ownAppId
+		else if (li || si || labels.length) activity.application_id = FALLBACK_APP_ID
 		if (labels.length) {
 			activity.buttons = labels
 			activity.metadata = { button_urls: urls }
@@ -370,6 +376,9 @@
 					value: settings.applyOnStart,
 					onValueChange: function (applyOnStart) { save({ applyOnStart: applyOnStart }) },
 				}),
+				!text(profile.name)
+					? row('Nothing is shown yet', 'Enter an Activity name below to turn your presence on.')
+					: null,
 			),
 			h(Field, {
 				key: 'refresh',
@@ -439,13 +448,13 @@
 			),
 			field('label', 'Profile name', 'Default', 'Only shown in this list.', 40),
 			radio('Activity type', profile.type, TYPES, function (type) { update({ type: type }) }),
-			field('name', 'Activity name', 'Eskimo', 'The text after the activity type. Supports variables.', 128),
+			field('name', 'Activity name', 'e.g. My game', 'Required. The text after the activity type. Nothing is shown until you set it. Supports variables.', 128),
 			field('details', 'Details', '', 'First line. Supports variables.', 128),
 			field('state', 'State', '', 'Second line. Supports variables.', 128),
 			profile.type === 1
 				? field('streamUrl', 'Stream URL', 'https://twitch.tv/name', 'A Twitch or YouTube link.', 300)
 				: null,
-			field('applicationId', 'Application ID', '', 'Optional. Use your own application for asset keys. Image links and buttons work without one.', 24),
+			field('applicationId', 'Application ID', '', 'Optional. Your own application gives its name and icon, and lets you use its asset keys.', 24),
 			field('largeImage', 'Large image', 'https://… or asset key', 'A direct image link or an asset key.', 300),
 			field('largeText', 'Large image text', '', 'Shown when hovering the large image.', 128),
 			field('smallImage', 'Small image', 'https://… or asset key', 'Shown in the corner of the large image.', 300),
