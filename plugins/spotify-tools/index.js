@@ -434,10 +434,72 @@
 		{ key: 'spotify-album', setting: 'sendAlbumLink', label: 'Send playing album', run: function () { sendAlbumLink() } },
 	]
 
+	function countLabels(list, labels) {
+		var hits = 0
+		for (var i = 0; i < list.length; i++) {
+			var label = list[i] && typeof list[i] === 'object' && list[i].label
+			if (typeof label === 'string' && labels[label] === 1) hits++
+		}
+		return hits
+	}
+
 	/**
-	 * The hold-down message menu, found by its rows (two or more of Reply, Copy Text, Mark Unread...).
-	 * The rows are built the way Valenced's Quoter plugin builds its row: the same kind of row as the
-	 * ones already there, with just a label, an icon and a tap action.
+	 * Discord's menus are data driven: a list of items (label, action, iconSource) goes in, and the menu
+	 * draws the rows, tracks which one is pressed and runs the action by its place in the list. So the
+	 * options are added to that list, before the menu draws anything. Adding already drawn rows to
+	 * the result ended with every row lighting up and the first row's action running (the camera).
+	 */
+	function decorateItems(result, items) {
+		var popupHits = countLabels(items, MENU_LABELS)
+		var messageHits = countLabels(items, MESSAGE_LABELS)
+		var group
+		if (popupHits >= 2) group = 'popup'
+		else if (messageHits >= 2) group = 'messageMenu'
+		if (!group) return result
+		if (group === 'popup' && !optedIn('popupRows')) return result
+		var wanted = POPUP_ROWS.filter(function (r) { return enabled(r.setting) })
+		if (!wanted.length) return result
+		for (var i = 0; i < items.length; i++)
+			if (items[i] && POPUP_ROWS.some(function (r) { return r.label === items[i].label })) return result
+		var template = items.find(function (item) { return item && typeof item.label === 'string' })
+		if (!template) return result
+		var React = valenced.react.React
+		var Icon = findIcon(['SpotifyNeutralIcon', 'MusicIcon', 'PlayIcon'])
+		var assetId = valenced.assets.getAssetIdByName('ic_spotify_white_16px')
+		var extra = wanted.map(function (def) {
+			var lastPress = 0
+			var press = function () {
+				// One tap can reach more than one handler, so only the first one counts.
+				if (Date.now() - lastPress < 1500) return
+				lastPress = Date.now()
+				try { valenced.discord.actions.ActionSheetActionCreators.hideAllActionSheets() } catch (e) {}
+				setTimeout(def.run, 0)
+			}
+			var item = Object.assign({}, template, { label: def.label })
+			// Nothing of the item it was copied from may remain: its action, its icon or its identity.
+			;['id', 'key', 'testID', 'nativeID', 'index', 'state'].forEach(function (name) { delete item[name] })
+			;['action', 'onPress', 'onSelect', 'onClick', 'callback', 'handler'].forEach(function (name) {
+				if (name in template || name === 'action') item[name] = press
+			})
+			if (assetId != null) item.iconSource = assetId
+			else delete item.iconSource
+			if ('IconComponent' in template || Icon) {
+				if (Icon) item.IconComponent = Icon
+				else delete item.IconComponent
+			}
+			return item
+		})
+		counters[group === 'popup' ? 'popup' : 'sheet'] += extra.length
+		var current = status[group]
+		if (!current || !current.ok)
+			setStatus(group, true, 'added ' + extra.length + ' items to the list that has ' + items.slice(0, 5).map(function (x) { return x && x.label }).join(', ') + ' (item props: ' + Object.keys(template).join(', ') + ')')
+		return React.cloneElement(result, { items: items.concat(extra) })
+	}
+
+	/**
+	 * Menus made of ready rows (like the one Valenced's Quoter plugin adds to) get one more row of the
+	 * same kind, with just a label, an icon and a tap action. Rows that know their place in a list
+	 * belong to a data driven menu and are left to decorateItems.
 	 */
 	function decorateMessageMenu(result, c) {
 		var template
@@ -447,6 +509,7 @@
 			var label = el && el.props && el.props.label
 			if (typeof label !== 'string') continue
 			if (MENU_LABELS[label] === 1) return result
+			if (typeof el.props.index === 'number' || 'lastInSection' in el.props) return result
 			if (MESSAGE_LABELS[label] === 1) {
 				hits++
 				if (!template) template = el
@@ -479,71 +542,12 @@
 	function decoratePopup(result) {
 		try {
 			var props = result && result.props
+			if (props && Array.isArray(props.items) && props.items.length >= 2 && props.items.length <= 24)
+				return decorateItems(result, props.items)
 			var c = props && props.children
 			if (!Array.isArray(c) || c.length < 2 || c.length > 20) return result
-			var template
-			var hits = 0
-			for (var i = 0; i < c.length; i++) {
-				var el = c[i]
-				if (el && typeof el.key === 'string' && el.key.indexOf('spotify-') === 0) return result
-				var label = el && el.props && el.props.label
-				if (typeof label !== 'string') continue
-				if (MENU_LABELS[label] === 1) {
-					hits++
-					if (!template) template = el
-				}
-			}
-			if (hits < 2) return decorateMessageMenu(result, c)
-			if (!optedIn('popupRows')) return result
-			var wanted = POPUP_ROWS.filter(function (r) { return enabled(r.setting) })
-			if (!wanted.length) return result
-			var React = valenced.react.React
-			var RN = valenced.react.ReactNative
-			var Icon = findIcon(['SpotifyNeutralIcon', 'MusicIcon', 'PlayIcon'])
-			var baseIcon = template.props.icon
-			var assetId = valenced.assets.getAssetIdByName('ic_spotify_white_16px')
-			var icon = baseIcon
-			if (Icon && React.isValidElement(baseIcon)) icon = React.cloneElement(baseIcon, { IconComponent: Icon })
-			else if (assetId != null && RN.Image) icon = h(RN.Image, { source: assetId, style: { width: 24, height: 24 } })
-			var propNames = Object.keys(template.props)
-			var Tap = RN.Pressable || RN.TouchableOpacity
-			var rows = wanted.map(function (def) {
-				var lastPress = 0
-				var press = function () {
-					// One tap can reach more than one handler, so only the first one counts.
-					if (Date.now() - lastPress < 1500) return
-					lastPress = Date.now()
-					try { valenced.discord.actions.ActionSheetActionCreators.hideAllActionSheets() } catch (e) {}
-					setTimeout(def.run, 0)
-				}
-				// A copy of Discord's row for looks only, with every action and ID replaced.
-				var overrides = { key: def.key, label: def.label, icon: icon }
-				propNames.forEach(function (name) {
-					var value = template.props[name]
-					if (name === 'icon' || name === 'label' || name === 'key') return
-					if (typeof value === 'function' && /^(onPress|onSelect|onClick|onTap|onAction|action|callback|handler)$/.test(name)) overrides[name] = press
-					else if (typeof value === 'string' && /^(id|testID|nativeID|name|value|trigger)$/.test(name)) overrides[name] = def.key
-					else if (typeof value === 'string' && /^(accessibilityLabel|title|description|sublabel|subLabel)$/.test(name)) overrides[name] = name === 'accessibilityLabel' || name === 'title' ? def.label : undefined
-				})
-				overrides.onPress = press
-				var look = React.cloneElement(template, overrides)
-				// Discord's own row keeps its own way of reacting to taps (that is what opened the camera),
-				// so it is shown for looks only and our tap area sits over it.
-				return h(
-					RN.View,
-					{ key: def.key },
-					h(RN.View, { pointerEvents: 'none' }, look),
-					h(Tap, {
-						accessibilityRole: 'button',
-						accessibilityLabel: def.label,
-						onPress: press,
-						style: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-					}),
-				)
-			})
-			counters.popup += rows.length
-			if (!status.popup || !status.popup.ok) setStatus('popup', true, 'row props [' + propNames.join(', ') + '], added ' + rows.length + ' rows to the popup that has ' + Object.keys(MENU_LABELS).filter(function (l) { return c.some(function (x) { return x && x.props && x.props.label === l }) }).join(', '))
-			return React.cloneElement(result, {}, ...c, ...rows)
+			if (c.some(function (x) { return x && typeof x.key === 'string' && x.key.indexOf('spotify-') === 0 })) return result
+			return decorateMessageMenu(result, c)
 		} catch (e) {
 			return result
 		}
@@ -656,7 +660,7 @@
 					}),
 					h(Design.TableSwitchRow, {
 						label: 'Also add them to the attachment popup (experimental)',
-						subLabel: 'In some versions of Discord these rows open the camera instead. Leave off unless you want to test it.',
+						subLabel: 'Adds the three options to the + menu (Camera, Photos, Poll...). Off by default until it is confirmed on your version.',
 						value: !!settings.popupRows,
 						onValueChange: function (popupRows) { json.set({ popupRows: popupRows }) },
 					}),
@@ -691,7 +695,7 @@
 					state('listenClassic', 'Listen Along (activity card)'),
 					state('listenSimple', 'Listen Along (small button)', 'Not in this version of Discord. That is fine.'),
 					state('messageMenu', 'Hold-down message menu', 'Discord loads this the first time you hold down a message. Do that once, then come back.'),
-					state('popup', 'Attachment popup (experimental)', 'Off unless you turn on the experimental switch.'),
+					state('popup', 'Attachment popup (experimental)', 'Off unless you turn on the experimental switch. Open the + menu once to load it.'),
 					state('invite', 'Send Invite (older attachment menu)', 'Not in this version of Discord. That is fine.'),
 					row('Spotify right now', (function () {
 						var a = mySpotifyActivity()
