@@ -102,29 +102,6 @@
         }
       }
     },
-    "marklong.one-ping-per-dm": {
-      "name": "One Ping Per DM",
-      "description": "If someone sends you several unread messages in a DM, you only hear one notification sound. Read the chat to reset it.",
-      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-      "channels": {
-        "latest": "1.0.0"
-      },
-      "versions": {
-        "1.0.0": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.one-ping-per-dm@1.0.0.zip",
-          "sha256": "36aee0b48bcd8efa8aed579711eab51b98f58b0618882f4bf58e667594d58326",
-          "size": 2517,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        }
-      }
-    },
     "marklong.rich-presence": {
       "name": "Rich Presence",
       "description": "Fully customizable rich presence: profiles, every activity field, images, timer, party size, buttons and live text variables. Shows nothing until you set it up.",
