@@ -48,6 +48,29 @@
           }
         }
       }
+    },
+    "marklong.valid-user": {
+      "name": "Valid User",
+      "description": "Resolves @unknown-user mentions in messages and embeds automatically, no tap needed.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.valid-user@1.0.0.zip",
+          "sha256": "8a39378f49429ec6377315cdb5dc6142cf3762f441cc9c824f6b4f0ceeb11006",
+          "size": 1537,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
     }
   }
 }
