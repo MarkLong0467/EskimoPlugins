@@ -488,9 +488,6 @@
 				},
 			})
 		}
-		function action(key, label, subLabel, onPress) {
-			return h(Design.TableRow, { key: key, label: label, subLabel: subLabel, onPress: onPress })
-		}
 		return h(
 			RN.ScrollView,
 			{ style: { flex: 1 }, contentContainerStyle: { paddingBottom: 38 } },
@@ -514,13 +511,6 @@
 					{ title: 'Where they show up' },
 					toggle('messageMenu', 'Hold-down message menu', 'The menu you get when you hold down a message'),
 					toggle('plusMenu', '+ menu', 'The menu you get when you tap + next to the message box'),
-				),
-				h(
-					Design.TableRowGroup,
-					{ title: 'Send now' },
-					action('invite', 'Send listen along', 'Sends to the chat you last had open', sendInvite),
-					action('song', 'Send song link', 'Sends to the chat you last had open', sendSongLink),
-					action('album', 'Send playing album', 'Sends to the chat you last had open', sendAlbumLink),
 				),
 				h(
 					Design.TableRowGroup,
