@@ -1,0 +1,20 @@
+{
+	"format": 1,
+	"id": "marklong.message-preview",
+	"name": "Message Preview",
+	"description": "Adds a way to preview your message before sending it: a floating button over the message box, or hold the send button.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": ["nexpid (https://github.com/nexpid/RevengePlugins \"Original Message Preview for Revenge, CC BY 4.0\")", "pylix (https://github.com/nexpid/RevengePlugins \"Original Message Preview for Revenge\")"],
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
