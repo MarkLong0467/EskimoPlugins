@@ -103,13 +103,13 @@
         "nexpid (https://github.com/nexpid \"Original idea and approach\")"
       ],
       "channels": {
-        "latest": "1.4.0"
+        "latest": "1.4.1"
       },
       "versions": {
-        "1.4.0": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.spotify-tools@1.4.0.zip",
-          "sha256": "4f4b98d01eb26c8f1008255a942093fad4393fc22562eb95f38abaa7b40871ef",
-          "size": 9111,
+        "1.4.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.spotify-tools@1.4.1.zip",
+          "sha256": "4fc848a60018e84f90cbcee946233e3828006df20b40194f09750e4dc691101d",
+          "size": 9654,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
