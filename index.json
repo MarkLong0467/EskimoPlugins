@@ -152,13 +152,13 @@
       "description": "Switch your HypeSquad house (Bravery, Brilliance or Balance) or leave it with one tap from the plugin settings.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.1.0"
+        "latest": "1.1.1"
       },
       "versions": {
-        "1.1.0": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.hypesquad@1.1.0.zip",
-          "sha256": "f2da2ac46192353d3db3d9ee84b4aaea97d54e9ad1b2b5a0de91060eb970e85d",
-          "size": 2669,
+        "1.1.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.hypesquad@1.1.1.zip",
+          "sha256": "9c48f1df773aa8b06c67c5712ee2b8ebc5cb36cec2548078408e915f58337cb0",
+          "size": 3413,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
