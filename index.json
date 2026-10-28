@@ -77,13 +77,13 @@
       "description": "Fully customizable rich presence: profiles, every activity field, images, timer, party size, buttons and live text variables. Shows nothing until you set it up.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.1.0"
+        "latest": "1.2.0"
       },
       "versions": {
-        "1.1.0": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.rich-presence@1.1.0.zip",
-          "sha256": "fcb6ef95599852b1420e5f456560f73dd0a42fbe3ccdae67a7836286f6d12e2a",
-          "size": 7570,
+        "1.2.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.rich-presence@1.2.0.zip",
+          "sha256": "9f57d62efd3eaa96d5f75be37c9fe35010b48a0f9a2a3435096193e3fbe91206",
+          "size": 8930,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
