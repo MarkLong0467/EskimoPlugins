@@ -95,9 +95,9 @@
         }
       }
     },
-    "marklong.spotify-listen-along": {
-      "name": "Spotify Listen Along",
-      "description": "Adds a Listen Along button to Spotify activities on mobile.",
+    "marklong.spotify-tools": {
+      "name": "Spotify Tools",
+      "description": "Listen Along buttons on Spotify activities and a Send Spotify Invite button in the attachment menu, with toggles and diagnostics.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "contributors": [
         "nexpid (https://github.com/nexpid \"Original idea and approach\")"
@@ -107,35 +107,9 @@
       },
       "versions": {
         "1.0.0": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.spotify-listen-along@1.0.0.zip",
-          "sha256": "7b2067b1a44e96b6aa108b1e9f98ade1e172367335fcb9b91d698d4996a36033",
-          "size": 2705,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        }
-      }
-    },
-    "marklong.spotify-invite": {
-      "name": "Send Spotify Invite",
-      "description": "Adds a button to the chat attachment menu to invite the channel to listen along to your Spotify.",
-      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-      "contributors": [
-        "nexpid (https://github.com/nexpid \"Original idea and approach\")"
-      ],
-      "channels": {
-        "latest": "1.0.0"
-      },
-      "versions": {
-        "1.0.0": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.spotify-invite@1.0.0.zip",
-          "sha256": "47e03ec4b7e52828197c80919e62f7ce979c7304eb095024373a9602c1f73745",
-          "size": 2225,
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.spotify-tools@1.0.0.zip",
+          "sha256": "ff158c1ce4bfbb2f09b336e636bc264747d03bbc8fe9a794fbe0f597e5bce087",
+          "size": 4916,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
