@@ -8,6 +8,9 @@
 	var SOCKET = 'EskimoRichPresence'
 	var PID = 1337
 	var TOAST = 'ESKIMO_RICH_PRESENCE'
+	// Discord turns an image link into a presence image through an application. Any valid
+	// application works for this, so it is only the fallback when you set none of your own.
+	var IMAGE_APP_ID = '1054951789318909972'
 
 	var TYPES = [
 		{ v: 0, l: 'Playing' },
@@ -57,6 +60,8 @@
 	var refreshTimer
 	var applyTimer
 	var applySeq = 0
+	var imageStatus = {}
+	var statusListeners = []
 	var loopAnchor = Date.now()
 	var loopTimer
 	var assetCache = new Map()
@@ -143,32 +148,53 @@
 		return typeof s === 'string' && s.trim() ? s : undefined
 	}
 
-	/** Turns an image link or asset key into a Discord asset ID. mp: IDs pass through unchanged. */
-	async function resolveImage(appId, value) {
+	function setImageStatus(slot, status) {
+		if (imageStatus[slot] === status) return
+		imageStatus[slot] = status
+		statusListeners.forEach(function (listener) { listener() })
+	}
+
+	/**
+	 * Turns an image link or asset key into a Discord asset ID. mp: IDs pass through unchanged.
+	 * Tries your Application ID first, then the fallback one. Reports the result for the preview.
+	 */
+	async function resolveImage(appId, value, slot) {
 		var v = fill(value)
-		if (typeof v !== 'string' || !(v = v.trim())) return undefined
+		if (typeof v !== 'string' || !(v = v.trim())) return setImageStatus(slot, undefined)
 		if (/^mp:/i.test(v)) return v
-		var key = appId + '|' + v
-		if (assetCache.has(key)) return assetCache.get(key)
 		var finders = valenced.modules.finders
 		var utils =
 			finders.lookupModule(finders.filters.withProps('fetchAssetIds'))[0] ||
 			finders.lookupModule(finders.filters.withProps('getAssetIds'))[0]
-		if (!utils) return undefined
-		var ids
-		try {
-			ids = utils.getAssetIds && utils.getAssetIds(appId, [v])
-		} catch (e) {}
-		if (!ids || !ids.length) {
+		if (!utils) return setImageStatus(slot, "Discord's image lookup was not found")
+		var candidates = appId && appId !== '0' ? [appId, IMAGE_APP_ID] : [IMAGE_APP_ID]
+		var error
+		for (var c = 0; c < candidates.length; c++) {
+			var app = candidates[c]
+			var key = app + '|' + v
+			if (assetCache.has(key)) {
+				setImageStatus(slot, 'ok')
+				return assetCache.get(key)
+			}
 			try {
-				ids = await utils.fetchAssetIds(appId, [v])
+				var ids
+				try {
+					ids = utils.getAssetIds && utils.getAssetIds(app, [v])
+				} catch (e) {}
+				if (!ids || !ids.length) ids = await utils.fetchAssetIds(app, [v])
+				var id = ids && ids[0]
+				if (id) {
+					assetCache.set(key, id)
+					setImageStatus(slot, 'ok')
+					return id
+				}
+				error = 'Discord returned no image for this link'
 			} catch (e) {
-				console.warn(TAG + ' could not resolve image:', String(e))
+				error = String((e && (e.body && e.body.message || e.message)) || e)
+				console.warn(TAG + ' could not resolve image:', error)
 			}
 		}
-		var id = ids && ids[0]
-		if (id) assetCache.set(key, id)
-		return id
+		setImageStatus(slot, error || 'Could not load this image')
 	}
 
 	async function buildActivity(p) {
@@ -218,8 +244,8 @@
 			activity.party = { size: [Math.min(cur, max), max] }
 
 		var assets = {}
-		var li = await resolveImage(appId, p.largeImage)
-		var si = await resolveImage(appId, p.smallImage)
+		var li = await resolveImage(appId, p.largeImage, 'large')
+		var si = await resolveImage(appId, p.smallImage, 'small')
 		if (li) assets.large_image = li
 		if (si) assets.small_image = si
 		var lt = text(p.largeText)
@@ -370,7 +396,17 @@
 				button: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, marginRight: 8, backgroundColor: Tokens.default.colors.BACKGROUND_SURFACE_HIGHEST },
 			})
 		var st = previewStyles()
+		var React = valenced.react.React
+		var tick = React.useState(0)
+		React.useEffect(function () {
+			var listener = function () { tick[1](function (n) { return n + 1 }) }
+			statusListeners.push(listener)
+			return function () { statusListeners = statusListeners.filter(function (l) { return l !== listener }) }
+		}, [])
 		var d = props.info
+		var problems = ['large', 'small']
+			.filter(function (slot) { return imageStatus[slot] && imageStatus[slot] !== 'ok' })
+			.map(function (slot) { return (slot === 'large' ? 'Large' : 'Small') + ' image not sent: ' + imageStatus[slot] })
 		function line(content, variant, color) {
 			return content ? h(Design.Text, { variant: variant, color: color }, content) : null
 		}
@@ -404,6 +440,9 @@
 						),
 				  )
 				: h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'Nothing is shown yet. Enter an Activity name to turn your presence on.'),
+			d.name && problems.length
+				? h(Design.Text, { variant: 'text-xs/medium', color: 'text-feedback-critical', style: { marginTop: 8 } }, problems.join('\n'))
+				: null,
 			d.name && d.buttons.length
 				? h(
 						RN.View,
