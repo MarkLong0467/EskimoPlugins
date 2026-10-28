@@ -7,12 +7,12 @@
 	 * as `return <file>`.
 	 */
 	var TOAST = 'ESKIMO_SPOTIFY_TOOLS'
-	var defaults = { listenAlong: true, sendInvite: true, sendSongLink: true, sendAlbumLink: true }
+	var defaults = { listenAlong: true, sendInvite: true, sendSongLink: true, sendAlbumLink: true, popupRows: false }
 
 	var storage
 	var spotifyActions
 	var status = {}
-	var counters = { shown: 0, skipped: 0, popup: 0 }
+	var counters = { shown: 0, skipped: 0, popup: 0, sheet: 0 }
 	var MENU_LABELS = { Camera: 1, Photos: 1, Poll: 1, Files: 1, Apps: 1 }
 	var listeners = []
 
@@ -24,6 +24,11 @@
 	function enabled(key) {
 		var s = storage && storage.cache
 		return !s || s[key] !== false
+	}
+	/** For switches that start off. */
+	function optedIn(key) {
+		var s = storage && storage.cache
+		return !!s && s[key] === true
 	}
 	function setStatus(key, ok, detail) {
 		status[key] = { ok: ok, detail: detail }
@@ -421,6 +426,7 @@
 				}
 			}
 			if (hits < 2) return result
+			if (!optedIn('popupRows')) return result
 			var wanted = POPUP_ROWS.filter(function (r) { return enabled(r.setting) })
 			if (!wanted.length) return result
 			var React = valenced.react.React
@@ -483,6 +489,49 @@
 		})
 	}
 
+	// ---- Message menu (hold down a message) -----------------------------------------------------
+	/**
+	 * Adds the send actions to the menu you get when you hold down a message. This follows the way
+	 * Valenced's own Quoter plugin adds a row there: find the group of rows that has icons and add
+	 * one more row of the same kind.
+	 */
+	function addToSheet(result) {
+		var wanted = POPUP_ROWS.filter(function (r) { return enabled(r.setting) })
+		if (!wanted.length) return result
+		var React = valenced.react.React
+		var inserted = false
+		function add(node) {
+			if (!React.isValidElement(node)) return node
+			var kids = React.Children.toArray(node.props.children)
+			var hasLabel = function (child) { return React.isValidElement(child) && typeof child.props.label === 'string' }
+			if (!inserted && node.props.hasIcons && kids.some(hasLabel)) {
+				var template = kids.find(hasLabel)
+				var Row = template.type
+				var Icon = findIcon(['UserPlayIcon', 'MusicIcon', 'PlayIcon'])
+				var baseIcon = template.props.icon
+				var icon = Icon && React.isValidElement(baseIcon) ? React.cloneElement(baseIcon, { IconComponent: Icon }) : baseIcon
+				inserted = true
+				counters.sheet++
+				var rows = wanted.map(function (def) {
+					return h(Row, {
+						key: def.key,
+						label: def.label,
+						icon: icon,
+						onPress: function () {
+							try { valenced.discord.actions.ActionSheetActionCreators.hideAllActionSheets() } catch (e) {}
+							setTimeout(def.run, 0)
+						},
+					})
+				})
+				if (!status.messageMenu || !status.messageMenu.ok || counters.sheet === 1)
+					setStatus('messageMenu', true, 'added ' + rows.length + ' rows to the message menu')
+				return React.cloneElement(node, {}, ...kids, ...rows)
+			}
+			return React.cloneElement(node, {}, React.Children.map(node.props.children, add))
+		}
+		return add(result)
+	}
+
 	// ---- Settings screen ----------------------------------------------------------------------
 	function SettingsComponent(props) {
 		var Design = valenced.discord.design.Design
@@ -515,21 +564,27 @@
 					}),
 					h(Design.TableSwitchRow, {
 						label: 'Send listen along',
-						subLabel: 'A row in the attachment popup that sends the invite card',
+						subLabel: 'A row in the menu you get when you hold down a message. Sends the invite card.',
 						value: settings.sendInvite,
 						onValueChange: function (sendInvite) { json.set({ sendInvite: sendInvite }) },
 					}),
 					h(Design.TableSwitchRow, {
 						label: 'Send song link',
-						subLabel: 'A row in the attachment popup that sends the link of the song playing',
+						subLabel: 'A row in the hold-down message menu. Sends the link of the song playing.',
 						value: settings.sendSongLink,
 						onValueChange: function (sendSongLink) { json.set({ sendSongLink: sendSongLink }) },
 					}),
 					h(Design.TableSwitchRow, {
 						label: 'Send playing album',
-						subLabel: 'A row in the attachment popup that sends the link of the album playing',
+						subLabel: 'A row in the hold-down message menu. Sends the link of the album playing.',
 						value: settings.sendAlbumLink,
 						onValueChange: function (sendAlbumLink) { json.set({ sendAlbumLink: sendAlbumLink }) },
+					}),
+					h(Design.TableSwitchRow, {
+						label: 'Also add them to the attachment popup (experimental)',
+						subLabel: 'In some versions of Discord these rows open the camera instead. Leave off unless you want to test it.',
+						value: !!settings.popupRows,
+						onValueChange: function (popupRows) { json.set({ popupRows: popupRows }) },
 					}),
 				),
 				h(
@@ -561,7 +616,8 @@
 					state('controls', 'Discord Spotify controls (optional)'),
 					state('listenClassic', 'Listen Along (activity card)'),
 					state('listenSimple', 'Listen Along (small button)'),
-					state('popup', 'Send Invite (attachment popup)'),
+					state('messageMenu', 'Hold-down message menu'),
+					state('popup', 'Attachment popup (experimental)'),
 					state('invite', 'Send Invite (older attachment menu)'),
 					row('Spotify right now', (function () {
 						var a = store('SpotifyStore') && store('SpotifyStore').getActivity()
@@ -622,7 +678,32 @@
 			})
 			cleanup(function () { spotifyActions = undefined })
 			try {
-				installPopupHook(cleanup)
+				cleanup(
+				f.getModules(
+					f.filters.withName('LongPressMessageActionSheet'),
+					function (module) {
+						if (!module || typeof module.default !== 'function') {
+							var detail = 'The message menu has an unexpected shape: ' + shapeOf(module && module.default)
+							setStatus('messageMenu', false, detail)
+							return api.plugin.reportError(detail)
+						}
+						cleanup(
+							valenced.patcher.instead(module, 'default', function (args, original) {
+								var result = Reflect.apply(original, this, args)
+								try {
+									return addToSheet(result)
+								} catch (e) {
+									console.warn('[spotify-tools] message menu failed:', String(e))
+									return result
+								}
+							}),
+						)
+						if (!status.messageMenu) setStatus('messageMenu', true, 'message menu found, waiting for you to hold down a message')
+					},
+					{ returnNamespace: true },
+				),
+			)
+			installPopupHook(cleanup)
 			} catch (e) {
 				setStatus('popup', false, 'could not hook the popup: ' + String(e))
 			}
