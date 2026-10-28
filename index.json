@@ -169,6 +169,33 @@
           }
         }
       }
+    },
+    "marklong.message-preview": {
+      "name": "Message Preview",
+      "description": "Adds a way to preview your message before sending it: a floating button over the message box, or hold the send button.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "contributors": [
+        "nexpid (https://github.com/nexpid/RevengePlugins \"Original Message Preview for Revenge, CC BY 4.0\")",
+        "pylix (https://github.com/nexpid/RevengePlugins \"Original Message Preview for Revenge\")"
+      ],
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.message-preview@1.0.0.zip",
+          "sha256": "06dc55acb767d4e972cba4d8a76d5d8ed406d9176e99a0dfff72d483737d17d7",
+          "size": 4582,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
     }
   }
 }
