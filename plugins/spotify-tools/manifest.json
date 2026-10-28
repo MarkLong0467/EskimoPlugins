@@ -2,10 +2,10 @@
 	"format": 1,
 	"id": "marklong.spotify-tools",
 	"name": "Spotify Tools",
-	"description": "Listen Along buttons on Spotify activities and a Send Spotify Invite button in the attachment menu, with toggles and diagnostics.",
+	"description": "Listen Along buttons on Spotify activities, plus send the listen along card, song link or album link from the attachment popup, with toggles and diagnostics.",
 	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
 	"contributors": ["nexpid (https://github.com/nexpid \"Original idea and approach\")"],
-	"version": "1.2.3",
+	"version": "1.3.0",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"

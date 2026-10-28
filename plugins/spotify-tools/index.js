@@ -7,7 +7,7 @@
 	 * as `return <file>`.
 	 */
 	var TOAST = 'ESKIMO_SPOTIFY_TOOLS'
-	var defaults = { listenAlong: true, sendInvite: true }
+	var defaults = { listenAlong: true, sendInvite: true, sendSongLink: true, sendAlbumLink: true }
 
 	var storage
 	var spotifyActions
@@ -146,23 +146,71 @@
 		return false
 	}
 
-	/** Starts listening along. Returns true when something was started. */
+	/** The Spotify sign-in Discord already holds, and the device Spotify is playing on. */
+	async function spotifyAccess() {
+		var sd = store('SpotifyStore').getActiveSocketAndDevice && store('SpotifyStore').getActiveSocketAndDevice()
+		var socket = sd && (sd.socket || sd)
+		var token = socket && socket.accessToken
+		if (!token && socket && socket.accountId) {
+			// Ask Discord for a fresh token for the linked account.
+			var f = finders()
+			var http = f.lookupModule(f.filters.withProps('HTTPResponseError', 'get'))[0]
+			if (http) {
+				try {
+					var res = await http.get({ url: '/users/@me/connections/spotify/' + socket.accountId + '/access-token' })
+					token = res && res.body && res.body.access_token
+				} catch (e) {}
+			}
+		}
+		return { token: token, deviceId: sd && sd.device && sd.device.id }
+	}
+
+	/** Plays the other person's track at their position, through Spotify's own web API. */
+	async function playThroughSpotify(activity) {
+		try {
+			var access = await spotifyAccess()
+			if (!access.token) throw new Error('No Spotify sign-in found. Open Spotify and link it in Discord.')
+			var trackId = activity.sync_id
+			if (!trackId) throw new Error('This activity has no track to play.')
+			var start = activity.timestamps && activity.timestamps.start
+			var position = start ? Math.max(0, Date.now() - start) : 0
+			var url = 'https://api.spotify.com/v1/me/player/play' + (access.deviceId ? '?device_id=' + encodeURIComponent(access.deviceId) : '')
+			var res = await fetch(url, {
+				method: 'PUT',
+				headers: { Authorization: 'Bearer ' + access.token, 'Content-Type': 'application/json' },
+				body: JSON.stringify({ uris: ['spotify:track:' + trackId], position_ms: position }),
+			})
+			if (!res.ok) {
+				var why = { 401: 'Spotify sign-in expired. Open Spotify and try again.', 403: 'Spotify Premium is needed to listen along.', 404: 'No active Spotify device. Open Spotify on this phone first.', 429: 'Spotify is busy. Try again in a moment.' }[res.status]
+				throw new Error(why || 'Spotify said no (' + res.status + ').')
+			}
+			setStatus('method', true, "last listen used Spotify's web API")
+			toast('Listening along')
+			return true
+		} catch (e) {
+			setStatus('method', false, String((e && e.message) || e))
+			toast(String((e && e.message) || e))
+			return false
+		}
+	}
+
+	/** Starts listening along. Returns false right away, or a promise of whether it started. */
 	function listen(reason, activity, userId) {
 		if (typeof reason === 'string') return toast(reason), false
 		var f = finders()
 		var actions = spotifyActions || f.lookupModule(f.filters.withProps('play', 'sync'))[0]
-		if (!actions) return toast('Spotify controls were not found. Open a Spotify activity card and try again.'), false
-		try {
-			if (store('SpotifyStore').getActivity()) actions.sync(activity, userId)
-			else {
-				onceAfterPlayerState(function () { actions.sync(activity, userId) })
-				actions.play(activity, userId)
-			}
-			return true
-		} catch (e) {
-			toast('Listen along failed: ' + String((e && e.message) || e))
-			return false
+		if (actions) {
+			try {
+				if (store('SpotifyStore').getActivity()) actions.sync(activity, userId)
+				else {
+					onceAfterPlayerState(function () { actions.sync(activity, userId) })
+					actions.play(activity, userId)
+				}
+				setStatus('method', true, "last listen used Discord's own controls")
+				return Promise.resolve(true)
+			} catch (e) {}
 		}
+		return playThroughSpotify(activity)
 	}
 
 	function findIcon(names) {
@@ -191,9 +239,12 @@
 		var Icon = findIcon(['UserPlayIcon', 'MusicIcon', 'PlayIcon'])
 		var press = function () {
 			if (loading) return
-			if (listen(reason, activity, userId)) {
+			var started = listen(reason, activity, userId)
+			if (started) {
 				loadingState[1](true)
-				setTimeout(function () { loadingState[1](false) }, 5000)
+				var done = function () { loadingState[1](false) }
+				Promise.resolve(started).then(function () { setTimeout(done, 2500) }, done)
+				setTimeout(done, 15000)
 			}
 		}
 		var control = Icon
@@ -263,6 +314,47 @@
 		toast('Invite sent' + (info && info.name ? ' to #' + info.name : ''))
 	}
 
+	/** The song playing on your own Spotify, as far as Discord knows it. */
+	function currentTrack() {
+		var spotify = store('SpotifyStore')
+		var track = spotify.getTrack && spotify.getTrack()
+		var activity = spotify.getActivity()
+		var meta = (activity && activity.metadata) || {}
+		var albumId = (track && track.album && track.album.id) || meta.album_id
+		if (!albumId && typeof meta.context_uri === 'string') {
+			var m = /^spotify:album:(\w+)/.exec(meta.context_uri)
+			if (m) albumId = m[1]
+		}
+		return {
+			trackId: (track && track.id) || (activity && activity.sync_id),
+			albumId: albumId,
+			name: (track && track.name) || (activity && activity.details),
+		}
+	}
+
+	/** Sends plain text to the open chat. Leaves your draft alone. */
+	function sendText(content) {
+		var f = finders()
+		var messages = f.lookupModule(f.filters.withProps('sendMessage', 'revealMessage'))[0]
+		var channel = store('SelectedChannelStore').getChannelId()
+		if (!messages || !channel) return toast('Open a chat first, then try again.'), false
+		messages.sendMessage(channel, { content: content, tts: false, invalidEmojis: [], validNonShortcutEmojis: [] }, false, {})
+		return true
+	}
+
+	function sendSongLink() {
+		var t = currentTrack()
+		if (!t.trackId) return toast('Play something on Spotify first.')
+		if (sendText('https://open.spotify.com/track/' + t.trackId)) toast('Song link sent')
+	}
+
+	function sendAlbumLink() {
+		var t = currentTrack()
+		if (!t.trackId) return toast('Play something on Spotify first.')
+		if (!t.albumId) return toast('Could not find the album for this song.')
+		if (sendText('https://open.spotify.com/album/' + t.albumId)) toast('Album link sent')
+	}
+
 	function InviteButton() {
 		var Design = valenced.discord.design.Design
 		var React = valenced.react.React
@@ -305,16 +397,22 @@
 	 * Adds a Spotify row to the attachment popup (Camera, Photos, Poll, Files...). The popup is found
 	 * by its rows instead of by name: any element whose children include two or more of those labels.
 	 */
+	var POPUP_ROWS = [
+		{ key: 'spotify-invite', setting: 'sendInvite', label: 'Send listen along', run: function () { sendInvite() } },
+		{ key: 'spotify-song', setting: 'sendSongLink', label: 'Send song link', run: function () { sendSongLink() } },
+		{ key: 'spotify-album', setting: 'sendAlbumLink', label: 'Send playing album', run: function () { sendAlbumLink() } },
+	]
+
 	function decoratePopup(result) {
 		try {
 			var props = result && result.props
 			var c = props && props.children
-			if (!Array.isArray(c) || c.length < 2 || c.length > 14) return result
+			if (!Array.isArray(c) || c.length < 2 || c.length > 20) return result
 			var template
 			var hits = 0
 			for (var i = 0; i < c.length; i++) {
 				var el = c[i]
-				if (el && el.key === 'spotify-invite') return result
+				if (el && typeof el.key === 'string' && el.key.indexOf('spotify-') === 0) return result
 				var label = el && el.props && el.props.label
 				if (typeof label !== 'string') continue
 				if (MENU_LABELS[label] === 1) {
@@ -322,54 +420,56 @@
 					if (!template) template = el
 				}
 			}
-			if (hits < 2 || !enabled('sendInvite')) return result
+			if (hits < 2) return result
+			var wanted = POPUP_ROWS.filter(function (r) { return enabled(r.setting) })
+			if (!wanted.length) return result
 			var React = valenced.react.React
-			var Icon = findIcon(['SpotifyNeutralIcon', 'MusicIcon', 'PlayIcon'])
 			var RN = valenced.react.ReactNative
-			var icon = template.props.icon
+			var Icon = findIcon(['SpotifyNeutralIcon', 'MusicIcon', 'PlayIcon'])
+			var baseIcon = template.props.icon
 			var assetId = valenced.assets.getAssetIdByName('ic_spotify_white_16px')
-			if (Icon && React.isValidElement(icon)) icon = React.cloneElement(icon, { IconComponent: Icon })
+			var icon = baseIcon
+			if (Icon && React.isValidElement(baseIcon)) icon = React.cloneElement(baseIcon, { IconComponent: Icon })
 			else if (assetId != null && RN.Image) icon = h(RN.Image, { source: assetId, style: { width: 24, height: 24 } })
-			var lastPress = 0
-			var press = function () {
-				// One tap can reach more than one of these handlers, so only the first one counts.
-				if (Date.now() - lastPress < 1500) return
-				lastPress = Date.now()
-				try { valenced.discord.actions.ActionSheetActionCreators.hideAllActionSheets() } catch (e) {}
-				setTimeout(sendInvite, 0)
-			}
-			// The row is a copy of one of Discord's own rows, so it also carries that row's actions and
-			// IDs. Replace every action and every identifier, so nothing of the original (Camera,
-			// Photos...) can still run.
-			var overrides = { key: 'spotify-invite', label: 'Spotify invite', icon: icon }
 			var propNames = Object.keys(template.props)
-			propNames.forEach(function (name) {
-				var value = template.props[name]
-				if (name === 'icon' || name === 'label' || name === 'key') return
-				if (typeof value === 'function' && /^(onPress|onSelect|onClick|onTap|onAction|action|callback|handler)$/.test(name)) overrides[name] = press
-				else if (typeof value === 'string' && /^(id|testID|nativeID|name|value|trigger)$/.test(name)) overrides[name] = 'spotify-invite'
-				else if (typeof value === 'string' && /^(accessibilityLabel|title|description|sublabel|subLabel)$/.test(name)) overrides[name] = name === 'accessibilityLabel' || name === 'title' ? 'Spotify invite' : undefined
-			})
-			overrides.onPress = press
-			var look = React.cloneElement(template, overrides)
-			// Discord's row keeps its own way of reacting to taps (that is what opened the camera), so
-			// it can never be trusted to run our action. Show it for looks only, and put our own tap
-			// area over it. The row below it can no longer receive the touch.
 			var Tap = RN.Pressable || RN.TouchableOpacity
-			var row = h(
-				RN.View,
-				{ key: 'spotify-invite' },
-				h(RN.View, { pointerEvents: 'none' }, look),
-				h(Tap, {
-					accessibilityRole: 'button',
-					accessibilityLabel: 'Spotify invite',
-					onPress: press,
-					style: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-				}),
-			)
-			counters.popup++
-			if (!status.popup || !status.popup.ok) setStatus('popup', true, 'row props [' + propNames.join(', ') + '], added to the popup that has ' + Object.keys(MENU_LABELS).filter(function (l) { return c.some(function (x) { return x && x.props && x.props.label === l }) }).join(', '))
-			return React.cloneElement(result, {}, ...c, row)
+			var rows = wanted.map(function (def) {
+				var lastPress = 0
+				var press = function () {
+					// One tap can reach more than one handler, so only the first one counts.
+					if (Date.now() - lastPress < 1500) return
+					lastPress = Date.now()
+					try { valenced.discord.actions.ActionSheetActionCreators.hideAllActionSheets() } catch (e) {}
+					setTimeout(def.run, 0)
+				}
+				// A copy of Discord's row for looks only, with every action and ID replaced.
+				var overrides = { key: def.key, label: def.label, icon: icon }
+				propNames.forEach(function (name) {
+					var value = template.props[name]
+					if (name === 'icon' || name === 'label' || name === 'key') return
+					if (typeof value === 'function' && /^(onPress|onSelect|onClick|onTap|onAction|action|callback|handler)$/.test(name)) overrides[name] = press
+					else if (typeof value === 'string' && /^(id|testID|nativeID|name|value|trigger)$/.test(name)) overrides[name] = def.key
+					else if (typeof value === 'string' && /^(accessibilityLabel|title|description|sublabel|subLabel)$/.test(name)) overrides[name] = name === 'accessibilityLabel' || name === 'title' ? def.label : undefined
+				})
+				overrides.onPress = press
+				var look = React.cloneElement(template, overrides)
+				// Discord's own row keeps its own way of reacting to taps (that is what opened the camera),
+				// so it is shown for looks only and our tap area sits over it.
+				return h(
+					RN.View,
+					{ key: def.key },
+					h(RN.View, { pointerEvents: 'none' }, look),
+					h(Tap, {
+						accessibilityRole: 'button',
+						accessibilityLabel: def.label,
+						onPress: press,
+						style: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+					}),
+				)
+			})
+			counters.popup += rows.length
+			if (!status.popup || !status.popup.ok) setStatus('popup', true, 'row props [' + propNames.join(', ') + '], added ' + rows.length + ' rows to the popup that has ' + Object.keys(MENU_LABELS).filter(function (l) { return c.some(function (x) { return x && x.props && x.props.label === l }) }).join(', '))
+			return React.cloneElement(result, {}, ...c, ...rows)
 		} catch (e) {
 			return result
 		}
@@ -414,10 +514,22 @@
 						onValueChange: function (listenAlong) { json.set({ listenAlong: listenAlong }) },
 					}),
 					h(Design.TableSwitchRow, {
-						label: 'Send Spotify Invite',
-						subLabel: 'A button in the attachment menu to invite a channel to listen along to you',
+						label: 'Send listen along',
+						subLabel: 'A row in the attachment popup that sends the invite card',
 						value: settings.sendInvite,
 						onValueChange: function (sendInvite) { json.set({ sendInvite: sendInvite }) },
+					}),
+					h(Design.TableSwitchRow, {
+						label: 'Send song link',
+						subLabel: 'A row in the attachment popup that sends the link of the song playing',
+						value: settings.sendSongLink,
+						onValueChange: function (sendSongLink) { json.set({ sendSongLink: sendSongLink }) },
+					}),
+					h(Design.TableSwitchRow, {
+						label: 'Send playing album',
+						subLabel: 'A row in the attachment popup that sends the link of the album playing',
+						value: settings.sendAlbumLink,
+						onValueChange: function (sendAlbumLink) { json.set({ sendAlbumLink: sendAlbumLink }) },
 					}),
 				),
 				h(
@@ -425,15 +537,28 @@
 					{ title: 'Actions' },
 					h(Design.TableRow, {
 						key: 'send',
-						label: 'Send invite now',
-						subLabel: 'Invite the last chat you had open to listen along to your Spotify. Works even if the attachment menu button is missing.',
+						label: 'Send listen along',
+						subLabel: 'Send the invite card for your Spotify to the last chat you had open',
 						onPress: sendInvite,
+					}),
+					h(Design.TableRow, {
+						key: 'song',
+						label: 'Send song link',
+						subLabel: 'Send the link of the song playing to the last chat you had open',
+						onPress: sendSongLink,
+					}),
+					h(Design.TableRow, {
+						key: 'album',
+						label: 'Send playing album',
+						subLabel: 'Send the link of the album playing to the last chat you had open',
+						onPress: sendAlbumLink,
 					}),
 				),
 				h(
 					Design.TableRowGroup,
 					{ title: 'Diagnostics' },
-					state('controls', 'Spotify controls (play and sync)'),
+					state('method', 'Last listen along'),
+					state('controls', 'Discord Spotify controls (optional)'),
 					state('listenClassic', 'Listen Along (activity card)'),
 					state('listenSimple', 'Listen Along (small button)'),
 					state('popup', 'Send Invite (attachment popup)'),
