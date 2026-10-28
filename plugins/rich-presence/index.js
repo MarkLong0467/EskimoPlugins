@@ -8,8 +8,6 @@
 	var SOCKET = 'EskimoRichPresence'
 	var PID = 1337
 	var TOAST = 'ESKIMO_RICH_PRESENCE'
-	// Used for image links and buttons when you set no Application ID of your own.
-	var FALLBACK_APP_ID = '1054951789318909972'
 
 	var TYPES = [
 		{ v: 0, l: 'Playing' },
@@ -21,12 +19,13 @@
 	var TIME_MODES = [
 		{ v: 'none', l: 'No timer' },
 		{ v: 'elapsed', l: 'Elapsed since applied' },
+		{ v: 'clock', l: 'Same as your current time' },
 		{ v: 'countdown', l: 'Countdown from applied' },
-		{ v: 'custom', l: 'Custom start and end' },
+		{ v: 'custom', l: 'Custom (loops when start and end are set)' },
 	]
 	var PROFILE_KEYS = [
-		'label', 'name', 'type', 'details', 'state', 'applicationId', 'streamUrl',
-		'largeImage', 'largeText', 'smallImage', 'smallText',
+		'label', 'name', 'type', 'details', 'detailsUrl', 'state', 'stateUrl', 'applicationId', 'streamUrl',
+		'largeImage', 'largeUrl', 'largeText', 'smallImage', 'smallUrl', 'smallText',
 		'timestampMode', 'customStart', 'customEnd', 'countdownMinutes',
 		'partyCurrent', 'partyMax',
 		'button1Label', 'button1Url', 'button2Label', 'button2Url',
@@ -34,9 +33,9 @@
 
 	function newProfile(id, label) {
 		return {
-			id: id, label: label, name: '', type: 0, details: '', state: '',
+			id: id, label: label, name: '', type: 0, details: '', detailsUrl: '', state: '', stateUrl: '',
 			applicationId: '', streamUrl: '',
-			largeImage: '', largeText: '', smallImage: '', smallText: '',
+			largeImage: '', largeUrl: '', largeText: '', smallImage: '', smallUrl: '', smallText: '',
 			timestampMode: 'none', customStart: '', customEnd: '', countdownMinutes: '30',
 			partyCurrent: '', partyMax: '',
 			button1Label: '', button1Url: '', button2Label: '', button2Url: '',
@@ -58,6 +57,8 @@
 	var refreshTimer
 	var applyTimer
 	var applySeq = 0
+	var loopAnchor = Date.now()
+	var loopTimer
 	var assetCache = new Map()
 
 	// ---- Helpers -----------------------------------------------------------------------------
@@ -142,12 +143,11 @@
 		return typeof s === 'string' && s.trim() ? s : undefined
 	}
 
-	/** Turns image URLs into Discord asset IDs. Asset keys and mp: IDs pass through unchanged. */
+	/** Turns an image link or asset key into a Discord asset ID. mp: IDs pass through unchanged. */
 	async function resolveImage(appId, value) {
 		var v = fill(value)
 		if (typeof v !== 'string' || !(v = v.trim())) return undefined
-		if (!/^https?:\/\//i.test(v)) return v
-		appId = appId || FALLBACK_APP_ID
+		if (/^mp:/i.test(v)) return v
 		var key = appId + '|' + v
 		if (assetCache.has(key)) return assetCache.get(key)
 		var finders = valenced.modules.finders
@@ -159,7 +159,13 @@
 		try {
 			ids = utils.getAssetIds && utils.getAssetIds(appId, [v])
 		} catch (e) {}
-		if (!ids || !ids.length) ids = await utils.fetchAssetIds(appId, [v])
+		if (!ids || !ids.length) {
+			try {
+				ids = await utils.fetchAssetIds(appId, [v])
+			} catch (e) {
+				console.warn(TAG + ' could not resolve image:', String(e))
+			}
+		}
 		var id = ids && ids[0]
 		if (id) assetCache.set(key, id)
 		return id
@@ -168,26 +174,38 @@
 	async function buildActivity(p) {
 		var name = text(p.name)
 		if (!name) return null
-		var activity = { name: name, type: Number(p.type) || 0, flags: 0 }
-		var ownAppId = String(p.applicationId || '').trim()
-		var appId = ownAppId
+		var appId = String(p.applicationId || '').trim() || '0'
+		var activity = { application_id: appId, name: name, type: Number(p.type) || 0, flags: 1 }
 		var details = text(p.details)
 		var state = text(p.state)
 		if (details) activity.details = details
 		if (state) activity.state = state
+		var detailsUrl = text(p.detailsUrl)
+		var stateUrl = text(p.stateUrl)
+		if (detailsUrl && /^https?:\/\//i.test(detailsUrl)) activity.details_url = detailsUrl
+		if (stateUrl && /^https?:\/\//i.test(stateUrl)) activity.state_url = stateUrl
 		if (activity.type === 1) {
 			var url = text(p.streamUrl)
 			if (url) activity.url = url
 		}
 
 		if (p.timestampMode === 'elapsed') activity.timestamps = { start: appliedAt }
+		else if (p.timestampMode === 'clock') {
+			var now = new Date()
+			activity.timestamps = {
+				start: Date.now() - (now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()) * 1000,
+			}
+		}
 		else if (p.timestampMode === 'countdown') {
 			var minutes = num(p.countdownMinutes) || 0
 			activity.timestamps = { end: appliedAt + minutes * 60000 }
 		} else if (p.timestampMode === 'custom') {
 			var start = parseTime(p.customStart)
 			var end = parseTime(p.customEnd)
-			if (start !== undefined || end !== undefined) {
+			if (start !== undefined && end !== undefined && end > start) {
+				// Both set: the timer repeats from a moving anchor, like a looping countdown.
+				activity.timestamps = { start: loopAnchor, end: loopAnchor + (end - start) }
+			} else if (start !== undefined || end !== undefined) {
 				activity.timestamps = {}
 				if (start !== undefined) activity.timestamps.start = start
 				if (end !== undefined) activity.timestamps.end = end
@@ -197,7 +215,7 @@
 		var cur = num(p.partyCurrent)
 		var max = num(p.partyMax)
 		if (cur !== undefined && max !== undefined && max > 0)
-			activity.party = { id: 'eskimo-party', size: [Math.min(cur, max), max] }
+			activity.party = { size: [Math.min(cur, max), max] }
 
 		var assets = {}
 		var li = await resolveImage(appId, p.largeImage)
@@ -206,8 +224,12 @@
 		if (si) assets.small_image = si
 		var lt = text(p.largeText)
 		var st = text(p.smallText)
+		var lu = text(p.largeUrl)
+		var su = text(p.smallUrl)
 		if (lt && li) assets.large_text = lt
 		if (st && si) assets.small_text = st
+		if (lu && li && /^https?:\/\//i.test(lu)) assets.large_url = lu
+		if (su && si && /^https?:\/\//i.test(su)) assets.small_url = su
 		if (Object.keys(assets).length) activity.assets = assets
 
 		var labels = []
@@ -220,10 +242,6 @@
 				urls.push(link)
 			}
 		})
-		// The default application is only attached when images or buttons need one, so a plain
-		// presence carries no application icon.
-		if (ownAppId) activity.application_id = ownAppId
-		else if (li || si || labels.length) activity.application_id = FALLBACK_APP_ID
 		if (labels.length) {
 			activity.buttons = labels
 			activity.metadata = { button_urls: urls }
@@ -240,9 +258,31 @@
 		})
 	}
 
+	/** Re-anchors a looping custom timer each time it runs out. */
+	function ensureLoop() {
+		clearInterval(loopTimer)
+		loopTimer = undefined
+		var p = currentProfile(read())
+		var start = parseTime(p.customStart)
+		var end = parseTime(p.customEnd)
+		if (!read().enabled || p.timestampMode !== 'custom' || start === undefined || end === undefined || end <= start)
+			return
+		var duration = end - start
+		loopTimer = setInterval(function () {
+			if (Date.now() >= loopAnchor + duration) {
+				loopAnchor = Date.now()
+				apply(false)
+			}
+		}, 1000)
+	}
+
 	async function apply(resetTimer) {
 		if (!active) return
-		if (resetTimer) appliedAt = Date.now()
+		if (resetTimer) {
+			appliedAt = Date.now()
+			loopAnchor = appliedAt
+		}
+		ensureLoop()
 		var seq = ++applySeq
 		var settings = read()
 		try {
@@ -447,34 +487,54 @@
 				}),
 			),
 			field('label', 'Profile name', 'Default', 'Only shown in this list.', 40),
+			field('applicationId', 'Application ID', '', 'Create an application at discord.com/developers and paste its ID. Needed for images and asset keys. Leave empty to use none.', 24),
+			field('name', 'Activity name', 'e.g. My game', 'Required. Nothing is shown until you set it. Supports variables.', 128),
 			radio('Activity type', profile.type, TYPES, function (type) { update({ type: type }) }),
-			field('name', 'Activity name', 'e.g. My game', 'Required. The text after the activity type. Nothing is shown until you set it. Supports variables.', 128),
-			field('details', 'Details', '', 'First line. Supports variables.', 128),
-			field('state', 'State', '', 'Second line. Supports variables.', 128),
 			profile.type === 1
 				? field('streamUrl', 'Stream URL', 'https://twitch.tv/name', 'A Twitch or YouTube link.', 300)
 				: null,
-			field('applicationId', 'Application ID', '', 'Optional. Your own application gives its name and icon, and lets you use its asset keys.', 24),
-			field('largeImage', 'Large image', 'https://… or asset key', 'A direct image link or an asset key.', 300),
-			field('largeText', 'Large image text', '', 'Shown when hovering the large image.', 128),
-			field('smallImage', 'Small image', 'https://… or asset key', 'Shown in the corner of the large image.', 300),
-			field('smallText', 'Small image text', '', '', 128),
+			field('details', 'Details', '', 'First line. Supports variables.', 128),
+			field('detailsUrl', 'Details link', 'https://', 'Optional. Makes the details line clickable.', 300),
+			field('state', 'State', '', 'Second line. Supports variables.', 128),
+			field('stateUrl', 'State link', 'https://', 'Optional. Makes the state line clickable.', 300),
 			radio('Timer', profile.timestampMode, TIME_MODES, function (timestampMode) { update({ timestampMode: timestampMode }, true) }),
 			profile.timestampMode === 'countdown'
 				? field('countdownMinutes', 'Countdown minutes', '30', 'The timer counts down to zero.', 6)
 				: null,
 			profile.timestampMode === 'custom'
 				? [
-						field('customStart', 'Start time', '2026-01-01 12:00', 'A date or a Unix time in seconds or milliseconds.', 40),
-						field('customEnd', 'End time', '', 'Optional. Shows a countdown when set.', 40),
+						field('customStart', 'Start time', '2026-01-01 12:00', 'A date, or a Unix time in seconds or milliseconds.', 40),
+						field('customEnd', 'End time', '', 'Set both to loop a countdown of the same length forever.', 40),
 				  ]
 				: null,
-			field('partyCurrent', 'Party size', '1', 'Current players. Set the maximum below as well.', 4),
-			field('partyMax', 'Party maximum', '4', '', 4),
+			field('largeImage', 'Large image', 'https://… or asset key', 'An image link or an asset key from your application. Needs the Application ID for asset keys.', 300),
+			field('largeUrl', 'Large image link', 'https://', 'Optional. Opens when the image is tapped.', 300),
+			field('largeText', 'Large image text', '', 'Shown when hovering the large image.', 128),
+			field('smallImage', 'Small image', 'https://… or asset key', 'Shown in the corner of the large image. Small images work most reliably.', 300),
+			field('smallUrl', 'Small image link', 'https://', 'Optional.', 300),
+			field('smallText', 'Small image text', '', '', 128),
 			field('button1Label', 'Button 1 label', '', 'A button needs a label and a link.', 32),
 			field('button1Url', 'Button 1 link', 'https://', '', 300),
 			field('button2Label', 'Button 2 label', '', '', 32),
 			field('button2Url', 'Button 2 link', 'https://', '', 300),
+			field('partyCurrent', 'Party size', '1', 'Current players. Set the maximum below as well.', 4),
+			field('partyMax', 'Party maximum', '4', '', 4),
+			section(
+				'Preview',
+				row(
+					text(profile.name)
+						? TYPES.filter(function (t) { return t.v === Number(profile.type) })[0].l + ' ' + text(profile.name)
+						: 'Nothing is shown yet',
+					[text(profile.details), text(profile.state)].filter(Boolean).join(' · ') || 'Add details or state lines above.',
+				),
+			),
+			section(
+				'Good to know',
+				row('Your own buttons', "Discord doesn't show buttons on your own profile. Other people can see them on desktop, not always on mobile."),
+				row('Share activity', 'Your presence only shows if Discord is allowed to share your activity in your privacy settings.'),
+				row('Fancy text', 'Unusual unicode text can stop a presence from showing. Try normal letters.'),
+				row('Image problems', 'Not every image works. Try a smaller one, or a direct link ending in .png or .jpg.'),
+			),
 			section(
 				'Variables',
 				row(
@@ -519,6 +579,7 @@
 				active = false
 				clearTimeout(applyTimer)
 				clearInterval(refreshTimer)
+				clearInterval(loopTimer)
 				try { dispatchActivity(null) } catch (e) {}
 			})
 			Promise.resolve(storage.cache || storage.get()).then(function () {
