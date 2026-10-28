@@ -63,14 +63,21 @@
 	/** Shows the message to you only, as a message from Clyde's kind of ephemeral bot message. */
 	function previewAsEphemeral(channelId, content, attachments, author) {
 		var f = finders()
-		var actions = find(f.filters.withProps('sendMessage', 'receiveMessage')) || find(f.filters.withProps('receiveMessage'))
 		var bots = find(f.filters.withProps('createBotMessage'))
-		if (!actions || !bots) return false
-		actions.receiveMessage(
-			channelId,
-			Object.assign(bots.createBotMessage({ channelId: channelId, content: content }), { author: author, attachments: attachments }),
-		)
-		return true
+		if (!bots) return false
+		var message = Object.assign(bots.createBotMessage({ channelId: channelId, content: content }), { author: author, attachments: attachments })
+		var actions = find(f.filters.withProps('receiveMessage'))
+		if (actions) {
+			try {
+				actions.receiveMessage(channelId, message)
+				return true
+			} catch (e) {}
+		}
+		try {
+			valenced.discord.common.flux.Dispatcher.dispatch({ type: 'MESSAGE_CREATE', channelId: channelId, message: message, optimistic: false, isPushNotification: false })
+			return true
+		} catch (e) {}
+		return false
 	}
 
 	/** Draws the message in a popup, with Discord's own message drawing. */
@@ -119,7 +126,11 @@
 		try {
 			if (setting('previewType') === 'popup') shown = previewAsPopup(channelId, content, attachments, author)
 		} catch (e) {}
-		if (!shown) previewAsEphemeral(channelId, content, attachments, author)
+		if (!shown) {
+			var ok = false
+			try { ok = previewAsEphemeral(channelId, content, attachments, author) } catch (e) {}
+			if (!ok) valenced.discord.actions.ToastActionCreators.open('MARKLONG_MESSAGE_PREVIEW', { text: 'Could not show the preview' })
+		}
 	}
 
 	// ---- The floating button -------------------------------------------------------------------
