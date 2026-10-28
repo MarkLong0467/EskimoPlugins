@@ -25,6 +25,29 @@
           }
         }
       }
+    },
+    "marklong.split-large-messages": {
+      "name": "Split Large Messages",
+      "description": "Automatically splits messages longer than 2000 (4000 with Nitro) characters into several messages.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.split-large-messages@1.0.0.zip",
+          "sha256": "18c21a50c0f38bbf61efd8c9f06b417bd16cc69dbab49f783e2b807bb5fde84d",
+          "size": 1065,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
     }
   }
 }
