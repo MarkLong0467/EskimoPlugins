@@ -12,6 +12,7 @@
 
 	var storage
 	var styles
+	var failure
 
 	function finders() { return valenced.modules.finders }
 	function store(name) { return valenced.discord.flux.Stores[name] }
@@ -61,22 +62,50 @@
 	}
 
 	/** Shows the message to you only, as a message from Clyde's kind of ephemeral bot message. */
+	function buildMessage(channelId, content, attachments, author) {
+		var message
+		try {
+			var bots = find(finders().filters.withProps('createBotMessage'))
+			if (bots) message = bots.createBotMessage({ channelId: channelId, content: content })
+		} catch (e) {}
+		if (!message || typeof message !== 'object')
+			message = {
+				id: String(Date.now()) + '0',
+				type: 0,
+				channel_id: channelId,
+				content: content,
+				embeds: [],
+				mentions: [],
+				mention_roles: [],
+				mention_everyone: false,
+				tts: false,
+				pinned: false,
+				flags: 64,
+				timestamp: new Date().toISOString(),
+				edited_timestamp: null,
+				reactions: [],
+				components: [],
+				state: 'SENT',
+			}
+		return Object.assign(message, { author: author, attachments: attachments })
+	}
+
 	function previewAsEphemeral(channelId, content, attachments, author) {
-		var f = finders()
-		var bots = find(f.filters.withProps('createBotMessage'))
-		if (!bots) return false
-		var message = Object.assign(bots.createBotMessage({ channelId: channelId, content: content }), { author: author, attachments: attachments })
-		var actions = find(f.filters.withProps('receiveMessage'))
-		if (actions) {
-			try {
+		var message = buildMessage(channelId, content, attachments, author)
+		try {
+			var actions = find(finders().filters.withProps('receiveMessage'))
+			if (actions) {
 				actions.receiveMessage(channelId, message)
 				return true
-			} catch (e) {}
-		}
-		try {
-			valenced.discord.common.flux.Dispatcher.dispatch({ type: 'MESSAGE_CREATE', channelId: channelId, message: message, optimistic: false, isPushNotification: false })
-			return true
+			}
 		} catch (e) {}
+		try {
+			var d = valenced.discord.common.flux.Dispatcher
+			d.dispatch({ type: 'MESSAGE_CREATE', channelId: channelId, message: message, optimistic: false, isPushNotification: false })
+			return true
+		} catch (e) {
+			failure = String(e && e.message || e)
+		}
 		return false
 	}
 
@@ -129,7 +158,7 @@
 		if (!shown) {
 			var ok = false
 			try { ok = previewAsEphemeral(channelId, content, attachments, author) } catch (e) {}
-			if (!ok) valenced.discord.actions.ToastActionCreators.open('MARKLONG_MESSAGE_PREVIEW', { text: 'Could not show the preview' })
+			if (!ok) valenced.discord.actions.ToastActionCreators.open('MARKLONG_MESSAGE_PREVIEW', { text: 'Could not show the preview' + (failure ? ' (' + failure + ')' : '') })
 		}
 	}
 
