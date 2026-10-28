@@ -126,7 +126,7 @@
 			var list = (self && presence && presence.getActivities && presence.getActivities(self.id)) || []
 			for (var i = 0; i < list.length; i++) {
 				var a = list[i]
-				if (a && a.type === 2 && (a.name === 'Spotify' || String(a.id || '').indexOf('spotify') === 0)) return a
+				if (a && a.type === 2 && (a.name === 'Spotify' || String(a.id || '').indexOf('spotify') === 0 || String((a.party && a.party.id) || '').indexOf('spotify:') === 0)) return a
 			}
 		} catch (e) {}
 		return own
@@ -158,52 +158,75 @@
 	/** Why the button can't be used right now, or false when it can. */
 	function disabledReason(activity, userId) {
 		var self = store('UserStore').getCurrentUser()
-		var spotify = store('SpotifyStore')
 		var mine = mySpotifyActivity()
 		if (self && self.id === userId) return 'Listen along with someone else, not yourself.'
 		if (mine && mine.party && mine.party.id === activity.party.id) return "You're already along for this ride."
-		var protocol = store('SpotifyProtocolStore')
-		var canPlay = !!spotify.getActiveSocketAndDevice() || !!(protocol && protocol.isProtocolRegistered())
-		if (!spotify.hasConnectedAccount() || !canPlay) return 'Spotify is not detected'
 		return false
 	}
 
-	/** The Spotify sign-in Discord already holds, and the device Spotify is playing on. */
+	function rest() {
+		var f = finders()
+		return f.lookupModule(f.filters.withProps('get', 'post', 'patch'))[0] || f.lookupModule(f.filters.withProps('HTTPResponseError', 'get'))[0]
+	}
+
+	/**
+	 * The Spotify sign-in Discord holds for you. Discord's own store has it when Spotify is the active
+	 * player, and otherwise the linked account is asked for a fresh token.
+	 */
 	async function spotifyAccess() {
 		var sd = store('SpotifyStore').getActiveSocketAndDevice && store('SpotifyStore').getActiveSocketAndDevice()
 		var socket = sd && (sd.socket || sd)
 		var token = socket && socket.accessToken
-		if (!token && socket && socket.accountId) {
-			// Ask Discord for a fresh token for the linked account.
-			var f = finders()
-			var http = f.lookupModule(f.filters.withProps('HTTPResponseError', 'get'))[0]
-			if (http) {
-				try {
-					var res = await http.get({ url: '/users/@me/connections/spotify/' + socket.accountId + '/access-token' })
+		var accountId = socket && socket.accountId
+		var http = rest()
+		if (!token && http && http.get) {
+			try {
+				if (!accountId) {
+					var list = await http.get({ url: '/users/@me/connections' })
+					var linked = ((list && list.body) || []).find(function (c) { return c && c.type === 'spotify' && !c.revoked })
+					accountId = linked && linked.id
+				}
+				if (accountId) {
+					var res = await http.get({ url: '/users/@me/connections/spotify/' + accountId + '/access-token' })
 					token = res && res.body && res.body.access_token
-				} catch (e) {}
-			}
+				}
+			} catch (e) {}
 		}
 		return { token: token, deviceId: sd && sd.device && sd.device.id }
+	}
+
+	/** A device to play on: the one Spotify says is active, otherwise the first one it lists. */
+	async function pickDevice(token) {
+		try {
+			var res = await fetch('https://api.spotify.com/v1/me/player/devices', { headers: { Authorization: 'Bearer ' + token } })
+			if (!res.ok) return undefined
+			var body = await res.json()
+			var devices = ((body && body.devices) || []).filter(function (d) { return d && !d.is_restricted })
+			var chosen = devices.find(function (d) { return d.is_active }) || devices[0]
+			return chosen && chosen.id
+		} catch (e) {
+			return undefined
+		}
 	}
 
 	/** Plays the other person's track at their position, through Spotify's own web API. */
 	async function playThroughSpotify(activity) {
 		try {
 			var access = await spotifyAccess()
-			if (!access.token) throw new Error('No Spotify sign-in found. Open Spotify and link it in Discord.')
+			if (!access.token) throw new Error('No Spotify sign-in found. Link Spotify in Discord and open the Spotify app.')
 			var trackId = activity.sync_id
 			if (!trackId) throw new Error('This activity has no track to play.')
 			var start = activity.timestamps && activity.timestamps.start
 			var position = start ? Math.max(0, Date.now() - start) : 0
-			var url = 'https://api.spotify.com/v1/me/player/play' + (access.deviceId ? '?device_id=' + encodeURIComponent(access.deviceId) : '')
+			var deviceId = access.deviceId || (await pickDevice(access.token))
+			var url = 'https://api.spotify.com/v1/me/player/play' + (deviceId ? '?device_id=' + encodeURIComponent(deviceId) : '')
 			var res = await fetch(url, {
 				method: 'PUT',
 				headers: { Authorization: 'Bearer ' + access.token, 'Content-Type': 'application/json' },
 				body: JSON.stringify({ uris: ['spotify:track:' + trackId], position_ms: position }),
 			})
 			if (!res.ok) {
-				var why = { 401: 'Spotify sign-in expired. Open Spotify and try again.', 403: 'Spotify Premium is needed to listen along.', 404: 'No active Spotify device. Open Spotify on this phone first.', 429: 'Spotify is busy. Try again in a moment.' }[res.status]
+				var why = { 401: 'Spotify sign-in expired. Open Spotify and try again.', 403: 'Spotify Premium is needed to listen along.', 404: 'No Spotify device found. Open Spotify on this phone first.', 429: 'Spotify is busy. Try again in a moment.' }[res.status]
 				throw new Error(why || 'Spotify said no (' + res.status + ').')
 			}
 			toast('Listening along')
@@ -272,9 +295,9 @@
 			: h(Design.Button, { size: 'md', variant: 'secondary', text: 'Along', loading: loading, onPress: press })
 		return h(
 			RN.View,
-			{ style: { flexDirection: 'row', flex: 1 } },
+			{ style: { flexDirection: 'row', flex: 1, alignItems: 'stretch' } },
 			h(RN.View, { style: { paddingRight: 6 } }, control),
-			h(RN.View, { style: { flexGrow: 1 } }, props.button),
+			h(RN.View, { style: { flex: 1, minWidth: 0 } }, props.button),
 		)
 	}
 
@@ -350,6 +373,45 @@
 		return OPTIONS.filter(function (option) { return enabled(option.setting) })
 	}
 
+	var assetNames = new Map()
+	/** The name of an icon, from its asset ID or its icon component. The same in every language. */
+	function iconName(item) {
+		if (!item || typeof item !== 'object') return ''
+		var src = item.iconSource
+		if (typeof src === 'number') {
+			if (assetNames.has(src)) return assetNames.get(src)
+			var name = ''
+			try {
+				var a = valenced.assets.AssetsRegistry.getAssetByID(src)
+				name = (a && a.name) || ''
+			} catch (e) {}
+			assetNames.set(src, name)
+			return name
+		}
+		var Component = item.IconComponent
+		return (Component && (Component.displayName || Component.name)) || ''
+	}
+
+	// What the + menu icons are called: a camera, a picture, a poll, a paperclip, an app.
+	var PLUS_ICONS = [/camera/i, /image|photo|picture|gallery/i, /poll/i, /paperclip|attach|file|document/i, /\bapps?\b|sparkle|robot|bot/i]
+	function plusScore(items) {
+		var found = {}
+		var strong = false
+		items.forEach(function (item) {
+			var name = iconName(item)
+			if (!name) return
+			PLUS_ICONS.forEach(function (re, i) {
+				if (re.test(name)) {
+					found[i] = true
+					if (i === 0 || i === 2) strong = true
+				}
+			})
+		})
+		return strong ? Object.keys(found).length : 0
+	}
+
+	var inMessageSheet = 0
+
 	function countLabels(list, labels) {
 		var hits = 0
 		for (var i = 0; i < list.length; i++) {
@@ -366,8 +428,8 @@
 	 */
 	function decorateItems(result, items) {
 		var setting
-		if (countLabels(items, PLUS_LABELS) >= 2) setting = 'plusMenu'
-		else if (countLabels(items, MESSAGE_LABELS) >= 2) setting = 'messageMenu'
+		if (countLabels(items, PLUS_LABELS) >= 2 || plusScore(items) >= 3) setting = 'plusMenu'
+		else if (countLabels(items, MESSAGE_LABELS) >= 2 || (inMessageSheet > 0 && items.length >= 2)) setting = 'messageMenu'
 		if (!setting || !enabled(setting)) return result
 		var wanted = wantedOptions()
 		if (!wanted.length) return result
@@ -442,6 +504,49 @@
 			})
 		})
 		return React.cloneElement(result, {}, ...rows, ...added)
+	}
+
+	/**
+	 * Ready-made rows of the hold-down message menu, added the way Valenced's Quoter plugin adds its row:
+	 * find the group of rows that has icons and add one more row of the same kind.
+	 */
+	function addToSheet(result) {
+		if (!enabled('messageMenu')) return result
+		var wanted = wantedOptions()
+		if (!wanted.length) return result
+		var React = valenced.react.React
+		var inserted = false
+		function hasLabel(child) { return React.isValidElement(child) && typeof child.props.label === 'string' }
+		function add(node) {
+			if (!React.isValidElement(node)) return node
+			var kids = React.Children.toArray(node.props.children)
+			if (kids.some(function (c) { return c && typeof c.key === 'string' && c.key.indexOf('spotify-') >= 0 })) {
+				inserted = true
+				return node
+			}
+			if (!inserted && node.props.hasIcons && kids.some(hasLabel)) {
+				var template = kids.find(hasLabel)
+				if (typeof template.type === 'string' || typeof template.props.index === 'number' || 'lastInSection' in template.props) return node
+				var Icon = findIcon(['UserPlayIcon', 'MusicIcon', 'PlayIcon'])
+				var baseIcon = template.props.icon
+				var icon = Icon && React.isValidElement(baseIcon) ? React.cloneElement(baseIcon, { IconComponent: Icon }) : baseIcon
+				inserted = true
+				var Row = template.type
+				return React.cloneElement(node, {}, ...kids, ...wanted.map(function (option) {
+					return h(Row, {
+						key: 'spotify-' + option.setting,
+						label: option.label,
+						icon: icon,
+						onPress: function () {
+							try { valenced.discord.actions.ActionSheetActionCreators.hideAllActionSheets() } catch (e) {}
+							setTimeout(option.run, 0)
+						},
+					})
+				}))
+			}
+			return React.cloneElement(node, {}, React.Children.map(node.props.children, add))
+		}
+		return add(result)
 	}
 
 	/** Looks at every element Discord creates, and adds the options to the menus above. */
@@ -550,6 +655,33 @@
 				)
 			})
 			cleanup(function () { spotifyActions = undefined })
+
+			// The hold-down message menu, by Discord's name for it. The same in every language.
+			cleanup(
+				f.getModules(
+					f.filters.withName('LongPressMessageActionSheet'),
+					function (module) {
+						if (!module || typeof module.default !== 'function') return
+						cleanup(
+							valenced.patcher.instead(module, 'default', function (args, original) {
+								var result
+								inMessageSheet++
+								try {
+									result = Reflect.apply(original, this, args)
+								} finally {
+									inMessageSheet--
+								}
+								try {
+									return addToSheet(result)
+								} catch (e) {
+									return result
+								}
+							}),
+						)
+					},
+					{ returnNamespace: true },
+				),
+			)
 
 			try {
 				installMenuHook(cleanup)
