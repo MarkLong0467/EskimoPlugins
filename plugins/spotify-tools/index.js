@@ -1,56 +1,41 @@
 (function (exports) {
 	/*
-	 * Spotify Tools for Valenced: Listen Along buttons and Send Spotify Invite.
+	 * Spotify Tools for Valenced: Listen Along, and sending your song as a listen along invite, a song
+	 * link or an album link.
 	 * Based on the "Add Listen Along" and "Send Spotify invite" modules of nexpid's NexxUtils for
 	 * Revenge (CC BY 4.0), https://github.com/nexpid/RevengePlugins. Rewritten for Valenced.
 	 * Shipped as written. Keep `(function` as the first thing in this file: Valenced loads it
 	 * as `return <file>`.
 	 */
 	var TOAST = 'ESKIMO_SPOTIFY_TOOLS'
-	var defaults = { listenAlong: true, sendInvite: true, sendSongLink: true, sendAlbumLink: true, popupRows: false }
+	var defaults = {
+		listenAlong: true,
+		sendInvite: true,
+		sendSongLink: true,
+		sendAlbumLink: true,
+		messageMenu: true,
+		plusMenu: true,
+	}
 
 	var storage
 	var spotifyActions
-	var status = {}
-	var counters = { shown: 0, skipped: 0, popup: 0, sheet: 0 }
-	var MENU_LABELS = { Camera: 1, Photos: 1, Poll: 1, Files: 1, Apps: 1 }
-	// Rows of the menu you get when you hold down a message.
+	// Rows of the + menu, and of the menu you get when you hold down a message.
+	var PLUS_LABELS = { Camera: 1, Photos: 1, Poll: 1, Files: 1, Apps: 1 }
 	var MESSAGE_LABELS = {
 		'Reply': 1, 'Copy Text': 1, 'Mark Unread': 1, 'Copy Message Link': 1, 'Pin Message': 1, 'Unpin Message': 1,
 		'Edit Message': 1, 'Delete Message': 1, 'Add Reaction': 1, 'Forward': 1, 'Report Message': 1,
 		'Create Thread': 1, 'Copy Message ID': 1, 'Speak Message': 1, 'Remind Me': 1, 'Bookmark': 1,
 	}
-	var listeners = []
 
 	function finders() { return valenced.modules.finders }
 	function store(name) { return valenced.discord.flux.Stores[name] }
 	function toast(text) {
 		try { valenced.discord.actions.ToastActionCreators.open(TOAST, { text: text }) } catch (e) {}
 	}
+	/** A switch that is on unless it was turned off. */
 	function enabled(key) {
 		var s = storage && storage.cache
 		return !s || s[key] !== false
-	}
-	/** For switches that start off. */
-	function optedIn(key) {
-		var s = storage && storage.cache
-		return !!s && s[key] === true
-	}
-	function setStatus(key, ok, detail) {
-		status[key] = { ok: ok, detail: detail }
-		notify()
-	}
-	function notify() {
-		listeners.forEach(function (listener) { listener() })
-	}
-	function useRefresh() {
-		var React = valenced.react.React
-		var tick = React.useState(0)
-		React.useEffect(function () {
-			var listener = function () { tick[1](function (n) { return n + 1 }) }
-			listeners.push(listener)
-			return function () { listeners = listeners.filter(function (l) { return l !== listener }) }
-		}, [])
 	}
 
 	function h(type, props) {
@@ -78,24 +63,18 @@
 		})
 	}
 
-	// ---- Patching any component shape ---------------------------------------------------------
-	/** Describes a component for the diagnostics. */
-	function shapeOf(value) {
-		if (value === undefined || value === null) return String(value)
-		if (typeof value === 'function')
-			return value.prototype && typeof value.prototype.render === 'function' ? 'class' : 'function'
-		if (typeof value === 'object') {
-			if (typeof value.type === 'function') return 'memo of ' + shapeOf(value.type)
-			if (typeof value.render === 'function') return 'forwardRef'
-			return 'object (' + Object.keys(value).slice(0, 6).join(', ') + ')'
+	function findIcon(names) {
+		for (var i = 0; i < names.length; i++) {
+			var icon = valenced.utils.discord.lookupGeneratedIconComponent(names[i])
+			if (icon) return icon
 		}
-		return typeof value
 	}
 
+	// ---- Patching a component of any shape -----------------------------------------------------
 	/**
 	 * Patches module[key] whatever it is: a class, a function component, or a memo / forwardRef
 	 * wrapper. `decorate(ret, props)` gets the element it rendered and returns the one to use.
-	 * Returns the shape it patched, or undefined when it could not.
+	 * Returns false when the component is none of those.
 	 */
 	function patchComponent(module, key, decorate, cleanup) {
 		var value = module[key]
@@ -106,7 +85,6 @@
 					try {
 						return decorate(ret, getProps.call(this, args))
 					} catch (e) {
-						console.warn('[spotify-tools] decorate failed:', String(e))
 						return ret
 					}
 				}),
@@ -115,30 +93,25 @@
 		var fromThis = function () { return this.props }
 		var fromArgs = function (args) { return args[0] }
 		if (typeof value === 'function') {
-			if (value.prototype && typeof value.prototype.render === 'function') {
-				patch(value.prototype, 'render', fromThis)
-				return 'class'
-			}
-			patch(module, key, fromArgs)
-			return 'function'
+			if (value.prototype && typeof value.prototype.render === 'function') patch(value.prototype, 'render', fromThis)
+			else patch(module, key, fromArgs)
+			return true
 		}
 		if (value && typeof value === 'object') {
 			if (typeof value.type === 'function') {
-				if (value.type.prototype && typeof value.type.prototype.render === 'function') {
-					patch(value.type.prototype, 'render', fromThis)
-					return 'memo of class'
-				}
-				patch(value, 'type', fromArgs)
-				return 'memo of function'
+				if (value.type.prototype && typeof value.type.prototype.render === 'function') patch(value.type.prototype, 'render', fromThis)
+				else patch(value, 'type', fromArgs)
+				return true
 			}
 			if (typeof value.render === 'function') {
 				patch(value, 'render', fromArgs)
-				return 'forwardRef'
+				return true
 			}
 		}
+		return false
 	}
 
-	// ---- Listen along -------------------------------------------------------------------------
+	// ---- What is playing -----------------------------------------------------------------------
 	/**
 	 * What you are listening to. Discord's Spotify store is empty on some phones even while Spotify is
 	 * playing, so fall back to your own presence, the activity other people see.
@@ -164,6 +137,24 @@
 		return typeof id === 'string' && id.indexOf(':') > 0 ? id.split(':')[1] : undefined
 	}
 
+	/** The song playing on your own Spotify. */
+	function currentTrack() {
+		var spotify = store('SpotifyStore')
+		var track = spotify.getTrack && spotify.getTrack()
+		var activity = mySpotifyActivity()
+		var meta = (activity && activity.metadata) || {}
+		var albumId = (track && track.album && track.album.id) || meta.album_id
+		if (!albumId && typeof meta.context_uri === 'string') {
+			var m = /^spotify:album:(\w+)/.exec(meta.context_uri)
+			if (m) albumId = m[1]
+		}
+		return {
+			trackId: (track && track.id) || (activity && activity.sync_id),
+			albumId: albumId,
+		}
+	}
+
+	// ---- Listen along --------------------------------------------------------------------------
 	/** Why the button can't be used right now, or false when it can. */
 	function disabledReason(activity, userId) {
 		var self = store('UserStore').getCurrentUser()
@@ -215,11 +206,9 @@
 				var why = { 401: 'Spotify sign-in expired. Open Spotify and try again.', 403: 'Spotify Premium is needed to listen along.', 404: 'No active Spotify device. Open Spotify on this phone first.', 429: 'Spotify is busy. Try again in a moment.' }[res.status]
 				throw new Error(why || 'Spotify said no (' + res.status + ').')
 			}
-			setStatus('method', true, "last listen used Spotify's web API")
 			toast('Listening along')
 			return true
 		} catch (e) {
-			setStatus('method', false, String((e && e.message) || e))
 			toast(String((e && e.message) || e))
 			return false
 		}
@@ -237,18 +226,10 @@
 					onceAfterPlayerState(function () { actions.sync(activity, userId) })
 					actions.play(activity, userId)
 				}
-				setStatus('method', true, "last listen used Discord's own controls")
 				return Promise.resolve(true)
 			} catch (e) {}
 		}
 		return playThroughSpotify(activity)
-	}
-
-	function findIcon(names) {
-		for (var i = 0; i < names.length; i++) {
-			var icon = valenced.utils.discord.lookupGeneratedIconComponent(names[i])
-			if (icon) return icon
-		}
 	}
 
 	function ListenButton(props) {
@@ -308,131 +289,66 @@
 	function decorateListen(ret, props) {
 		if (!ret || !enabled('listenAlong')) return ret
 		var activity = activityFrom(props)
-		if (!activity) {
-			counters.skipped++
-			notify()
-			return ret
-		}
-		counters.shown++
-		notify()
-		return h(ListenButton, { button: ret, activity: activity })
+		return activity ? h(ListenButton, { button: ret, activity: activity }) : ret
 	}
 
-	// ---- Send invite --------------------------------------------------------------------------
+	// ---- Sending -------------------------------------------------------------------------------
+	/** Sends a message to the chat you last had open. */
+	function sendMessage(message, clearDraft, options) {
+		var f = finders()
+		var messages = f.lookupModule(f.filters.withProps('sendMessage', 'revealMessage'))[0]
+		var channel = store('SelectedChannelStore').getChannelId()
+		if (!messages || !channel) return toast('Open a chat first, then try again.'), false
+		messages.sendMessage(
+			channel,
+			Object.assign({ tts: false, invalidEmojis: [], validNonShortcutEmojis: [] }, message(channel)),
+			clearDraft,
+			options || {},
+		)
+		return channel
+	}
+
+	/** The invite card for the song you are playing. Uses what you typed as its message. */
 	function sendInvite() {
 		var activity = mySpotifyActivity()
 		if (!activity || !activity.party || !activity.party.id) return toast('Play something on Spotify first.')
-		var f = finders()
-		var messages = f.lookupModule(f.filters.withProps('sendMessage', 'revealMessage'))[0]
-		var drafts = f.lookupModule(f.filters.withProps('clearDraft'))[0]
-		if (!messages) return toast('Could not send the invite.')
-		var channel = store('SelectedChannelStore').getChannelId()
-		if (!channel) return toast('Open a chat first, then try again.')
 		var draft = store('DraftStore')
-		messages.sendMessage(
-			channel,
-			{
-				content: (draft && draft.getDraft(channel, 0)) || '',
-				tts: false,
-				invalidEmojis: [],
-				validNonShortcutEmojis: [],
-			},
+		var channel = sendMessage(
+			function (id) { return { content: (draft && draft.getDraft(id, 0)) || '' } },
 			true,
 			{ activityAction: { activity: activity, type: 3 } },
 		)
+		if (!channel) return
+		var f = finders()
+		var drafts = f.lookupModule(f.filters.withProps('clearDraft'))[0]
 		if (drafts) drafts.clearDraft(channel, 0)
 		var info = store('ChannelStore') && store('ChannelStore').getChannel(channel)
 		toast('Invite sent' + (info && info.name ? ' to #' + info.name : ''))
 	}
 
-	/** The song playing on your own Spotify, as far as Discord knows it. */
-	function currentTrack() {
-		var spotify = store('SpotifyStore')
-		var track = spotify.getTrack && spotify.getTrack()
-		var activity = mySpotifyActivity()
-		var meta = (activity && activity.metadata) || {}
-		var albumId = (track && track.album && track.album.id) || meta.album_id
-		if (!albumId && typeof meta.context_uri === 'string') {
-			var m = /^spotify:album:(\w+)/.exec(meta.context_uri)
-			if (m) albumId = m[1]
-		}
-		return {
-			trackId: (track && track.id) || (activity && activity.sync_id),
-			albumId: albumId,
-			name: (track && track.name) || (activity && activity.details),
-		}
-	}
-
-	/** Sends plain text to the open chat. Leaves your draft alone. */
-	function sendText(content) {
-		var f = finders()
-		var messages = f.lookupModule(f.filters.withProps('sendMessage', 'revealMessage'))[0]
-		var channel = store('SelectedChannelStore').getChannelId()
-		if (!messages || !channel) return toast('Open a chat first, then try again.'), false
-		messages.sendMessage(channel, { content: content, tts: false, invalidEmojis: [], validNonShortcutEmojis: [] }, false, {})
-		return true
-	}
-
 	function sendSongLink() {
 		var t = currentTrack()
 		if (!t.trackId) return toast('Play something on Spotify first.')
-		if (sendText('https://open.spotify.com/track/' + t.trackId)) toast('Song link sent')
+		if (sendMessage(function () { return { content: 'https://open.spotify.com/track/' + t.trackId } }, false)) toast('Song link sent')
 	}
 
 	function sendAlbumLink() {
 		var t = currentTrack()
 		if (!t.trackId) return toast('Play something on Spotify first.')
 		if (!t.albumId) return toast('Could not find the album for this song.')
-		if (sendText('https://open.spotify.com/album/' + t.albumId)) toast('Album link sent')
+		if (sendMessage(function () { return { content: 'https://open.spotify.com/album/' + t.albumId } }, false)) toast('Album link sent')
 	}
 
-	function InviteButton() {
-		var Design = valenced.discord.design.Design
-		var React = valenced.react.React
-		var tick = React.useState(0)
-		React.useEffect(function () {
-			return valenced.discord.flux.onFluxEventDispatched('SPOTIFY_PLAYER_STATE', function (payload) {
-				setTimeout(function () { tick[1](function (n) { return n + 1 }) }, 0)
-				return payload
-			})
-		}, [])
-		var activity = mySpotifyActivity()
-		var disabled = !(activity && activity.party && activity.party.id)
-		var assetId = valenced.assets.getAssetIdByName('ic_spotify_white_16px')
-		var Icon = findIcon(['SpotifyNeutralIcon', 'MusicIcon'])
-		if (assetId == null && !Icon)
-			return h(Design.Button, { size: 'md', variant: 'secondary', text: 'Invite', disabled: disabled, onPress: sendInvite })
-		return h(Design.IconButton, {
-			size: 'md',
-			variant: 'secondary',
-			icon: assetId != null ? assetId : h(Icon, { size: 'sm' }),
-			accessibilityLabel: 'Invite to listen along',
-			disabled: disabled,
-			onPress: sendInvite,
-		})
-	}
-
-	function decorateHeader(ret) {
-		if (!ret || !ret.props || !enabled('sendInvite')) return ret
-		var React = valenced.react.React
-		return React.cloneElement(
-			ret,
-			{},
-			...React.Children.toArray(ret.props.children),
-			h(InviteButton, { key: 'spotify-invite' }),
-		)
-	}
-
-	// ---- Attachment popup ---------------------------------------------------------------------
-	/**
-	 * Adds a Spotify row to the attachment popup (Camera, Photos, Poll, Files...). The popup is found
-	 * by its rows instead of by name: any element whose children include two or more of those labels.
-	 */
-	var POPUP_ROWS = [
-		{ key: 'spotify-invite', setting: 'sendInvite', label: 'Send listen along', run: function () { sendInvite() } },
-		{ key: 'spotify-song', setting: 'sendSongLink', label: 'Send song link', run: function () { sendSongLink() } },
-		{ key: 'spotify-album', setting: 'sendAlbumLink', label: 'Send playing album', run: function () { sendAlbumLink() } },
+	// ---- The menus -----------------------------------------------------------------------------
+	var OPTIONS = [
+		{ setting: 'sendInvite', label: 'Send listen along', run: function () { sendInvite() } },
+		{ setting: 'sendSongLink', label: 'Send song link', run: function () { sendSongLink() } },
+		{ setting: 'sendAlbumLink', label: 'Send playing album', run: function () { sendAlbumLink() } },
 	]
+
+	function wantedOptions() {
+		return OPTIONS.filter(function (option) { return enabled(option.setting) })
+	}
 
 	function countLabels(list, labels) {
 		var hits = 0
@@ -446,36 +362,31 @@
 	/**
 	 * Discord's menus are data driven: a list of items (label, action, iconSource) goes in, and the menu
 	 * draws the rows, tracks which one is pressed and runs the action by its place in the list. So the
-	 * options are added to that list, before the menu draws anything. Adding already drawn rows to
-	 * the result ended with every row lighting up and the first row's action running (the camera).
+	 * options are added to that list, before the menu draws anything.
 	 */
 	function decorateItems(result, items) {
-		var popupHits = countLabels(items, MENU_LABELS)
-		var messageHits = countLabels(items, MESSAGE_LABELS)
-		var group
-		if (popupHits >= 2) group = 'popup'
-		else if (messageHits >= 2) group = 'messageMenu'
-		if (!group) return result
-		if (group === 'popup' && !optedIn('popupRows')) return result
-		var wanted = POPUP_ROWS.filter(function (r) { return enabled(r.setting) })
+		var setting
+		if (countLabels(items, PLUS_LABELS) >= 2) setting = 'plusMenu'
+		else if (countLabels(items, MESSAGE_LABELS) >= 2) setting = 'messageMenu'
+		if (!setting || !enabled(setting)) return result
+		var wanted = wantedOptions()
 		if (!wanted.length) return result
 		for (var i = 0; i < items.length; i++)
-			if (items[i] && POPUP_ROWS.some(function (r) { return r.label === items[i].label })) return result
+			if (items[i] && OPTIONS.some(function (option) { return option.label === items[i].label })) return result
 		var template = items.find(function (item) { return item && typeof item.label === 'string' })
 		if (!template) return result
-		var React = valenced.react.React
 		var Icon = findIcon(['SpotifyNeutralIcon', 'MusicIcon', 'PlayIcon'])
 		var assetId = valenced.assets.getAssetIdByName('ic_spotify_white_16px')
-		var extra = wanted.map(function (def) {
+		var extra = wanted.map(function (option) {
 			var lastPress = 0
 			var press = function () {
 				// One tap can reach more than one handler, so only the first one counts.
 				if (Date.now() - lastPress < 1500) return
 				lastPress = Date.now()
 				try { valenced.discord.actions.ActionSheetActionCreators.hideAllActionSheets() } catch (e) {}
-				setTimeout(def.run, 0)
+				setTimeout(option.run, 0)
 			}
-			var item = Object.assign({}, template, { label: def.label })
+			var item = Object.assign({}, template, { label: option.label })
 			// Nothing of the item it was copied from may remain: its action, its icon or its identity.
 			;['id', 'key', 'testID', 'nativeID', 'index', 'state'].forEach(function (name) { delete item[name] })
 			;['action', 'onPress', 'onSelect', 'onClick', 'callback', 'handler'].forEach(function (name) {
@@ -489,26 +400,22 @@
 			}
 			return item
 		})
-		counters[group === 'popup' ? 'popup' : 'sheet'] += extra.length
-		var current = status[group]
-		if (!current || !current.ok)
-			setStatus(group, true, 'added ' + extra.length + ' items to the list that has ' + items.slice(0, 5).map(function (x) { return x && x.label }).join(', ') + ' (item props: ' + Object.keys(template).join(', ') + ')')
-		return React.cloneElement(result, { items: items.concat(extra) })
+		return valenced.react.React.cloneElement(result, { items: items.concat(extra) })
 	}
 
 	/**
-	 * Menus made of ready rows (like the one Valenced's Quoter plugin adds to) get one more row of the
-	 * same kind, with just a label, an icon and a tap action. Rows that know their place in a list
-	 * belong to a data driven menu and are left to decorateItems.
+	 * Menus made of ready rows get one more row of the same kind, with just a label, an icon and a tap
+	 * action. Rows that know their place in a list belong to a data driven menu, handled by its items.
 	 */
-	function decorateMessageMenu(result, c) {
+	function decorateRows(result, rows) {
+		if (!enabled('messageMenu')) return result
 		var template
 		var hits = 0
-		for (var i = 0; i < c.length; i++) {
-			var el = c[i]
+		for (var i = 0; i < rows.length; i++) {
+			var el = rows[i]
 			var label = el && el.props && el.props.label
 			if (typeof label !== 'string') continue
-			if (MENU_LABELS[label] === 1) return result
+			if (PLUS_LABELS[label] === 1) return result
 			if (typeof el.props.index === 'number' || 'lastInSection' in el.props) return result
 			if (MESSAGE_LABELS[label] === 1) {
 				hits++
@@ -516,114 +423,73 @@
 			}
 		}
 		if (hits < 2 || !template || typeof template.type === 'string') return result
-		var wanted = POPUP_ROWS.filter(function (r) { return enabled(r.setting) })
+		var wanted = wantedOptions()
 		if (!wanted.length) return result
 		var React = valenced.react.React
 		var Icon = findIcon(['UserPlayIcon', 'MusicIcon', 'PlayIcon'])
 		var baseIcon = template.props.icon
 		var icon = Icon && React.isValidElement(baseIcon) ? React.cloneElement(baseIcon, { IconComponent: Icon }) : baseIcon
 		var Row = template.type
-		var rows = wanted.map(function (def) {
+		var added = wanted.map(function (option) {
 			return h(Row, {
-				key: def.key,
-				label: def.label,
+				key: 'spotify-' + option.setting,
+				label: option.label,
 				icon: icon,
 				onPress: function () {
 					try { valenced.discord.actions.ActionSheetActionCreators.hideAllActionSheets() } catch (e) {}
-					setTimeout(def.run, 0)
+					setTimeout(option.run, 0)
 				},
 			})
 		})
-		counters.sheet += rows.length
-		if (!status.messageMenu || !status.messageMenu.ok) setStatus('messageMenu', true, 'added ' + rows.length + ' rows to the menu that has ' + Object.keys(MESSAGE_LABELS).filter(function (l) { return c.some(function (x) { return x && x.props && x.props.label === l }) }).join(', '))
-		return React.cloneElement(result, {}, ...c, ...rows)
+		return React.cloneElement(result, {}, ...rows, ...added)
 	}
 
-	function decoratePopup(result) {
+	/** Looks at every element Discord creates, and adds the options to the menus above. */
+	function decorateMenu(result) {
 		try {
 			var props = result && result.props
-			if (props && Array.isArray(props.items) && props.items.length >= 2 && props.items.length <= 24)
+			if (!props) return result
+			if (Array.isArray(props.items) && props.items.length >= 2 && props.items.length <= 24)
 				return decorateItems(result, props.items)
-			var c = props && props.children
-			if (!Array.isArray(c) || c.length < 2 || c.length > 20) return result
-			if (c.some(function (x) { return x && typeof x.key === 'string' && x.key.indexOf('spotify-') === 0 })) return result
-			return decorateMessageMenu(result, c)
+			var rows = props.children
+			if (!Array.isArray(rows) || rows.length < 2 || rows.length > 20) return result
+			if (rows.some(function (x) { return x && typeof x.key === 'string' && x.key.indexOf('spotify-') === 0 })) return result
+			return decorateRows(result, rows)
 		} catch (e) {
 			return result
 		}
 	}
 
-	function installPopupHook(cleanup) {
+	function installMenuHook(cleanup) {
 		var f = finders()
 		var runtime = f.lookupModule(f.filters.withProps('jsx', 'jsxs'))[0] || valenced.react.ReactJSXRuntime
 		;['jsx', 'jsxs'].forEach(function (name) {
-			if (runtime && typeof runtime[name] === 'function') cleanup(valenced.patcher.after(runtime, name, decoratePopup))
+			if (runtime && typeof runtime[name] === 'function') cleanup(valenced.patcher.after(runtime, name, decorateMenu))
 		})
 	}
 
-	// ---- Message menu (hold down a message) -----------------------------------------------------
-	/**
-	 * Adds the send actions to the menu you get when you hold down a message. This follows the way
-	 * Valenced's own Quoter plugin adds a row there: find the group of rows that has icons and add
-	 * one more row of the same kind.
-	 */
-	function addToSheet(result) {
-		var wanted = POPUP_ROWS.filter(function (r) { return enabled(r.setting) })
-		if (!wanted.length) return result
-		var React = valenced.react.React
-		var inserted = false
-		function add(node) {
-			if (!React.isValidElement(node)) return node
-			var kids = React.Children.toArray(node.props.children)
-			var hasLabel = function (child) { return React.isValidElement(child) && typeof child.props.label === 'string' }
-			if (!inserted && node.props.hasIcons && kids.some(hasLabel)) {
-				var template = kids.find(hasLabel)
-				var Row = template.type
-				var Icon = findIcon(['UserPlayIcon', 'MusicIcon', 'PlayIcon'])
-				var baseIcon = template.props.icon
-				var icon = Icon && React.isValidElement(baseIcon) ? React.cloneElement(baseIcon, { IconComponent: Icon }) : baseIcon
-				inserted = true
-				counters.sheet++
-				var rows = wanted.map(function (def) {
-					return h(Row, {
-						key: def.key,
-						label: def.label,
-						icon: icon,
-						onPress: function () {
-							try { valenced.discord.actions.ActionSheetActionCreators.hideAllActionSheets() } catch (e) {}
-							setTimeout(def.run, 0)
-						},
-					})
-				})
-				if (!status.messageMenu || !status.messageMenu.ok || counters.sheet === 1)
-					setStatus('messageMenu', true, 'added ' + rows.length + ' rows to the message menu')
-				return React.cloneElement(node, {}, ...kids, ...rows)
-			}
-			return React.cloneElement(node, {}, React.Children.map(node.props.children, add))
-		}
-		return add(result)
-	}
-
-	// ---- Settings screen ----------------------------------------------------------------------
+	// ---- Settings ------------------------------------------------------------------------------
 	function SettingsComponent(props) {
 		var Design = valenced.discord.design.Design
 		var RN = valenced.react.ReactNative
 		var json = props.api.jsonStorage
 		storage = json
-		useRefresh()
-		// The diagnostics should follow what is happening, so redraw every couple of seconds.
-		var ticker = valenced.react.React.useState(0)
-		valenced.react.React.useEffect(function () {
-			var id = setInterval(function () { ticker[1](function (n) { return n + 1 }) }, 2000)
-			return function () { clearInterval(id) }
-		}, [])
 		var settings = Object.assign({}, defaults, json.use())
-		function row(label, subLabel) {
-			return h(Design.TableRow, { key: label, label: label, subLabel: subLabel })
+		function toggle(key, label, subLabel) {
+			return h(Design.TableSwitchRow, {
+				key: key,
+				label: label,
+				subLabel: subLabel,
+				value: settings[key] !== false,
+				onValueChange: function (value) {
+					var patch = {}
+					patch[key] = value
+					json.set(patch)
+				},
+			})
 		}
-		function state(key, label, waiting) {
-			var s = status[key]
-			return row(label, !s ? waiting || 'Waiting for Discord to load this part' : s.ok ? 'Working: ' + s.detail : 'Problem: ' + s.detail)
+		function action(key, label, subLabel, onPress) {
+			return h(Design.TableRow, { key: key, label: label, subLabel: subLabel, onPress: onPress })
 		}
 		return h(
 			RN.ScrollView,
@@ -633,96 +499,40 @@
 				{ style: { paddingVertical: 24, paddingHorizontal: 12 }, spacing: 24 },
 				h(
 					Design.TableRowGroup,
-					{ title: 'Features' },
-					h(Design.TableSwitchRow, {
-						label: 'Listen Along',
-						subLabel: 'A button on Spotify activities to listen along with someone',
-						value: settings.listenAlong,
-						onValueChange: function (listenAlong) { json.set({ listenAlong: listenAlong }) },
-					}),
-					h(Design.TableSwitchRow, {
-						label: 'Send listen along',
-						subLabel: 'A row in the menu you get when you hold down a message. Sends the invite card.',
-						value: settings.sendInvite,
-						onValueChange: function (sendInvite) { json.set({ sendInvite: sendInvite }) },
-					}),
-					h(Design.TableSwitchRow, {
-						label: 'Send song link',
-						subLabel: 'A row in the hold-down message menu. Sends the link of the song playing.',
-						value: settings.sendSongLink,
-						onValueChange: function (sendSongLink) { json.set({ sendSongLink: sendSongLink }) },
-					}),
-					h(Design.TableSwitchRow, {
-						label: 'Send playing album',
-						subLabel: 'A row in the hold-down message menu. Sends the link of the album playing.',
-						value: settings.sendAlbumLink,
-						onValueChange: function (sendAlbumLink) { json.set({ sendAlbumLink: sendAlbumLink }) },
-					}),
-					h(Design.TableSwitchRow, {
-						label: 'Also add them to the attachment popup (experimental)',
-						subLabel: 'Adds the three options to the + menu (Camera, Photos, Poll...). Off by default until it is confirmed on your version.',
-						value: !!settings.popupRows,
-						onValueChange: function (popupRows) { json.set({ popupRows: popupRows }) },
-					}),
+					{ title: 'Listen along' },
+					toggle('listenAlong', 'Listen along button', "Adds a button next to Play on Spotify on other people's Spotify activity"),
 				),
 				h(
 					Design.TableRowGroup,
-					{ title: 'Actions' },
-					h(Design.TableRow, {
-						key: 'send',
-						label: 'Send listen along',
-						subLabel: 'Send the invite card for your Spotify to the last chat you had open',
-						onPress: sendInvite,
-					}),
-					h(Design.TableRow, {
-						key: 'song',
-						label: 'Send song link',
-						subLabel: 'Send the link of the song playing to the last chat you had open',
-						onPress: sendSongLink,
-					}),
-					h(Design.TableRow, {
-						key: 'album',
-						label: 'Send playing album',
-						subLabel: 'Send the link of the album playing to the last chat you had open',
-						onPress: sendAlbumLink,
-					}),
+					{ title: 'Send options' },
+					toggle('sendInvite', 'Send listen along', 'The invite card for the song you are playing'),
+					toggle('sendSongLink', 'Send song link', 'A link to the song you are playing'),
+					toggle('sendAlbumLink', 'Send playing album', 'A link to the album you are playing'),
 				),
 				h(
 					Design.TableRowGroup,
-					{ title: 'Diagnostics' },
-					state('method', 'Last listen along', 'Not used yet. Tap the music button on a friend\'s Spotify card.'),
-					state('controls', 'Discord Spotify controls (optional)', 'Not found. That is fine, Spotify is used directly instead.'),
-					state('listenClassic', 'Listen Along (activity card)'),
-					state('listenSimple', 'Listen Along (small button)', 'Not in this version of Discord. That is fine.'),
-					state('messageMenu', 'Hold-down message menu', 'Discord loads this the first time you hold down a message. Do that once, then come back.'),
-					state('popup', 'Attachment popup (experimental)', 'Off unless you turn on the experimental switch. Open the + menu once to load it.'),
-					state('invite', 'Send Invite (older attachment menu)', 'Not in this version of Discord. That is fine.'),
-					row('Spotify right now', (function () {
-						var a = mySpotifyActivity()
-						if (!a) return 'Nothing found. Is Spotify playing, and linked in Discord?'
-						var from = store('SpotifyStore') && store('SpotifyStore').getActivity && store('SpotifyStore').getActivity() === a ? "Discord's Spotify store" : 'your presence'
-						var name = [a.details, a.state].filter(Boolean).join(' by ') || 'a track'
-						return name + (a.party && a.party.id ? '. Sending and listening along are possible (from ' + from + ').' : '. No listen along party on it (from ' + from + ').')
-					})()),
-					row('Last chat you had open', (function () {
-						var id = store('SelectedChannelStore') && store('SelectedChannelStore').getChannelId()
-						var c = id && store('ChannelStore') && store('ChannelStore').getChannel(id)
-						return c ? (c.name ? '#' + c.name : 'a direct message') : 'none'
-					})()),
-					row('Buttons added so far', counters.shown + ' shown, ' + counters.skipped + ' skipped (no listener found)'),
+					{ title: 'Where they show up' },
+					toggle('messageMenu', 'Hold-down message menu', 'The menu you get when you hold down a message'),
+					toggle('plusMenu', '+ menu', 'The menu you get when you tap + next to the message box'),
 				),
 				h(
 					Design.TableRowGroup,
-					{ title: 'Good to know' },
-					row('Spotify', 'Spotify must be linked to Discord and open on your device.'),
-					row('After toggling', 'Buttons change the next time the screen they are on redraws.'),
-					row('Credit', "Based on nexpid's NexxUtils for Revenge."),
+					{ title: 'Send now' },
+					action('invite', 'Send listen along', 'Sends to the chat you last had open', sendInvite),
+					action('song', 'Send song link', 'Sends to the chat you last had open', sendSongLink),
+					action('album', 'Send playing album', 'Sends to the chat you last had open', sendAlbumLink),
+				),
+				h(
+					Design.TableRowGroup,
+					{ title: 'About' },
+					h(Design.TableRow, { key: 'needs', label: 'Before you start', subLabel: 'Spotify must be linked to Discord. Listening along needs Spotify Premium and Spotify open on your phone.' }),
+					h(Design.TableRow, { key: 'credit', label: 'Credit', subLabel: "Based on nexpid's NexxUtils for Revenge." }),
 				),
 			),
 		)
 	}
 
-	// ---- Plugin -------------------------------------------------------------------------------
+	// ---- Plugin --------------------------------------------------------------------------------
 	Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
 	exports.default = plugin({
 		jsonStorage: { load: true, default: defaults },
@@ -732,63 +542,28 @@
 			storage = api.jsonStorage
 			var f = finders()
 
-			function install(key, filter, exportKey, decorate, what) {
+			// The Listen Along button goes next to Play on Spotify, in either of its two forms.
+			;['SpotifyPlayButton', 'PlayOnSpotifyButton'].forEach(function (name) {
 				cleanup(
-					f.getModules(filter, function (module) {
-						var target = exportKey === 'default' && module && module.default === undefined ? undefined : module
-						var shape = target && patchComponent(target, exportKey, decorate, cleanup)
-						if (shape) return setStatus(key, true, what + ' found (' + shape + ')')
-						var detail = what + ' has an unexpected shape: ' + shapeOf(module && module[exportKey])
-						setStatus(key, false, detail)
-						api.plugin.reportError(detail)
+					f.getModules(f.filters.withProps(name), function (module) {
+						patchComponent(module, name, decorateListen, cleanup)
 					}),
 				)
-			}
+			})
 
-			install('listenClassic', f.filters.withProps('SpotifyPlayButton'), 'SpotifyPlayButton', decorateListen, 'Spotify play button')
-			install('listenSimple', f.filters.withProps('PlayOnSpotifyButton'), 'PlayOnSpotifyButton', decorateListen, 'Play on Spotify button')
-			// Valenced only finds parts Discord has loaded, so catch the Spotify controls as they load.
+			// Discord's own Spotify controls are used for listening along when this version has them.
 			;[['play', 'sync'], ['sync', 'pause']].forEach(function (names) {
 				cleanup(
 					f.getModules(f.filters.withProps.apply(null, names), function (module) {
-						if (spotifyActions) return
-						spotifyActions = module
-						setStatus('controls', true, 'found (' + Object.keys(module).filter(function (k) { return typeof module[k] === 'function' }).slice(0, 8).join(', ') + ')')
+						if (!spotifyActions) spotifyActions = module
 					}),
 				)
 			})
 			cleanup(function () { spotifyActions = undefined })
+
 			try {
-				cleanup(
-				f.getModules(
-					f.filters.withName('LongPressMessageActionSheet'),
-					function (module) {
-						if (!module || typeof module.default !== 'function') {
-							var detail = 'The message menu has an unexpected shape: ' + shapeOf(module && module.default)
-							setStatus('messageMenu', false, detail)
-							return api.plugin.reportError(detail)
-						}
-						cleanup(
-							valenced.patcher.instead(module, 'default', function (args, original) {
-								var result = Reflect.apply(original, this, args)
-								try {
-									return addToSheet(result)
-								} catch (e) {
-									console.warn('[spotify-tools] message menu failed:', String(e))
-									return result
-								}
-							}),
-						)
-						if (!status.messageMenu) setStatus('messageMenu', true, 'message menu found, waiting for you to hold down a message')
-					},
-					{ returnNamespace: true },
-				),
-			)
-			installPopupHook(cleanup)
-			} catch (e) {
-				setStatus('popup', false, 'could not hook the popup: ' + String(e))
-			}
-			install('invite', f.filters.withName('MediaKeyboardListHeader'), 'default', decorateHeader, 'Attachment menu header')
+				installMenuHook(cleanup)
+			} catch (e) {}
 		},
 	})
 	return exports
