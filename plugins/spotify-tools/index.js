@@ -14,6 +14,12 @@
 	var status = {}
 	var counters = { shown: 0, skipped: 0, popup: 0, sheet: 0 }
 	var MENU_LABELS = { Camera: 1, Photos: 1, Poll: 1, Files: 1, Apps: 1 }
+	// Rows of the menu you get when you hold down a message.
+	var MESSAGE_LABELS = {
+		'Reply': 1, 'Copy Text': 1, 'Mark Unread': 1, 'Copy Message Link': 1, 'Pin Message': 1, 'Unpin Message': 1,
+		'Edit Message': 1, 'Delete Message': 1, 'Add Reaction': 1, 'Forward': 1, 'Report Message': 1,
+		'Create Thread': 1, 'Copy Message ID': 1, 'Speak Message': 1, 'Remind Me': 1, 'Bookmark': 1,
+	}
 	var listeners = []
 
 	function finders() { return valenced.modules.finders }
@@ -428,6 +434,48 @@
 		{ key: 'spotify-album', setting: 'sendAlbumLink', label: 'Send playing album', run: function () { sendAlbumLink() } },
 	]
 
+	/**
+	 * The hold-down message menu, found by its rows (two or more of Reply, Copy Text, Mark Unread...).
+	 * The rows are built the way Valenced's Quoter plugin builds its row: the same kind of row as the
+	 * ones already there, with just a label, an icon and a tap action.
+	 */
+	function decorateMessageMenu(result, c) {
+		var template
+		var hits = 0
+		for (var i = 0; i < c.length; i++) {
+			var el = c[i]
+			var label = el && el.props && el.props.label
+			if (typeof label !== 'string') continue
+			if (MENU_LABELS[label] === 1) return result
+			if (MESSAGE_LABELS[label] === 1) {
+				hits++
+				if (!template) template = el
+			}
+		}
+		if (hits < 2 || !template || typeof template.type === 'string') return result
+		var wanted = POPUP_ROWS.filter(function (r) { return enabled(r.setting) })
+		if (!wanted.length) return result
+		var React = valenced.react.React
+		var Icon = findIcon(['UserPlayIcon', 'MusicIcon', 'PlayIcon'])
+		var baseIcon = template.props.icon
+		var icon = Icon && React.isValidElement(baseIcon) ? React.cloneElement(baseIcon, { IconComponent: Icon }) : baseIcon
+		var Row = template.type
+		var rows = wanted.map(function (def) {
+			return h(Row, {
+				key: def.key,
+				label: def.label,
+				icon: icon,
+				onPress: function () {
+					try { valenced.discord.actions.ActionSheetActionCreators.hideAllActionSheets() } catch (e) {}
+					setTimeout(def.run, 0)
+				},
+			})
+		})
+		counters.sheet += rows.length
+		if (!status.messageMenu || !status.messageMenu.ok) setStatus('messageMenu', true, 'added ' + rows.length + ' rows to the menu that has ' + Object.keys(MESSAGE_LABELS).filter(function (l) { return c.some(function (x) { return x && x.props && x.props.label === l }) }).join(', '))
+		return React.cloneElement(result, {}, ...c, ...rows)
+	}
+
 	function decoratePopup(result) {
 		try {
 			var props = result && result.props
@@ -445,7 +493,7 @@
 					if (!template) template = el
 				}
 			}
-			if (hits < 2) return result
+			if (hits < 2) return decorateMessageMenu(result, c)
 			if (!optedIn('popupRows')) return result
 			var wanted = POPUP_ROWS.filter(function (r) { return enabled(r.setting) })
 			if (!wanted.length) return result
