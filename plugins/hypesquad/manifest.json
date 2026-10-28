@@ -1,0 +1,19 @@
+{
+	"format": 1,
+	"id": "marklong.hypesquad",
+	"name": "HypeSquad Switcher",
+	"description": "Switch your HypeSquad house (Bravery, Brilliance or Balance) or leave it with one tap from a HypeSquad section in Discord's settings.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
