@@ -75,30 +75,80 @@
 	}
 
 	// ---- Switching -----------------------------------------------------------------------------
-	function rest() {
+	var TIMEOUT_MS = 15000
+
+	/** Discord's own server connection: the module with HTTPResponseError, as Valenced's Quoter finds it. */
+	function discordHttp() {
 		var f = finders()
-		return f.lookupModule(f.filters.withProps('get', 'post', 'patch'))[0] || f.lookupModule(f.filters.withProps('HTTPResponseError', 'get'))[0]
+		return f.lookupModule(f.filters.withProps('HTTPResponseError', 'get'))[0] || f.lookupModule(f.filters.withProps('get', 'post', 'del', 'patch'))[0]
+	}
+
+	function withTimeout(promise) {
+		return new Promise(function (resolve, reject) {
+			var timer = setTimeout(function () { reject({ timedOut: true }) }, TIMEOUT_MS)
+			Promise.resolve(promise).then(
+				function (value) { clearTimeout(timer); resolve(value) },
+				function (error) { clearTimeout(timer); reject(error) },
+			)
+		})
+	}
+
+	/** Whether an error came from Discord answering, as opposed to the call itself breaking. */
+	function isAnswer(error) {
+		return !!error && (error.status != null || error.body != null || (error.response && error.response.status != null))
+	}
+
+	/** Sends the request through Discord's own connection, or straight to the API with your token. */
+	async function request(method, path, body) {
+		var http = discordHttp()
+		var call = method === 'DELETE' ? (http && (http.del || http.delete)) : http && http.post
+		if (call) {
+			try {
+				return await withTimeout(call.call(http, body ? { url: path, body: body } : { url: path }))
+			} catch (error) {
+				if (isAnswer(error) || (error && error.timedOut)) throw error
+			}
+		}
+		var f = finders()
+		var auth = f.lookupModule(f.filters.withProps('getToken'))[0]
+		var token = auth && auth.getToken && auth.getToken()
+		if (!token) throw { message: 'Could not find a way to reach Discord.' }
+		var res = await withTimeout(
+			fetch('https://discord.com/api/v9' + path, {
+				method: method,
+				headers: { Authorization: token, 'Content-Type': 'application/json' },
+				body: body ? JSON.stringify(body) : undefined,
+			}),
+		)
+		if (!res.ok) {
+			var parsed = {}
+			try { parsed = await res.json() } catch (e) {}
+			throw { status: res.status, body: parsed }
+		}
+		return res
 	}
 
 	function explain(error) {
-		var status = error && (error.status || (error.response && error.response.status))
-		var message = error && error.body && error.body.message
+		if (error && error.timedOut) return 'Discord took too long to answer. Try again.'
+		var status = error && (error.status != null ? error.status : error.response && error.response.status)
+		var body = error && error.body
+		if (typeof body === 'string') { try { body = JSON.parse(body) } catch (e) { body = undefined } }
+		var message = body && body.message
+		if (body && body.captcha_key) return 'Discord wants a captcha for this change, which a plugin cannot do. Try again later.'
 		if (status === 429) return 'Discord says slow down. Try again in a minute.'
-		if (status === 401 || status === 403) return message || 'Discord would not let you change HypeSquad right now.'
-		if (message) return message
-		return 'Could not change your HypeSquad. Try again.'
+		if (message) return message + (status ? ' (' + status + ')' : '')
+		if (status) return 'Discord said no (' + status + ').'
+		return (error && error.message) || 'Could not change your HypeSquad. Try again.'
 	}
 
 	async function change(houseId) {
 		if (busy) return toast('Still working on the last change.')
 		if (currentHouse() === houseId) return toast(houseId ? 'You are already in HypeSquad ' + houseName(houseId) + '.' : 'You are not in a HypeSquad house.')
-		var http = rest()
-		if (!http) return toast('Could not reach Discord. Try again.')
 		busy = true
 		toast(houseId ? 'Joining HypeSquad ' + houseName(houseId) + '...' : 'Leaving HypeSquad...')
 		try {
-			if (houseId) await http.post({ url: '/hypesquad/online', body: { house_id: houseId } })
-			else await (http.del || http.delete).call(http, { url: '/hypesquad/online' })
+			if (houseId) await request('POST', '/hypesquad/online', { house_id: houseId })
+			else await request('DELETE', '/hypesquad/online')
 			optimistic = houseId
 			notify()
 			toast(houseId ? 'You are now in HypeSquad ' + houseName(houseId) + '.' : 'You left HypeSquad.')

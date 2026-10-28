@@ -4,7 +4,7 @@
 	"name": "HypeSquad Switcher",
 	"description": "Switch your HypeSquad house (Bravery, Brilliance or Balance) or leave it with one tap from the plugin settings.",
 	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-	"version": "1.1.0",
+	"version": "1.1.1",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"
