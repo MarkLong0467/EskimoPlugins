@@ -179,13 +179,26 @@
         "pylix (https://github.com/nexpid/RevengePlugins \"Original Message Preview for Revenge\")"
       ],
       "channels": {
-        "latest": "1.0.0"
+        "latest": "1.0.1"
       },
       "versions": {
         "1.0.0": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.message-preview@1.0.0.zip",
           "sha256": "06dc55acb767d4e972cba4d8a76d5d8ed406d9176e99a0dfff72d483737d17d7",
           "size": 4582,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.0.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.message-preview@1.0.1.zip",
+          "sha256": "b1035fd67bfdffb7e943de210d53a45a31f9589988bceef9333647bd4296d5bf",
+          "size": 4717,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
