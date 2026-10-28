@@ -11,7 +11,8 @@
 
 	var storage
 	var status = {}
-	var counters = { shown: 0, skipped: 0 }
+	var counters = { shown: 0, skipped: 0, popup: 0 }
+	var MENU_LABELS = { Camera: 1, Photos: 1, Poll: 1, Files: 1, Apps: 1 }
 	var listeners = []
 
 	function finders() { return valenced.modules.finders }
@@ -290,6 +291,58 @@
 		)
 	}
 
+	// ---- Attachment popup ---------------------------------------------------------------------
+	/**
+	 * Adds a Spotify row to the attachment popup (Camera, Photos, Poll, Files...). The popup is found
+	 * by its rows instead of by name: any element whose children include two or more of those labels.
+	 */
+	function decoratePopup(result) {
+		try {
+			var props = result && result.props
+			var c = props && props.children
+			if (!Array.isArray(c) || c.length < 2 || c.length > 14) return result
+			var template
+			var hits = 0
+			for (var i = 0; i < c.length; i++) {
+				var el = c[i]
+				var label = el && el.props && el.props.label
+				if (typeof label !== 'string') continue
+				if (el.key === 'spotify-invite') return result
+				if (MENU_LABELS[label] === 1) {
+					hits++
+					if (!template) template = el
+				}
+			}
+			if (hits < 2 || !enabled('sendInvite')) return result
+			var React = valenced.react.React
+			var Icon = findIcon(['SpotifyNeutralIcon', 'MusicIcon', 'PlayIcon'])
+			var icon = template.props.icon
+			if (Icon && React.isValidElement(icon)) icon = React.cloneElement(icon, { IconComponent: Icon })
+			var row = React.cloneElement(template, {
+				key: 'spotify-invite',
+				label: 'Spotify invite',
+				icon: icon,
+				onPress: function () {
+					try { valenced.discord.actions.ActionSheetActionCreators.hideAllActionSheets() } catch (e) {}
+					setTimeout(sendInvite, 0)
+				},
+			})
+			counters.popup++
+			if (!status.popup || !status.popup.ok) setStatus('popup', true, 'added to the popup that has ' + Object.keys(MENU_LABELS).filter(function (l) { return c.some(function (x) { return x && x.props && x.props.label === l }) }).join(', '))
+			return React.cloneElement(result, {}, ...c, row)
+		} catch (e) {
+			return result
+		}
+	}
+
+	function installPopupHook(cleanup) {
+		var f = finders()
+		var runtime = f.lookupModule(f.filters.withProps('jsx', 'jsxs'))[0] || valenced.react.ReactJSXRuntime
+		;['jsx', 'jsxs'].forEach(function (name) {
+			if (runtime && typeof runtime[name] === 'function') cleanup(valenced.patcher.after(runtime, name, decoratePopup))
+		})
+	}
+
 	// ---- Settings screen ----------------------------------------------------------------------
 	function SettingsComponent(props) {
 		var Design = valenced.discord.design.Design
@@ -342,7 +395,8 @@
 					{ title: 'Diagnostics' },
 					state('listenClassic', 'Listen Along (activity card)'),
 					state('listenSimple', 'Listen Along (small button)'),
-					state('invite', 'Send Invite (attachment menu)'),
+					state('popup', 'Send Invite (attachment popup)'),
+					state('invite', 'Send Invite (older attachment menu)'),
 					row('Spotify right now', (function () {
 						var a = store('SpotifyStore') && store('SpotifyStore').getActivity()
 						return a && a.party && a.party.id ? 'Playing, listen along is possible' : 'Nothing playing, or no listen along party'
@@ -390,6 +444,11 @@
 
 			install('listenClassic', f.filters.withProps('SpotifyPlayButton'), 'SpotifyPlayButton', decorateListen, 'Spotify play button')
 			install('listenSimple', f.filters.withProps('PlayOnSpotifyButton'), 'PlayOnSpotifyButton', decorateListen, 'Play on Spotify button')
+			try {
+				installPopupHook(cleanup)
+			} catch (e) {
+				setStatus('popup', false, 'could not hook the popup: ' + String(e))
+			}
 			install('invite', f.filters.withName('MediaKeyboardListHeader'), 'default', decorateHeader, 'Attachment menu header')
 		},
 	})
