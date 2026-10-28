@@ -327,17 +327,30 @@
 			var Icon = findIcon(['SpotifyNeutralIcon', 'MusicIcon', 'PlayIcon'])
 			var icon = template.props.icon
 			if (Icon && React.isValidElement(icon)) icon = React.cloneElement(icon, { IconComponent: Icon })
-			var row = React.cloneElement(template, {
-				key: 'spotify-invite',
-				label: 'Spotify invite',
-				icon: icon,
-				onPress: function () {
-					try { valenced.discord.actions.ActionSheetActionCreators.hideAllActionSheets() } catch (e) {}
-					setTimeout(sendInvite, 0)
-				},
+			var lastPress = 0
+			var press = function () {
+				// One tap can reach more than one of these handlers, so only the first one counts.
+				if (Date.now() - lastPress < 1500) return
+				lastPress = Date.now()
+				try { valenced.discord.actions.ActionSheetActionCreators.hideAllActionSheets() } catch (e) {}
+				setTimeout(sendInvite, 0)
+			}
+			// The row is a copy of one of Discord's own rows, so it also carries that row's actions and
+			// IDs. Replace every action and every identifier, so nothing of the original (Camera,
+			// Photos...) can still run.
+			var overrides = { key: 'spotify-invite', label: 'Spotify invite', icon: icon }
+			var propNames = Object.keys(template.props)
+			propNames.forEach(function (name) {
+				var value = template.props[name]
+				if (name === 'icon' || name === 'label' || name === 'key') return
+				if (typeof value === 'function' && /^(onPress|onSelect|onClick|onTap|onAction|action|callback|handler)$/.test(name)) overrides[name] = press
+				else if (typeof value === 'string' && /^(id|testID|nativeID|name|value|trigger)$/.test(name)) overrides[name] = 'spotify-invite'
+				else if (typeof value === 'string' && /^(accessibilityLabel|title|description|sublabel|subLabel)$/.test(name)) overrides[name] = name === 'accessibilityLabel' || name === 'title' ? 'Spotify invite' : undefined
 			})
+			overrides.onPress = press
+			var row = React.cloneElement(template, overrides)
 			counters.popup++
-			if (!status.popup || !status.popup.ok) setStatus('popup', true, 'added to the popup that has ' + Object.keys(MENU_LABELS).filter(function (l) { return c.some(function (x) { return x && x.props && x.props.label === l }) }).join(', '))
+			if (!status.popup || !status.popup.ok) setStatus('popup', true, 'row props [' + propNames.join(', ') + '], added to the popup that has ' + Object.keys(MENU_LABELS).filter(function (l) { return c.some(function (x) { return x && x.props && x.props.label === l }) }).join(', '))
 			return React.cloneElement(result, {}, ...c, row)
 		} catch (e) {
 			return result
