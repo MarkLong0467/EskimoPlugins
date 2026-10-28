@@ -3,150 +3,6 @@
   "name": "EskimoPlugins",
   "description": "Mark's plugins for Valenced.",
   "plugins": {
-    "marklong.nef-viewer": {
-      "name": "NEF Viewer",
-      "description": "Shows Nikon RAW (.nef, .nrw) attachments as photos in chat instead of files.",
-      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-      "channels": {
-        "latest": "1.0.1"
-      },
-      "versions": {
-        "1.0.1": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.nef-viewer@1.0.1.zip",
-          "sha256": "e8ced22ce39e4b93e2ca4360cef5567dd9214f1c8504598a0d738d31a4b9c80c",
-          "size": 3744,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        }
-      }
-    },
-    "marklong.split-large-messages": {
-      "name": "Split Large Messages",
-      "description": "Automatically splits messages longer than 2000 (4000 with Nitro) characters into several messages.",
-      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-      "channels": {
-        "latest": "1.0.1"
-      },
-      "versions": {
-        "1.0.1": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.split-large-messages@1.0.1.zip",
-          "sha256": "8a6d001e4bb9ff884a0220ae586f25d3a4f304478ed17024519f26968232a347",
-          "size": 1133,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        }
-      }
-    },
-    "marklong.valid-user": {
-      "name": "Valid User",
-      "description": "Resolves @unknown-user mentions in messages and embeds automatically, no tap needed.",
-      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-      "channels": {
-        "latest": "1.0.0"
-      },
-      "versions": {
-        "1.0.0": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.valid-user@1.0.0.zip",
-          "sha256": "8a39378f49429ec6377315cdb5dc6142cf3762f441cc9c824f6b4f0ceeb11006",
-          "size": 1537,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        }
-      }
-    },
-    "marklong.rich-presence": {
-      "name": "Rich Presence",
-      "description": "Fully customizable rich presence: profiles, every activity field, images, timer, party size, buttons and live text variables. Shows nothing until you set it up.",
-      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-      "channels": {
-        "latest": "1.2.1"
-      },
-      "versions": {
-        "1.2.1": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.rich-presence@1.2.1.zip",
-          "sha256": "2cec83dc728dd539c369078114ff3a28f8426013575649685afc73792f2f7bb4",
-          "size": 9537,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        }
-      }
-    },
-    "marklong.spotify-tools": {
-      "name": "Spotify Tools",
-      "description": "A Listen Along button on Spotify activities, and send what you are playing as a listen along invite, a song link or an album link from the + menu.",
-      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-      "contributors": [
-        "nexpid (https://github.com/nexpid \"Original idea and approach\")"
-      ],
-      "channels": {
-        "latest": "2.2.0"
-      },
-      "versions": {
-        "2.2.0": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.spotify-tools@2.2.0.zip",
-          "sha256": "6ba33b0963e65a4fb6ed4891d0932cec7a0522754b67eeb7783d1e47b30bef82",
-          "size": 7691,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        }
-      }
-    },
-    "marklong.server-info": {
-      "name": "Server Info",
-      "description": "Hold down a server icon and tap Server Info to see its members, roles, channels, boosts, owner, friends in it and more.",
-      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-      "contributors": [
-        "fshin (https://github.com/kmmiio99o/revenge-plugins \"Original Server Info plugin for Revenge, CC0\")"
-      ],
-      "channels": {
-        "latest": "1.0.0"
-      },
-      "versions": {
-        "1.0.0": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.server-info@1.0.0.zip",
-          "sha256": "a5721a05c26531306c81e448e4d8432f7f84d353b6f7c2f7c04d5f978c4e5af3",
-          "size": 5512,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        }
-      }
-    },
     "marklong.hypesquad": {
       "name": "HypeSquad Switcher",
       "description": "Switch your HypeSquad house (Bravery, Brilliance or Balance) or leave it with one tap from the plugin settings.",
@@ -212,6 +68,173 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.message-preview@1.0.2.zip",
           "sha256": "423b81958739aacd98137f2295a4e47d5e761b80170ba1d16d675f80abc92dae",
           "size": 4948,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
+    },
+    "marklong.nef-viewer": {
+      "name": "NEF Viewer",
+      "description": "Shows Nikon RAW (.nef, .nrw) attachments as photos in chat instead of files.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.1"
+      },
+      "versions": {
+        "1.0.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.nef-viewer@1.0.1.zip",
+          "sha256": "e8ced22ce39e4b93e2ca4360cef5567dd9214f1c8504598a0d738d31a4b9c80c",
+          "size": 3744,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
+    },
+    "marklong.one-ping-per-dm": {
+      "name": "One Ping Per DM",
+      "description": "If someone sends you several unread messages in a DM, you only hear one notification sound. Read the chat to reset it.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.one-ping-per-dm@1.0.0.zip",
+          "sha256": "36aee0b48bcd8efa8aed579711eab51b98f58b0618882f4bf58e667594d58326",
+          "size": 2517,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
+    },
+    "marklong.rich-presence": {
+      "name": "Rich Presence",
+      "description": "Fully customizable rich presence: profiles, every activity field, images, timer, party size, buttons and live text variables. Shows nothing until you set it up.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.2.1"
+      },
+      "versions": {
+        "1.2.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.rich-presence@1.2.1.zip",
+          "sha256": "2cec83dc728dd539c369078114ff3a28f8426013575649685afc73792f2f7bb4",
+          "size": 9537,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
+    },
+    "marklong.server-info": {
+      "name": "Server Info",
+      "description": "Hold down a server icon and tap Server Info to see its members, roles, channels, boosts, owner, friends in it and more.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "contributors": [
+        "fshin (https://github.com/kmmiio99o/revenge-plugins \"Original Server Info plugin for Revenge, CC0\")"
+      ],
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.server-info@1.0.0.zip",
+          "sha256": "a5721a05c26531306c81e448e4d8432f7f84d353b6f7c2f7c04d5f978c4e5af3",
+          "size": 5512,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
+    },
+    "marklong.split-large-messages": {
+      "name": "Split Large Messages",
+      "description": "Automatically splits messages longer than 2000 (4000 with Nitro) characters into several messages.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.1"
+      },
+      "versions": {
+        "1.0.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.split-large-messages@1.0.1.zip",
+          "sha256": "8a6d001e4bb9ff884a0220ae586f25d3a4f304478ed17024519f26968232a347",
+          "size": 1133,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
+    },
+    "marklong.spotify-tools": {
+      "name": "Spotify Tools",
+      "description": "A Listen Along button on Spotify activities, and send what you are playing as a listen along invite, a song link or an album link from the + menu.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "contributors": [
+        "nexpid (https://github.com/nexpid \"Original idea and approach\")"
+      ],
+      "channels": {
+        "latest": "2.2.0"
+      },
+      "versions": {
+        "2.2.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.spotify-tools@2.2.0.zip",
+          "sha256": "6ba33b0963e65a4fb6ed4891d0932cec7a0522754b67eeb7783d1e47b30bef82",
+          "size": 7691,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
+    },
+    "marklong.valid-user": {
+      "name": "Valid User",
+      "description": "Resolves @unknown-user mentions in messages and embeds automatically, no tap needed.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.valid-user@1.0.0.zip",
+          "sha256": "8a39378f49429ec6377315cdb5dc6142cf3762f441cc9c824f6b4f0ceeb11006",
+          "size": 1537,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
