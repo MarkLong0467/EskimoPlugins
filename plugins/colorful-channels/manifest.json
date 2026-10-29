@@ -1,0 +1,20 @@
+{
+	"format": 1,
+	"id": "marklong.colorful-channels",
+	"name": "Colorful Channels",
+	"description": "Gives channel icons with symbols colors (locked yellow, NSFW red) and adds a red NSFW tag next to channel names.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": ["nexpid (https://github.com/nexpid/RevengePlugins \"Original Colorful Channels from NexxUtils for Revenge, CC BY 4.0\")"],
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
