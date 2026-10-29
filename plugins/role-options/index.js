@@ -1,14 +1,13 @@
 (function (exports) {
 	/*
-	 * Copy Role Colors for Valenced.
-	 * Based on CopyRoleColor for Vendetta by MSMA (public domain),
+	 * Role Options for Valenced.
+	 * The role color on a long press is based on CopyRoleColor for Vendetta by MSMA (public domain),
 	 * https://github.com/Martinz64/vendetta-plugins. Rewritten for Valenced.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var TOAST = 'MARKLONG_COPY_ROLE_COLORS'
+	var TOAST = 'MARKLONG_ROLE_OPTIONS'
 
 	var ID_LABELS = { 'Copy Role ID': 1 }
-	var COLOR_LABEL = 'Copy Role Color'
 	var addedAt = 0
 	var seen = { roleId: null, guildId: null, at: 0 }
 
@@ -99,13 +98,64 @@
 		return typeof id === 'string' && /^\d{5,}$/.test(id) ? id : undefined
 	}
 
-	function copyColorFor(press) {
+	function copyText(text) {
+		valenced.externals.ReactNativeClipboard.Clipboard.setString(text)
+	}
+
+	/** Downloads the role's icon and puts the picture itself on the clipboard. */
+	async function copyIcon(role) {
+		if (!role.icon) return toast('That role has no icon')
+		var url = 'https://cdn.discordapp.com/role-icons/' + role.id + '/' + role.icon + '.png?size=512'
+		var base64 = await new Promise(function (resolve, reject) {
+			fetch(url)
+				.then(function (res) {
+					if (!res.ok) throw new Error('HTTP ' + res.status)
+					return res.blob()
+				})
+				.then(function (blob) {
+					var reader = new FileReader()
+					reader.onloadend = function () { resolve(String(reader.result).split(',')[1]) }
+					reader.onerror = function () { reject(reader.error) }
+					reader.readAsDataURL(blob)
+				})
+				.catch(reject)
+		})
+		valenced.externals.ReactNativeClipboard.Clipboard.setImage(base64)
+		toast('Copied the role icon')
+	}
+
+	var OPTIONS = [
+		{
+			label: 'Copy Role Name',
+			run: function (role) {
+				copyText(role.name)
+				toast('Copied ' + role.name)
+			},
+		},
+		{
+			label: 'Copy Role Color',
+			run: function (role) {
+				var colors = roleColors(role)
+				if (!colors) return toast('That role has no color')
+				copyText(colors)
+				toast('Copied ' + colors)
+			},
+		},
+		{ label: 'Copy Role Icon', run: copyIcon },
+	]
+
+	function isOurs(label) {
+		return OPTIONS.some(function (o) { return o.label === label })
+	}
+
+	function runOption(option, press) {
 		var id = captureId(press)
 		if (!id && Date.now() - seen.at < 60000) id = seen.roleId
-		var colors = roleColors(lookupRole(id))
-		if (!colors) return toast('That role has no color')
-		valenced.externals.ReactNativeClipboard.Clipboard.setString(colors)
-		toast('Copied ' + colors)
+		var role = lookupRole(id)
+		if (!role) return toast('Could not find that role')
+		Promise.resolve(option.run(role)).catch(function (e) {
+			toast('Could not copy: ' + String((e && e.message) || e))
+		})
 	}
 
 	/** Remembers which role a sheet or chip is about, from the props Discord gives it. */
@@ -131,36 +181,41 @@
 			if (Array.isArray(props.items)) {
 				var items = props.items
 				var at = items.findIndex(isIdLabel)
-				if (at === -1 || items.some(function (i) { return i && i.label === COLOR_LABEL })) return result
+				if (at === -1 || items.some(function (i) { return i && isOurs(i.label) })) return result
 				var template = items[at]
-				var item = Object.assign({}, template, { label: COLOR_LABEL })
-				;['id', 'key', 'testID', 'nativeID', 'index', 'state'].forEach(function (n) { delete item[n] })
 				var press = ['action', 'onPress', 'onSelect', 'onClick', 'callback', 'handler'].find(function (n) { return typeof template[n] === 'function' })
 				if (!press) return result
 				var base = template[press]
-				;['action', 'onPress', 'onSelect', 'onClick', 'callback', 'handler'].forEach(function (n) {
-					if (n in template) item[n] = function () { copyColorFor(base) }
+				var made = OPTIONS.map(function (option) {
+					var item = Object.assign({}, template, { label: option.label })
+					;['id', 'key', 'testID', 'nativeID', 'index', 'state'].forEach(function (n) { delete item[n] })
+					;['action', 'onPress', 'onSelect', 'onClick', 'callback', 'handler'].forEach(function (n) {
+						if (n in template) item[n] = function () { runOption(option, base) }
+					})
+					return item
 				})
 				if (Date.now() - addedAt < 400) return result
 				addedAt = Date.now()
 				var next = items.slice()
-				next.splice(at + 1, 0, item)
+				next.splice.apply(next, [at + 1, 0].concat(made))
 				return valenced.react.React.cloneElement(result, { items: next })
 			}
 			var kids = props.children
 			if (!Array.isArray(kids)) return result
 			var row = kids.findIndex(function (k) { return k && k.props && isIdLabel(k.props) })
 			if (row === -1 || Date.now() - addedAt < 400) return result
-			if (findInTree(kids, function (x) { return x.props && x.props.label === COLOR_LABEL })) return result
+			if (findInTree(kids, function (x) { return x.props && isOurs(x.props.label) })) return result
 			addedAt = Date.now()
 			var source = kids[row]
 			var base2 = source.props.onPress
 			if (typeof base2 !== 'function') return result
-			kids.splice(row + 1, 0, valenced.react.React.cloneElement(source, {
-				key: 'copy-role-color',
-				label: COLOR_LABEL,
-				onPress: function () { copyColorFor(base2) },
-			}))
+			kids.splice.apply(kids, [row + 1, 0].concat(OPTIONS.map(function (option, i) {
+				return valenced.react.React.cloneElement(source, {
+					key: 'role-option-' + i,
+					label: option.label,
+					onPress: function () { runOption(option, base2) },
+				})
+			})))
 			return result
 		} catch (e) {
 			return result
