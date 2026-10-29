@@ -194,15 +194,6 @@
 				),
 				h(
 					Design.TableRowGroup,
-					{ title: 'Status (reopen this page after scrolling the channel list)' },
-					h(Design.TableRow, { key: 'icons', label: 'Channel icons', subLabel: status.icons }),
-					h(Design.TableRow, { key: 'calls', label: 'Icons drawn / recolored', subLabel: status.calls + ' / ' + status.drawn }),
-					h(Design.TableRow, { key: 'seen', label: 'Icon names seen (* = recolored)', subLabel: status.seen.length ? status.seen.join(', ') : 'none yet' }),
-					h(Design.TableRow, { key: 'nsfw', label: 'NSFW tag', subLabel: status.nsfw }),
-					status.error ? h(Design.TableRow, { key: 'error', label: 'Last error', subLabel: status.error }) : null,
-				),
-				h(
-					Design.TableRowGroup,
 					{ title: 'About' },
 					h(Design.TableRow, { key: 'credit', label: 'Credit', subLabel: 'Based on Colorful Channels from NexxUtils by nexpid. Open the chat list again to see changes.' }),
 				),
