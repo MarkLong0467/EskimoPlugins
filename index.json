@@ -11,7 +11,7 @@
         "MSMA (https://github.com/Martinz64/vendetta-plugins \"Original CopyRoleColor for Vendetta, public domain\")"
       ],
       "channels": {
-        "latest": "1.1.0"
+        "latest": "1.1.1"
       },
       "versions": {
         "1.0.0": {
@@ -31,6 +31,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.copy-role-colors@1.1.0.zip",
           "sha256": "64ec60f24cd4dbd52783ddf81883a6ebca8e76424e1ad5b1a5ac1705c7a3ef22",
           "size": 3301,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.1.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.copy-role-colors@1.1.1.zip",
+          "sha256": "38f736e427f16a19a324ce9491bdc6957da7218d4f6e283461e5637d2357a3b6",
+          "size": 3340,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
