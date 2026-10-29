@@ -3,58 +3,6 @@
   "name": "EskimoPlugins",
   "description": "Mark's plugins for Valenced.",
   "plugins": {
-    "marklong.copy-role-colors": {
-      "name": "Copy Role Colors",
-      "description": "Hold down a role to copy its color as a hex code, or use Copy Role Color in the role menu.",
-      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-      "contributors": [
-        "MSMA (https://github.com/Martinz64/vendetta-plugins \"Original CopyRoleColor for Vendetta, public domain\")"
-      ],
-      "channels": {
-        "latest": "1.1.1"
-      },
-      "versions": {
-        "1.0.0": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.copy-role-colors@1.0.0.zip",
-          "sha256": "53b0dceb38398a1965465fa78b77fefcd7614af2c06cf373a2a4802dd57e9ff7",
-          "size": 1801,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        },
-        "1.1.0": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.copy-role-colors@1.1.0.zip",
-          "sha256": "64ec60f24cd4dbd52783ddf81883a6ebca8e76424e1ad5b1a5ac1705c7a3ef22",
-          "size": 3301,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        },
-        "1.1.1": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.copy-role-colors@1.1.1.zip",
-          "sha256": "38f736e427f16a19a324ce9491bdc6957da7218d4f6e283461e5637d2357a3b6",
-          "size": 3340,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        }
-      }
-    },
     "marklong.hypesquad": {
       "name": "HypeSquad Switcher",
       "description": "Switch your HypeSquad house (Bravery, Brilliance or Balance) or leave it with one tap from the plugin settings.",
@@ -166,6 +114,32 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.rich-presence@1.2.1.zip",
           "sha256": "2cec83dc728dd539c369078114ff3a28f8426013575649685afc73792f2f7bb4",
           "size": 9537,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
+    },
+    "marklong.role-options": {
+      "name": "Role Options",
+      "description": "Adds Copy Role Name, Copy Role Color and Copy Role Icon to the role menu, and copies the color when you hold a role on a profile.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "contributors": [
+        "MSMA (https://github.com/Martinz64/vendetta-plugins \"Original CopyRoleColor for Vendetta, public domain\")"
+      ],
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.role-options@1.0.0.zip",
+          "sha256": "94bbf601e978b2d5ad7e29e735bc20fb8a0b85c836c2717cf54761da56632821",
+          "size": 3899,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
