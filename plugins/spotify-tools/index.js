@@ -43,18 +43,31 @@
 		return (children.length > 1 ? rt.jsxs : rt.jsx)(type, p, key)
 	}
 
-	/** Runs `callback` after the next Spotify player update. */
+	/**
+	 * Runs `callback` after the next Spotify player update. Some phones change the player without sending
+	 * that event, so it runs anyway after a short wait. Returns a function that cancels it.
+	 */
 	function onceAfterPlayerState(callback) {
 		var off
+		var timer
 		var done = false
+		function finish() {
+			if (done) return
+			done = true
+			if (off) off()
+			clearTimeout(timer)
+			setTimeout(callback, 0)
+		}
 		off = valenced.discord.flux.onFluxEventDispatched('SPOTIFY_PLAYER_STATE', function (payload) {
-			if (!done) {
-				done = true
-				if (off) off()
-				setTimeout(callback, 0)
-			}
+			finish()
 			return payload
 		})
+		timer = setTimeout(finish, 1200)
+		return function cancel() {
+			done = true
+			if (off) off()
+			clearTimeout(timer)
+		}
 	}
 
 	function findIcon(names) {
@@ -203,27 +216,58 @@
 		}
 	}
 
-	/** Plays the other person's track at their position, through Spotify's own web API. */
-	async function playThroughSpotify(activity) {
+	function albumUri(value) {
+		if (typeof value !== 'string') return undefined
+		var m = /^(?:spotify:album:|https?:\/\/(?:open\.)?spotify\.com\/album\/)(\w+)/.exec(value)
+		return m ? 'spotify:album:' + m[1] : /^\w{10,}$/.test(value) ? 'spotify:album:' + value : undefined
+	}
+
+	/** The album of the other person's track, from their activity or else from Spotify. */
+	async function albumOf(token, activity, trackId) {
+		var meta = (activity && activity.metadata) || {}
+		var album = meta.album && typeof meta.album === 'object' ? meta.album : {}
+		var guesses = [meta.album_uri, meta.context_uri, album.uri, album.id, meta.album_id]
+		for (var i = 0; i < guesses.length; i++) {
+			var uri = albumUri(guesses[i])
+			if (uri) return uri
+		}
+		try {
+			var res = await fetch('https://api.spotify.com/v1/tracks/' + encodeURIComponent(trackId), { headers: { Authorization: 'Bearer ' + token } })
+			if (!res.ok) return undefined
+			var track = await res.json()
+			return track && track.album && (albumUri(track.album.uri) || albumUri(track.album.id))
+		} catch (e) {
+			return undefined
+		}
+	}
+
+	/**
+	 * Plays the other person's track at their position, through Spotify's own web API. Asking Spotify for
+	 * the bare track can stop your song and play nothing, so the track is started inside its album.
+	 */
+	async function playThroughSpotify(activity, quiet) {
 		try {
 			var access = await spotifyAccess()
 			if (!access.token) throw new Error('No Spotify sign-in found. Link Spotify in Discord and open the Spotify app.')
-			var trackId = activity.sync_id
+			var raw = activity.sync_id
+			var trackId = typeof raw === 'string' ? raw.replace(/^spotify:track:/, '') : ''
 			if (!trackId) throw new Error('This activity has no track to play.')
-			var start = activity.timestamps && activity.timestamps.start
+			var album = await albumOf(access.token, activity, trackId)
+			if (!album) throw new Error('Could not find the album of that track.')
+			var deviceId = (await pickDevice(access.token)) || access.deviceId
+			var start = activity.timestamps && Number(activity.timestamps.start)
 			var position = start ? Math.max(0, Date.now() - start) : 0
-			var deviceId = access.deviceId || (await pickDevice(access.token))
 			var url = 'https://api.spotify.com/v1/me/player/play' + (deviceId ? '?device_id=' + encodeURIComponent(deviceId) : '')
 			var res = await fetch(url, {
 				method: 'PUT',
 				headers: { Authorization: 'Bearer ' + access.token, 'Content-Type': 'application/json' },
-				body: JSON.stringify({ uris: ['spotify:track:' + trackId], position_ms: position }),
+				body: JSON.stringify({ context_uri: album, offset: { uri: 'spotify:track:' + trackId }, position_ms: position }),
 			})
 			if (!res.ok) {
 				var why = { 401: 'Spotify sign-in expired. Open Spotify and try again.', 403: 'Spotify Premium is needed to listen along.', 404: 'No Spotify device found. Open Spotify on this phone first.', 429: 'Spotify is busy. Try again in a moment.' }[res.status]
 				throw new Error(why || 'Spotify said no (' + res.status + ').')
 			}
-			toast('Listening along')
+			if (!quiet) toast('Listening along')
 			return true
 		} catch (e) {
 			toast(String((e && e.message) || e))
@@ -231,22 +275,127 @@
 		}
 	}
 
+	// ---- Discord's own listen along ------------------------------------------------------------
+	function isSpotifyActions(candidate) {
+		return !!candidate && typeof candidate.play === 'function' && typeof candidate.sync === 'function'
+	}
+
+	/** Discord's Spotify controls, but only a module that has both play and sync. */
+	function findSpotifyActions() {
+		if (isSpotifyActions(spotifyActions)) return spotifyActions
+		try {
+			var f = finders()
+			var found = f.lookupModule(f.filters.withProps('play', 'sync')) || []
+			for (var i = 0; i < found.length; i++) if (isSpotifyActions(found[i])) return (spotifyActions = found[i])
+		} catch (e) {}
+		return undefined
+	}
+
+	function errorText(e) {
+		return String((e && e.message) || e)
+	}
+
+	/** Starts Spotify on Discord's side, then joins the other person's session. Resolves true when it worked. */
+	function listenWithDiscord(actions, activity, userId) {
+		function sync() {
+			return Promise.resolve()
+				.then(function () { return actions.sync(activity, userId) })
+				.then(function () { return true }, function (e) { toast('Spotify could not sync: ' + errorText(e)); return false })
+		}
+		var mine = store('SpotifyStore').getActivity && store('SpotifyStore').getActivity()
+		if (mine) return sync()
+		return new Promise(function (resolve) {
+			var cancel = onceAfterPlayerState(function () { sync().then(resolve) })
+			Promise.resolve()
+				.then(function () { return actions.play(activity, userId) })
+				.catch(function (e) {
+					cancel()
+					toast('Discord could not start Spotify: ' + errorText(e))
+					resolve(false)
+				})
+		})
+	}
+
+	// ---- Following the other person's songs ----------------------------------------------------
+	var follow
+	var followTimer
+	var followNudge
+
+	function stopFollowing() {
+		follow = undefined
+		if (followTimer) clearInterval(followTimer)
+		followTimer = undefined
+		if (followNudge) clearTimeout(followNudge)
+		followNudge = undefined
+	}
+
+	/** Their Spotify activity right now, from Discord's presence store. */
+	function spotifyActivityOf(userId) {
+		try {
+			var list = store('PresenceStore').getActivities(userId) || []
+			for (var i = 0; i < list.length; i++) {
+				var a = list[i]
+				if (a && a.type === 2 && a.party && a.party.id && (a.name === 'Spotify' || String(a.id || '').indexOf('spotify') === 0 || String(a.party.id).indexOf('spotify:') === 0)) return a
+			}
+		} catch (e) {}
+	}
+
+	function songKey(activity) {
+		var meta = (activity && activity.metadata) || {}
+		var times = (activity && activity.timestamps) || {}
+		return [activity && activity.sync_id, times.start || '', activity && activity.details, meta.album_id || ''].join('|')
+	}
+
+	/** When their song changes, joins again so your Spotify moves on with theirs. */
+	function checkFollowed() {
+		var current = follow
+		if (!current) return
+		var latest = spotifyActivityOf(current.userId)
+		if (!latest) {
+			current.key = ''
+			// Spotify presence can vanish for a moment between songs. A minute without it means they stopped.
+			if (!current.goneAt) current.goneAt = Date.now()
+			else if (Date.now() - current.goneAt > 60000) stopFollowing()
+			return
+		}
+		current.goneAt = 0
+		var key = songKey(latest)
+		if (key === current.key) return
+		current.key = key
+		var actions = findSpotifyActions()
+		if (actions) {
+			Promise.resolve()
+				.then(function () { return actions.play(latest, current.userId) })
+				.then(function () { onceAfterPlayerState(function () { try { actions.sync(latest, current.userId) } catch (e) {} }) }, function () {})
+		} else playThroughSpotify(latest, true)
+	}
+
+	function startFollowing(activity, userId) {
+		stopFollowing()
+		follow = { userId: userId, key: songKey(activity) }
+		followTimer = setInterval(checkFollowed, 1000)
+	}
+
+	function onPresenceUpdates(payload) {
+		if (follow) {
+			if (followNudge) clearTimeout(followNudge)
+			followNudge = setTimeout(function () { followNudge = undefined; checkFollowed() }, 50)
+		}
+		return payload
+	}
+
 	/** Starts listening along. Returns false right away, or a promise of whether it started. */
 	function listen(reason, activity, userId) {
 		if (typeof reason === 'string') return toast(reason), false
-		var f = finders()
-		var actions = spotifyActions || f.lookupModule(f.filters.withProps('play', 'sync'))[0]
-		if (actions) {
-			try {
-				if (store('SpotifyStore').getActivity()) actions.sync(activity, userId)
-				else {
-					onceAfterPlayerState(function () { actions.sync(activity, userId) })
-					actions.play(activity, userId)
-				}
-				return Promise.resolve(true)
-			} catch (e) {}
-		}
-		return playThroughSpotify(activity)
+		var actions = findSpotifyActions()
+		var started = actions ? listenWithDiscord(actions, activity, userId) : playThroughSpotify(activity)
+		return Promise.resolve(started).then(function (ok) {
+			if (ok) {
+				if (actions) toast('Listening along')
+				startFollowing(activity, userId)
+			}
+			return ok
+		})
 	}
 
 	function ListenButton(props) {
@@ -548,15 +697,17 @@
 				)
 			})
 
-			// Discord's own Spotify controls are used for listening along when this version has them.
-			;[['play', 'sync'], ['sync', 'pause']].forEach(function (names) {
-				cleanup(
-					f.getModules(f.filters.withProps.apply(null, names), function (module) {
-						if (!spotifyActions) spotifyActions = module
-					}),
-				)
+			// Discord's own Spotify controls, and the other person's song changes.
+			cleanup(
+				f.getModules(f.filters.withProps('play', 'sync'), function (module) {
+					if (!spotifyActions && isSpotifyActions(module)) spotifyActions = module
+				}),
+			)
+			cleanup(valenced.discord.flux.onFluxEventDispatched('PRESENCE_UPDATES', onPresenceUpdates))
+			cleanup(function () {
+				spotifyActions = undefined
+				stopFollowing()
 			})
-			cleanup(function () { spotifyActions = undefined })
 
 			try {
 				installMenuHook(cleanup)
