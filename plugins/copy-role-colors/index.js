@@ -9,6 +9,7 @@
 
 	var ID_LABELS = { 'Copy Role ID': 1 }
 	var COLOR_LABEL = 'Copy Role Color'
+	var addedAt = 0
 	var seen = { roleId: null, guildId: null, at: 0 }
 
 	function finders() { return valenced.modules.finders }
@@ -140,6 +141,8 @@
 				;['action', 'onPress', 'onSelect', 'onClick', 'callback', 'handler'].forEach(function (n) {
 					if (n in template) item[n] = function () { copyColorFor(base) }
 				})
+				if (Date.now() - addedAt < 400) return result
+				addedAt = Date.now()
 				var next = items.slice()
 				next.splice(at + 1, 0, item)
 				return valenced.react.React.cloneElement(result, { items: next })
@@ -147,7 +150,9 @@
 			var kids = props.children
 			if (!Array.isArray(kids)) return result
 			var row = kids.findIndex(function (k) { return k && k.props && isIdLabel(k.props) })
-			if (row === -1 || kids.some(function (k) { return k && k.props && k.props.label === COLOR_LABEL })) return result
+			if (row === -1 || Date.now() - addedAt < 400) return result
+			if (findInTree(kids, function (x) { return x.props && x.props.label === COLOR_LABEL })) return result
+			addedAt = Date.now()
 			var source = kids[row]
 			var base2 = source.props.onPress
 			if (typeof base2 !== 'function') return result
