@@ -11,7 +11,7 @@
         "nexpid (https://github.com/nexpid/RevengePlugins \"Original Colorful Channels from NexxUtils for Revenge, CC BY 4.0\")"
       ],
       "channels": {
-        "latest": "1.0.3"
+        "latest": "1.0.4"
       },
       "versions": {
         "1.0.0": {
@@ -57,6 +57,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.colorful-channels@1.0.3.zip",
           "sha256": "15608258e810e73267b52900cc9243a54f2c8ce71aed2a4bddc20579fff27983",
           "size": 18403,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.0.4": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.colorful-channels@1.0.4.zip",
+          "sha256": "fa472b62011cc613a7a0556e3a1e7bedf1f63bbd4a7fab4297e719defc10bbdc",
+          "size": 18225,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
