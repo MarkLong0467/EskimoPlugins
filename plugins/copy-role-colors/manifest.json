@@ -2,10 +2,10 @@
 	"format": 1,
 	"id": "marklong.copy-role-colors",
 	"name": "Copy Role Colors",
-	"description": "Hold down a role on a profile to copy its color as a hex code.",
+	"description": "Hold down a role to copy its color as a hex code, or use Copy Role Color in the role menu.",
 	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
 	"contributors": ["MSMA (https://github.com/Martinz64/vendetta-plugins \"Original CopyRoleColor for Vendetta, public domain\")"],
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"

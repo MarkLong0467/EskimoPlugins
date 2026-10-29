@@ -7,7 +7,16 @@
 	 */
 	var TOAST = 'MARKLONG_COPY_ROLE_COLORS'
 
+	var ID_LABELS = { 'Copy Role ID': 1 }
+	var COLOR_LABEL = 'Copy Role Color'
+	var seen = { roleId: null, guildId: null, at: 0 }
+
 	function finders() { return valenced.modules.finders }
+	function find(filter) { return finders().lookupModule(filter)[0] }
+	function store(name, prop) {
+		var s = valenced.discord.flux.Stores[name]
+		return s || find(finders().filters.withProps(prop))
+	}
 
 	function toast(text) {
 		try {
@@ -53,17 +62,122 @@
 		if (dot) return styleColor(dot.props.style)
 	}
 
+	/** The colors of a role as text: one hex code, or every color of a gradient role. */
+	function roleColors(role) {
+		if (!role) return undefined
+		var list = []
+		var c = role.colors
+		if (c && typeof c === 'object')
+			['primary_color', 'secondary_color', 'tertiary_color'].forEach(function (k) {
+				if (typeof c[k] === 'number') list.push(hexFromInt(c[k]))
+			})
+		if (!list.length && typeof role.color === 'number' && role.color > 0) list.push(hexFromInt(role.color))
+		return list.length ? list.join(', ') : undefined
+	}
+
+	function lookupRole(roleId) {
+		var roles = store('GuildRoleStore', 'getSortedRoles')
+		if (!roles || !roleId) return undefined
+		var guilds = []
+		try { guilds.push(store('SelectedGuildStore', 'getGuildId').getGuildId()) } catch (e) {}
+		if (seen.guildId) guilds.unshift(seen.guildId)
+		try { guilds = guilds.concat(Object.keys(store('GuildStore', 'getGuilds').getGuilds())) } catch (e) {}
+		for (var i = 0; i < guilds.length; i++) {
+			var role = guilds[i] && roles.getRole(guilds[i], roleId)
+			if (role) return role
+		}
+	}
+
+	/** Runs Discord's own Copy Role ID action, but keeps the id it copies instead of letting it land in the clipboard. */
+	function captureId(press) {
+		var CB = valenced.externals.ReactNativeClipboard.Clipboard
+		var original = CB.setString
+		var id
+		CB.setString = function (value) { id = value }
+		try { press() } catch (e) {} finally { CB.setString = original }
+		return typeof id === 'string' && /^\d{5,}$/.test(id) ? id : undefined
+	}
+
+	function copyColorFor(press) {
+		var id = captureId(press)
+		if (!id && Date.now() - seen.at < 60000) id = seen.roleId
+		var colors = roleColors(lookupRole(id))
+		if (!colors) return toast('That role has no color')
+		valenced.externals.ReactNativeClipboard.Clipboard.setString(colors)
+		toast('Copied ' + colors)
+	}
+
+	/** Remembers which role a sheet or chip is about, from the props Discord gives it. */
+	function noteProps(props) {
+		var role = props.role
+		var id = typeof props.roleId === 'string' ? props.roleId : role && typeof role.id === 'string' ? role.id : undefined
+		if (!id) return
+		seen.roleId = id
+		seen.guildId = props.guildId || (role && role.guild_id) || seen.guildId
+		seen.at = Date.now()
+	}
+
+	function isIdLabel(x) {
+		return x && typeof x === 'object' && typeof x.label === 'string' && ID_LABELS[x.label] === 1
+	}
+
+	/** Adds Copy Role Color under Copy Role ID, whether the sheet is a list of items or drawn rows. */
+	function decorateSheet(result) {
+		try {
+			var props = result && result.props
+			if (!props) return result
+			noteProps(props)
+			if (Array.isArray(props.items)) {
+				var items = props.items
+				var at = items.findIndex(isIdLabel)
+				if (at === -1 || items.some(function (i) { return i && i.label === COLOR_LABEL })) return result
+				var template = items[at]
+				var item = Object.assign({}, template, { label: COLOR_LABEL })
+				;['id', 'key', 'testID', 'nativeID', 'index', 'state'].forEach(function (n) { delete item[n] })
+				var press = ['action', 'onPress', 'onSelect', 'onClick', 'callback', 'handler'].find(function (n) { return typeof template[n] === 'function' })
+				if (!press) return result
+				var base = template[press]
+				;['action', 'onPress', 'onSelect', 'onClick', 'callback', 'handler'].forEach(function (n) {
+					if (n in template) item[n] = function () { copyColorFor(base) }
+				})
+				var next = items.slice()
+				next.splice(at + 1, 0, item)
+				return valenced.react.React.cloneElement(result, { items: next })
+			}
+			var kids = props.children
+			if (!Array.isArray(kids)) return result
+			var row = kids.findIndex(function (k) { return k && k.props && isIdLabel(k.props) })
+			if (row === -1 || kids.some(function (k) { return k && k.props && k.props.label === COLOR_LABEL })) return result
+			var source = kids[row]
+			var base2 = source.props.onPress
+			if (typeof base2 !== 'function') return result
+			kids.splice(row + 1, 0, valenced.react.React.cloneElement(source, {
+				key: 'copy-role-color',
+				label: COLOR_LABEL,
+				onPress: function () { copyColorFor(base2) },
+			}))
+			return result
+		} catch (e) {
+			return result
+		}
+	}
+
 	Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
 	exports.default = plugin({
 		start: function (api) {
 			var f = finders()
+			var runtime = find(f.filters.withProps('jsx', 'jsxs')) || valenced.react.ReactJSXRuntime
+			;['jsx', 'jsxs'].forEach(function (name) {
+				if (runtime && typeof runtime[name] === 'function') api.cleanup(valenced.patcher.after(runtime, name, decorateSheet))
+			})
 			api.cleanup(
 				f.getModules(
 					f.filters.withName('ThemedRolePill'),
 					function (module) {
 						if (!module || typeof module.default !== 'function') return
 						api.cleanup(
-							valenced.patcher.after(module, 'default', function (args, ret) {
+							valenced.patcher.instead(module, 'default', function (args, original) {
+								var ret = Reflect.apply(original, this, args)
 								try {
 									if (!ret || !ret.props || typeof ret.props.onPress !== 'function') return ret
 									var color = roleColor(args[0], ret)
