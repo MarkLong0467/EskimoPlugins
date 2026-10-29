@@ -106,6 +106,14 @@
 	async function copyIcon(role) {
 		if (!role.icon) return toast('That role has no icon')
 		var url = 'https://cdn.discordapp.com/role-icons/' + role.id + '/' + role.icon + '.png?size=512'
+		var Clipboard = valenced.externals.ReactNativeClipboard.Clipboard
+		var RN = valenced.react.ReactNative
+		var android = !!(RN && RN.Platform && RN.Platform.OS === 'android')
+		// The clipboard library can only put a picture on the clipboard on iOS, so Android gets the link.
+		if (android || typeof Clipboard.setImage !== 'function') {
+			Clipboard.setString(url)
+			return toast('This phone cannot copy pictures, copied the icon link')
+		}
 		var base64 = await new Promise(function (resolve, reject) {
 			fetch(url)
 				.then(function (res) {
@@ -120,7 +128,7 @@
 				})
 				.catch(reject)
 		})
-		valenced.externals.ReactNativeClipboard.Clipboard.setImage(base64)
+		Clipboard.setImage(base64)
 		toast('Copied the role icon')
 	}
 
