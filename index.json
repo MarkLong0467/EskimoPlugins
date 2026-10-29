@@ -296,10 +296,11 @@
       "description": "A Listen Along button on Spotify activities, and send what you are playing as a listen along invite, a song link or an album link from the + menu.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "contributors": [
-        "nexpid (https://github.com/nexpid \"Original idea and approach\")"
+        "nexpid (https://github.com/nexpid \"Original idea and approach\")",
+        "DEVILS1NGH (https://github.com/DEVILS1NGH \"Native Listen Along sync and song-change following\")"
       ],
       "channels": {
-        "latest": "2.3.0"
+        "latest": "2.3.1"
       },
       "versions": {
         "2.2.0": {
@@ -319,6 +320,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.spotify-tools@2.3.0.zip",
           "sha256": "6f8acf2000316eaec4ab3f60a301fd8e0631c6f0f75747a4d6064a53fdcb5787",
           "size": 9105,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "2.3.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.spotify-tools@2.3.1.zip",
+          "sha256": "d0cdf7b8fd5dce82129ac63282097db613ce427c245526552f9681f44e32629e",
+          "size": 9152,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
