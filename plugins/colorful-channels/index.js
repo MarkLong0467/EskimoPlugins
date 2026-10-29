@@ -196,15 +196,24 @@
 				),
 			)
 
-			// The channel icons.
-			var icons = find(f.filters.withProps('BaseChannelIcon'))
-			if (icons && typeof icons.BaseChannelIcon === 'function')
-				cleanup(
-					valenced.patcher.instead(icons, 'BaseChannelIcon', function (args, original) {
-						var ret = Reflect.apply(original, this, args)
-						try { return decorateIcon(args, ret) } catch (e) { return ret }
-					}),
-				)
+			// The channel icons. This part of Discord loads when the channel list first draws, which on a
+			// fresh start is after this plugin starts, so wait for it instead of looking once.
+			cleanup(
+				f.getModules(
+					f.filters.withProps('BaseChannelIcon'),
+					function (module) {
+						var holder = module && typeof module.BaseChannelIcon === 'function' ? module : module && module.default && typeof module.default.BaseChannelIcon === 'function' ? module.default : null
+						if (!holder) return
+						cleanup(
+							valenced.patcher.instead(holder, 'BaseChannelIcon', function (args, original) {
+								var ret = Reflect.apply(original, this, args)
+								try { return decorateIcon(args, ret) } catch (e) { return ret }
+							}),
+						)
+					},
+					{ returnNamespace: true },
+				),
+			)
 		},
 	})
 	return exports
