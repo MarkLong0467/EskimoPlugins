@@ -34,20 +34,20 @@
 		Warning: { fallback: '#f23f43', token: 'STATUS_DANGER' },
 		Controller: { fallback: '#23a55a', token: 'STATUS_POSITIVE' },
 	}
-	var GLYPHS = [
-		{ name: 'AnnouncementsLock', kind: 'Lock', base: 'announcementLock' },
-		{ name: 'AnnouncementsWarning', kind: 'Warning', base: 'announcementWarning' },
-		{ name: 'TextLock', kind: 'Lock', base: 'textLock' },
-		{ name: 'TextWarning', kind: 'Warning', base: 'textWarning' },
-		{ name: 'TextController', kind: 'Controller', base: 'textController' },
-		{ name: 'VoiceLock', kind: 'Lock', base: 'voiceLock' },
-		{ name: 'VoiceWarning', kind: 'Warning', base: 'voiceWarning' },
-		{ name: 'ForumLock', kind: 'Lock', base: 'forumLock' },
-		{ name: 'ForumWarning', kind: 'Warning', base: 'forumWarning' },
-		{ name: 'StageLock', kind: 'Lock', bottom: true, base: 'stageLock' },
-		{ name: 'ImageLock', kind: 'Lock', bottom: true, base: 'imageLock' },
-		{ name: 'ImageWarning', kind: 'Warning', bottom: true, base: 'imageWarning' },
-	]
+	var GLYPHS = {
+		AnnouncementsLock: { kind: 'Lock', base: 'announcementLock' },
+		AnnouncementsWarning: { kind: 'Warning', base: 'announcementWarning' },
+		TextLock: { kind: 'Lock', base: 'textLock' },
+		TextWarning: { kind: 'Warning', base: 'textWarning' },
+		TextController: { kind: 'Controller', base: 'textController' },
+		VoiceLock: { kind: 'Lock', base: 'voiceLock' },
+		VoiceWarning: { kind: 'Warning', base: 'voiceWarning' },
+		ForumLock: { kind: 'Lock', base: 'forumLock' },
+		ForumWarning: { kind: 'Warning', base: 'forumWarning' },
+		StageLock: { kind: 'Lock', bottom: true, base: 'stageLock' },
+		ImageLock: { kind: 'Lock', bottom: true, base: 'imageLock' },
+		ImageWarning: { kind: 'Warning', bottom: true, base: 'imageWarning' },
+	}
 
 	var storage
 
@@ -86,11 +86,44 @@
 		}
 	}
 
+	function assetId(source) {
+		if (Array.isArray(source)) source = source[0]
+		if (typeof source === 'number') return source
+		if (source && typeof source === 'object') {
+			if (typeof source.original === 'number') return source.original
+			if (typeof source.default === 'number') return source.default
+		}
+	}
+
 	function assetName(source) {
-		var id = typeof source === 'number' ? source : source && typeof source.original === 'number' ? source.original : undefined
+		var id = assetId(source)
 		if (id === undefined) return undefined
 		var asset = valenced.assets.AssetsRegistry.getAssetByID(id)
 		return asset && asset.name
+	}
+
+	/**
+	 * Works out which glyph an icon is from its name, so it still works when Discord spells the name
+	 * differently (TextLockIcon, ic_channel_text_locked, channel-text-lock...).
+	 */
+	function glyphFor(name) {
+		var n = String(name).toLowerCase().replace(/[^a-z]/g, '').replace(/icon$/, '')
+		var kind = /lock/.test(n) ? 'Lock' : /warning|nsfw/.test(n) ? 'Warning' : /controller|gamepad|game/.test(n) ? 'Controller' : null
+		if (!kind) return undefined
+		var type = /announcement|news/.test(n)
+			? 'Announcements'
+			: /forum/.test(n)
+			? 'Forum'
+			: /stage/.test(n)
+			? 'Stage'
+			: /image|media|photo/.test(n)
+			? 'Image'
+			: /voice|audio|speaker/.test(n)
+			? 'Voice'
+			: /text|channel/.test(n)
+			? 'Text'
+			: null
+		return type ? GLYPHS[type + kind] : undefined
 	}
 
 	function decorateIcon(args, ret) {
@@ -98,13 +131,13 @@
 		var props = args[0] || {}
 		var name = assetName(props.source)
 		if (!name) return ret
-		var glyph = GLYPHS.find(function (g) { return name === g.name + 'Icon' })
+		var glyph = glyphFor(name)
 		if (!glyph) return ret
 		var RN = valenced.react.ReactNative
 		var kind = KIND[glyph.kind]
 		var overlay = glyph.kind === 'Controller' ? IMAGES.controller : IMAGES[glyph.kind === 'Lock' ? (glyph.bottom ? 'lockBottom' : 'lock') : glyph.bottom ? 'warningBottom' : 'warning']
 		var iconColor = typeof ret.props.color === 'string' ? ret.props.color.replace(/-/g, '_').toUpperCase() : ''
-		var styled = RN.StyleSheet.flatten([props.style, ret.props.style, { width: 18, height: 18, tintColor: iconColor ? resolveColor(iconColor) : undefined }])
+		var styled = RN.StyleSheet.flatten([props.style, ret.props.style, { width: 18, height: 18 }, iconColor && resolveColor(iconColor) ? { tintColor: resolveColor(iconColor) } : null])
 		var tint = setting('colorIconsFallback') ? kind.fallback : resolveColor(kind.token) || kind.fallback
 		return h(
 			RN.View,
