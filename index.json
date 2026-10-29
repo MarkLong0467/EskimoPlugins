@@ -3,6 +3,32 @@
   "name": "EskimoPlugins",
   "description": "Mark's plugins for Valenced.",
   "plugins": {
+    "marklong.colorful-channels": {
+      "name": "Colorful Channels",
+      "description": "Gives channel icons with symbols colors (locked yellow, NSFW red) and adds a red NSFW tag next to channel names.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "contributors": [
+        "nexpid (https://github.com/nexpid/RevengePlugins \"Original Colorful Channels from NexxUtils for Revenge, CC BY 4.0\")"
+      ],
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.colorful-channels@1.0.0.zip",
+          "sha256": "ba9c7a77589285d3c3e03886048ad42c1dd87f9e35ce29b3ec43af252e01b106",
+          "size": 17273,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
+    },
     "marklong.hypesquad": {
       "name": "HypeSquad Switcher",
       "description": "Switch your HypeSquad house (Bravery, Brilliance or Balance) or leave it with one tap from the plugin settings.",
