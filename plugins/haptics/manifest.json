@@ -1,0 +1,19 @@
+{
+	"format": 1,
+	"id": "marklong.haptics",
+	"name": "Haptics",
+	"description": "Turn Discord's buzzing on or off: the buzz when a long-press menu opens, other haptic feedback and vibrations. Includes a log of what buzzed.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"version": "0.1.1",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
