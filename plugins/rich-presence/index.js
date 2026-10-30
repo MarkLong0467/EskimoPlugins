@@ -154,6 +154,39 @@
 		statusListeners.forEach(function (listener) { listener() })
 	}
 
+	/** Asks Discord to host an image link for use in a presence. Resolves to an mp: asset ID. */
+	async function externalAsset(url) {
+		var f = valenced.modules.finders
+		var path = '/applications/0/external-assets'
+		var body = { urls: [url] }
+		var list
+		var http = f.lookupModule(f.filters.withProps('HTTPResponseError', 'get'))[0] || f.lookupModule(f.filters.withProps('get', 'post', 'patch'))[0]
+		if (http && typeof http.post === 'function') {
+			try {
+				var answer = await http.post({ url: path, body: body })
+				list = answer && answer.body
+			} catch (e) {
+				if (e && (e.status != null || e.body != null)) throw e
+			}
+		}
+		if (!list) {
+			var auth = f.lookupModule(f.filters.withProps('getToken'))[0]
+			var token = auth && auth.getToken && auth.getToken()
+			if (!token) throw new Error('Could not find a way to reach Discord')
+			var res = await fetch('https://discord.com/api/v9' + path, {
+				method: 'POST',
+				headers: { Authorization: token, 'Content-Type': 'application/json' },
+				body: JSON.stringify(body),
+			})
+			if (!res.ok) throw new Error('Discord said no (' + res.status + ')')
+			list = await res.json()
+		}
+		var link = list && list[0] && list[0].external_asset_path
+		if (!link) throw new Error('Discord returned no image for this link')
+		if (/^https:\/\/media\.discordapp\.net/.test(link)) link = link.split('/').slice(3).join('/')
+		return 'mp:' + link
+	}
+
 	/**
 	 * Turns an image link or asset key into a Discord asset ID. mp: IDs pass through unchanged.
 	 * Tries your Application ID first, then the fallback one. Reports the result for the preview.
@@ -166,7 +199,46 @@
 		var utils =
 			finders.lookupModule(finders.filters.withProps('fetchAssetIds'))[0] ||
 			finders.lookupModule(finders.filters.withProps('getAssetIds'))[0]
-		if (!utils) return setImageStatus(slot, "Discord's image lookup was not found")
+		var isLink = /^https?:\/\//i.test(v)
+		async function viaDiscordApi() {
+			var key = 'link|' + v
+			if (assetCache.has(key)) {
+				setImageStatus(slot, 'ok')
+				return assetCache.get(key)
+			}
+			try {
+				var id = await externalAsset(v)
+				assetCache.set(key, id)
+				setImageStatus(slot, 'ok')
+				return id
+			} catch (e) {
+				setImageStatus(slot, String((e && (e.body && e.body.message || e.message)) || e))
+			}
+		}
+		/** Looks an asset key up in the application's public asset list. */
+		async function viaAssetList() {
+			var apps = appId && appId !== '0' ? [appId, IMAGE_APP_ID] : [IMAGE_APP_ID]
+			for (var i = 0; i < apps.length; i++) {
+				var key = apps[i] + '|' + v
+				if (assetCache.has(key)) {
+					setImageStatus(slot, 'ok')
+					return assetCache.get(key)
+				}
+				try {
+					var res = await fetch('https://discord.com/api/v9/oauth2/applications/' + apps[i] + '/assets')
+					if (!res.ok) continue
+					var assets = await res.json()
+					var hit = Array.isArray(assets) && assets.filter(function (a) { return a && (a.name === v || a.id === v) })[0]
+					if (hit) {
+						assetCache.set(key, hit.id)
+						setImageStatus(slot, 'ok')
+						return hit.id
+					}
+				} catch (e) {}
+			}
+			setImageStatus(slot, 'No image called "' + v + '" was found for this Application ID')
+		}
+		if (!utils) return isLink ? viaDiscordApi() : viaAssetList()
 		var candidates = appId && appId !== '0' ? [appId, IMAGE_APP_ID] : [IMAGE_APP_ID]
 		var error
 		for (var c = 0; c < candidates.length; c++) {
@@ -194,6 +266,8 @@
 				console.warn(TAG + ' could not resolve image:', error)
 			}
 		}
+		if (isLink) return viaDiscordApi()
+		if (appId && appId !== '0') return viaAssetList()
 		setImageStatus(slot, error || 'Could not load this image')
 	}
 
