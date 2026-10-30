@@ -81,6 +81,32 @@
         }
       }
     },
+    "marklong.custom-sounds": {
+      "name": "Custom Sounds",
+      "description": "Beta: replace any Discord sound with your own link, switch between seasonal packs, browse server soundboards and share packs.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "contributors": [
+        "ScattrdBlade (https://github.com/ScattrdBlade/customSounds \"Vencord CustomSounds: the list of Discord's sounds and its seasonal sound files\")"
+      ],
+      "channels": {
+        "latest": "0.1.0"
+      },
+      "versions": {
+        "0.1.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.custom-sounds@0.1.0.zip",
+          "sha256": "34c2ce7c63d6f1676ebaac2b8d883229e1f1acffd4dd136f2033293ed64b0190",
+          "size": 14136,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
+    },
     "marklong.hypesquad": {
       "name": "HypeSquad Switcher",
       "description": "Switch your HypeSquad house (Bravery, Brilliance or Balance) or leave it with one tap from the plugin settings.",
