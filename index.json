@@ -89,7 +89,7 @@
         "ScattrdBlade (https://github.com/ScattrdBlade/customSounds \"Vencord CustomSounds: the list of Discord's sounds and its seasonal sound files\")"
       ],
       "channels": {
-        "latest": "0.1.5"
+        "latest": "0.1.6"
       },
       "versions": {
         "0.1.0": {
@@ -161,6 +161,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.custom-sounds@0.1.5.zip",
           "sha256": "b29eedd52d88d2c871d50b2a2bbec39c97b3d483ef241f3a3bc1e26b0acad8ac",
           "size": 18667,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "0.1.6": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.custom-sounds@0.1.6.zip",
+          "sha256": "9a5192a2f50e155e04df25c0b2d81672df8ef3b0ad22db8a892e74d5cfe663d0",
+          "size": 18800,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
