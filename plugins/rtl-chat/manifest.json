@@ -2,9 +2,9 @@
 	"format": 1,
 	"id": "marklong.rtl-chat",
 	"name": "RTL Chat",
-	"description": "Flips Discord left to right, so the chat reads right to left like Arabic but in English, with avatars on the right.",
+	"description": "Read Discord right to left in English: message text is right-aligned and profile pictures are on the right. Mirroring the whole app is an option.",
 	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-	"version": "1.0.1",
+	"version": "1.1.0",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"
