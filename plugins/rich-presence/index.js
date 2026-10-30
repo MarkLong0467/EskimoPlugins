@@ -154,6 +154,52 @@
 		statusListeners.forEach(function (listener) { listener() })
 	}
 
+	var IMAGE_TYPES = /\.(png|jpe?g|gif|webp|avif|bmp)(\?|#|$)/i
+	var linkCache = new Map()
+
+	function absoluteUrl(found, base) {
+		try { return new URL(found.replace(/&amp;/g, '&'), base).href } catch (e) { return undefined }
+	}
+
+	/**
+	 * Turns any link you could post in chat into a direct image link: image links stay as they are,
+	 * Imgur page links become the image, and other pages give the picture Discord would embed.
+	 */
+	async function findImageUrl(link) {
+		if (linkCache.has(link)) return linkCache.get(link)
+		var result = link
+		try {
+			var imgur = /^https?:\/\/(?:www\.|m\.)?imgur\.com\/(?!a\/|gallery\/|t\/)(\w{5,8})\/?$/i.exec(link)
+			if (imgur) result = 'https://i.imgur.com/' + imgur[1] + '.png'
+			else if (!IMAGE_TYPES.test(link)) {
+				var res = await fetch(link, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)', Accept: 'text/html,image/*' } })
+				var type = (res.headers && res.headers.get && res.headers.get('content-type')) || ''
+				if (res.ok && !/^image\//i.test(type)) {
+					var html = (await res.text()).slice(0, 400000)
+					var tags = html.match(/<meta[^>]+>|<link[^>]+>/gi) || []
+					var wanted = ['og:image:secure_url', 'og:image:url', 'og:image', 'twitter:image', 'twitter:image:src']
+					var found
+					for (var w = 0; w < wanted.length && !found; w++)
+						for (var t = 0; t < tags.length && !found; t++) {
+							var tag = tags[t]
+							var name = /(?:property|name)=["']([^"']+)["']/i.exec(tag)
+							var content = /content=["']([^"']+)["']/i.exec(tag)
+							if (name && content && name[1].toLowerCase() === wanted[w]) found = content[1]
+						}
+					if (!found) {
+						var rel = tags.filter(function (x) { return /rel=["']image_src["']/i.test(x) })[0]
+						var href = rel && /href=["']([^"']+)["']/i.exec(rel)
+						if (href) found = href[1]
+					}
+					var abs = found && absoluteUrl(found, link)
+					if (abs) result = abs
+				}
+			}
+		} catch (e) {}
+		linkCache.set(link, result)
+		return result
+	}
+
 	/** Asks Discord to host an image link for use in a presence. Resolves to an mp: asset ID. */
 	async function externalAsset(url) {
 		var f = valenced.modules.finders
@@ -200,6 +246,7 @@
 			finders.lookupModule(finders.filters.withProps('fetchAssetIds'))[0] ||
 			finders.lookupModule(finders.filters.withProps('getAssetIds'))[0]
 		var isLink = /^https?:\/\//i.test(v)
+		if (isLink) v = await findImageUrl(v)
 		async function viaDiscordApi() {
 			var key = 'link|' + v
 			if (assetCache.has(key)) {
@@ -760,8 +807,8 @@
 				row('Your own buttons', "Discord doesn't show buttons on your own profile. Other people can see them on desktop, not always on mobile."),
 				row('Share activity', 'Your presence only shows if Discord is allowed to share your activity in your privacy settings.'),
 				row('Fancy text', 'Unusual unicode text can stop a presence from showing. Try normal letters.'),
-				row('Image problems', 'Not every image works. Try a smaller one, or a direct link ending in .png or .jpg.'),
-				row('Photos from your phone', 'Upload the photo to catbox.moe or imgur.com, copy the direct link ending in .png or .jpg, and paste it into Large image. Discord links stop working after about a day.'),
+				row('Image links', 'Paste any link you could post in chat: a direct image link, an Imgur link, or a page with a picture. The plugin finds the picture Discord would show. If one fails, try a smaller image.'),
+				row('Photos from your phone', 'Upload the photo to catbox.moe or imgur.com, copy the link, and paste it into Large image. Discord attachment links stop working after about a day.'),
 				row('Asset keys', 'Or upload art in your application on discord.com/developers under Rich Presence, then type its key (the asset name) into Large image and set the Application ID.'),
 			),
 			section(
