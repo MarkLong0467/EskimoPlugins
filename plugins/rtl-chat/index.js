@@ -1,22 +1,24 @@
 (function (exports) {
 	/*
 	 * RTL Chat for Valenced.
-	 * Two ways to read Discord from right to left, in English:
-	 *   Right-aligned chat (default): the chat is not mirrored. Message text is right-aligned and the
-	 *     profile pictures sit on the right of each message, like a right-to-left language.
+	 * Reads Discord from right to left, in English:
+	 *   Right to left (default): asks the phone to lay the app out right to left, exactly as Discord looks in
+	 *     Arabic: profile pictures on the right, text lined up on the right. Discord draws its messages
+	 *     natively, so this is the only way to move them. It applies after a restart of Discord.
 	 *   Mirror everything: the whole app is flipped sideways (optionally with readable letters).
+	 *   Off: normal.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var defaults = { mode: 'align', pictures: true, text: true, readable: true }
+	var defaults = { mode: 'rtl', readable: true, forced: false }
 	var storage
 	var listeners = []
-	var Scope // React context: true inside a message
-	var hooked = { how: 'not hooked yet', keys: [], fired: '', scope: 'not found', view: false, text: false, image: false, input: false }
+	var hooked = { how: 'not hooked yet', keys: [], fired: '', direction: '', image: false, input: false }
 	var FLIP = [{ scaleX: -1 }]
 
 	function setting(key) {
 		var s = storage && storage.cache
-		return s && s[key] !== undefined ? s[key] : defaults[key]
+		var value = s && s[key] !== undefined ? s[key] : defaults[key]
+		return key === 'mode' && value === 'align' ? 'rtl' : value // an earlier version called it 'align'
 	}
 	function changed() { listeners.slice().forEach(function (l) { try { l() } catch (e) {} }) }
 	function h(type, props) {
@@ -32,81 +34,47 @@
 	function mirrored() { return setting('mode') === 'mirror' }
 
 	// ======================================================================================
-	// Right-aligned chat: only messages change
+	// Right to left: the phone lays everything out right to left, like an Arabic device
 	// ======================================================================================
-	var SWAP = [
-		['marginLeft', 'marginRight'], ['paddingLeft', 'paddingRight'], ['left', 'right'],
-		['borderLeftWidth', 'borderRightWidth'], ['borderLeftColor', 'borderRightColor'],
-		['borderTopLeftRadius', 'borderTopRightRadius'], ['borderBottomLeftRadius', 'borderBottomRightRadius'],
-	]
-
-	/** The same style as it would be written for a right-to-left language. */
-	function rtlStyle(flat, isText) {
-		var out = Object.assign({}, flat)
-		var changedAny = false
-		if (setting('pictures')) {
-			if (flat.flexDirection === 'row') { out.flexDirection = 'row-reverse'; changedAny = true }
-			else if (flat.flexDirection === 'row-reverse') { out.flexDirection = 'row'; changedAny = true }
-			SWAP.forEach(function (pair) {
-				var a = flat[pair[0]]
-				var b = flat[pair[1]]
-				if (a === undefined && b === undefined) return
-				delete out[pair[0]]
-				delete out[pair[1]]
-				if (b !== undefined) out[pair[0]] = b
-				if (a !== undefined) out[pair[1]] = a
-				changedAny = true
-			})
-		}
-		if (isText && setting('text')) {
-			if (flat.textAlign === undefined || flat.textAlign === 'auto' || flat.textAlign === 'left') { out.textAlign = 'right'; changedAny = true }
-		}
-		return changedAny ? out : null
+	function i18n() {
+		var m = valenced.react.ReactNative.I18nManager
+		return m && typeof m.forceRTL === 'function' ? m : null
 	}
-
-	/** Patches a component's render so that inside a message its style is written right to left. */
-	function patchScoped(Component, kind, cleanup) {
-		var RN = valenced.react.ReactNative
-		var React = valenced.react.React
-		if (!Scope || !Component || typeof Component.render !== 'function') return false
-		cleanup(
-			valenced.patcher.instead(Component, 'render', function (args, original) {
-				var inMessage = React.useContext(Scope) // a hook, so it runs on every render, in the same place
-				var el = Reflect.apply(original, this, args)
-				try {
-					if (!inMessage || mirrored() || !el || !el.props) return el
-					var flat = RN.StyleSheet.flatten(el.props.style) || {}
-					var next = rtlStyle(flat, kind === 'text')
-					return next ? React.cloneElement(el, { style: next }) : el
-				} catch (e) {
-					return el
-				}
-			}),
-		)
-		return true
+	/** Whether the app is laid out right to left right now (decided when Discord started). */
+	function isRtlNow() {
+		var m = i18n()
+		return !!(m && m.isRTL)
 	}
-
-	/** Marks every message, wherever Discord draws it, so only messages are changed. */
-	function installScope(cleanup) {
-		var React = valenced.react.React
-		var f = valenced.modules.finders
-		Scope = React.createContext(false)
-		var guard = false
-		function isMessage(el) {
-			var m = el && typeof el === 'object' && el.props && el.props.message
-			return !!m && typeof m === 'object' && m.author && m.channel_id !== undefined
+	function applyDirection(mode) {
+		var m = i18n()
+		if (!m) return 'This phone does not let apps change the layout direction'
+		var want = (mode || setting('mode')) === 'rtl'
+		try {
+			if (want) {
+				if (typeof m.allowRTL === 'function') m.allowRTL(true)
+				m.forceRTL(true)
+				if (storage && !setting('forced')) storage.set({ forced: true })
+			} else if (setting('forced')) {
+				// Right to left was turned on by this plugin earlier: give the phone its normal direction back.
+				m.forceRTL(false)
+				if (storage) storage.set({ forced: false })
+			}
+		} catch (e) {
+			return 'Could not change the layout direction: ' + String((e && e.message) || e).slice(0, 80)
 		}
-		function mark(el) {
-			if (guard || !isMessage(el) || el.type === Scope.Provider) return el
-			guard = true
-			try { return h(Scope.Provider, { value: true }, el) } finally { guard = false }
-		}
-		var runtime = f.lookupModule(f.filters.withProps('jsx', 'jsxs'))[0] || valenced.react.ReactJSXRuntime
-		;['jsx', 'jsxs'].forEach(function (name) {
-			if (runtime && typeof runtime[name] === 'function') cleanup(valenced.patcher.after(runtime, name, mark))
-		})
-		if (typeof React.createElement === 'function') cleanup(valenced.patcher.after(React, 'createElement', mark))
-		hooked.scope = 'messages found by their props'
+		return ''
+	}
+	function restartApp() {
+		try {
+			var mod = valenced.discord.native && valenced.discord.native.BundleUpdaterManager
+			if (mod && typeof mod.reload === 'function') return mod.reload()
+		} catch (e) {}
+		try {
+			var RN = valenced.react.ReactNative
+			var dev = RN.NativeModules && RN.NativeModules.DevSettings
+			if (dev && typeof dev.reload === 'function') return dev.reload()
+		} catch (e) {}
+		try { valenced.discord.actions.ToastActionCreators.open('MARKLONG_RTL', { text: 'Close Discord completely and open it again' }) } catch (e) {}
 	}
 
 	// ======================================================================================
@@ -262,7 +230,10 @@
 		function toggle(key, label, subLabel) {
 			return h(Design.TableSwitchRow, { key: key, label: label, subLabel: subLabel, value: !!settings[key], onValueChange: function (v) { put(key, v) } })
 		}
-		var align = settings.mode !== 'mirror'
+		var mode = settings.mode === 'align' ? 'rtl' : settings.mode
+		var now = isRtlNow()
+		var wantRtl = mode === 'rtl'
+		var pending = wantRtl !== now
 		return h(
 			RN.ScrollView,
 			{ style: { flex: 1 }, contentContainerStyle: { paddingBottom: 38 } },
@@ -271,32 +242,36 @@
 				{ style: { paddingVertical: 24, paddingHorizontal: 12 }, spacing: 24 },
 				h(
 					Design.TableRadioGroup,
-					{ title: 'Style', value: settings.mode, onChange: function (v) { put('mode', v) } },
+					{ title: 'Style', value: mode, onChange: function (v) { put('mode', v); hooked.direction = applyDirection(v) } },
 					[
-						{ value: 'align', label: 'Right-aligned chat', subLabel: 'Not mirrored. Message text is right-aligned and profile pictures are on the right' },
+						{ value: 'rtl', label: 'Right to left (like Arabic)', subLabel: 'Profile pictures on the right and text lined up on the right, the way Discord looks in Arabic, but in English. Needs a restart of Discord' },
 						{ value: 'mirror', label: 'Mirror everything', subLabel: 'The whole app is flipped sideways, like a mirror' },
+						{ value: 'off', label: 'Off', subLabel: 'Normal left to right' },
 					].map(function (r) { return h(Design.TableRadioRow, { key: r.value, label: r.label, subLabel: r.subLabel, value: r.value }) }),
 				),
-				align
+				pending
 					? h(
 							Design.TableRowGroup,
-							{ title: 'Right-aligned chat' },
-							toggle('pictures', 'Pictures on the right', 'Profile pictures move to the right of each message, with names and times next to them'),
-							toggle('text', 'Right-align message text', 'Lines of text line up on the right edge'),
+							{ title: 'Restart needed' },
+							h(Design.TableRow, { key: 'pending', label: wantRtl ? 'Right to left is set, but not on yet' : 'Normal direction is set, but right to left is still on', subLabel: 'Discord decides the layout direction when it starts. Restart it to apply.' }),
+							h(Design.TableRow, { key: 'restart', label: 'Restart Discord now', subLabel: 'Closes and reopens the app', onPress: restartApp }),
 					  )
-					: h(
+					: null,
+				mode === 'mirror'
+					? h(
 							Design.TableRowGroup,
 							{ title: 'Mirror everything' },
-							toggle('readable', 'Readable text and pictures', 'Letters and pictures face the normal way. Off is a true mirror, letters reversed'),
-					  ),
+							h(Design.TableSwitchRow, { key: 'readable', label: 'Readable text and pictures', subLabel: 'Letters and pictures face the normal way. Off is a true mirror, letters reversed. Messages are drawn by Discord itself, so their letters stay mirrored either way', value: !!settings.readable, onValueChange: function (v) { put('readable', v) } }),
+					  )
+					: null,
 				h(
 					Design.TableRowGroup,
 					{ title: 'Status' },
-					h(Design.TableRow, { key: 'scope', label: 'Messages', subLabel: hooked.scope }),
-					h(Design.TableRow, { key: 'parts', label: 'Parts found', subLabel: 'Text: ' + (hooked.text ? 'ok' : 'not found') + ' · Layouts: ' + (hooked.view ? 'ok' : 'not found') }),
-					align ? null : h(Design.TableRow, { key: 'hook', label: 'Mirror hooked into', subLabel: hooked.how + (hooked.fired ? ' · flipped through ' + hooked.fired : '') }),
-					align ? null : h(Design.TableRow, { key: 'registry', label: 'Apps Discord registered', subLabel: hooked.registry || 'unknown' }),
-					h(Design.TableRow, { key: 'note', label: 'After installing', subLabel: 'Restart Discord once. After that the settings above apply right away, except switching to or from Mirror everything the first time.' }),
+					h(Design.TableRow, { key: 'dir', label: 'Layout direction right now', subLabel: now ? 'Right to left' : 'Left to right' }),
+					hooked.direction ? h(Design.TableRow, { key: 'dirError', label: 'Problem', subLabel: hooked.direction }) : null,
+					mode === 'mirror' ? h(Design.TableRow, { key: 'hook', label: 'Mirror hooked into', subLabel: hooked.how + (hooked.fired ? ' · flipped through ' + hooked.fired : '') }) : null,
+					mode === 'mirror' ? h(Design.TableRow, { key: 'registry', label: 'Apps Discord registered', subLabel: hooked.registry || 'unknown' }) : null,
+					h(Design.TableRow, { key: 'note', label: 'Before you uninstall', subLabel: 'Set the style to Off first and restart Discord, or the phone can stay right to left.' }),
 				),
 			),
 		)
@@ -312,10 +287,7 @@
 			var RN = valenced.react.ReactNative
 			function attempt(label, step) { try { step() } catch (e) { hooked[label] = 'failed: ' + String((e && e.message) || e).slice(0, 60) } }
 
-			// Right-aligned chat.
-			attempt('scope', function () { installScope(cleanup) })
-			attempt('text', function () { hooked.text = patchScoped(RN.Text, 'text', cleanup) })
-			attempt('view', function () { hooked.view = patchScoped(RN.View, 'view', cleanup) })
+			hooked.direction = applyDirection()
 
 			// Mirror everything: its hooks are always installed, and only flip anything when that style is chosen.
 			var tried = []
