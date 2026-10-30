@@ -11,7 +11,7 @@
 	 * Notice: the table of Discord's sounds below (ids, names, seasonal files) is derived from
 	 * ScattrdBlade's customSounds, GPL-3.0-or-later.
 	 */
-	var defaults = { enabled: true, activePack: 'none', autoPacks: false, sounds: {}, userPacks: {}, keyNames: {}, bad: {}, proven: {} }
+	var defaults = { hapticMenus: true, hapticOther: true, hapticVibration: true, enabled: true, activePack: 'none', autoPacks: false, sounds: {}, userPacks: {}, keyNames: {}, bad: {}, proven: {} }
 	var CDN_SOUNDBOARD = 'https://cdn.discordapp.com/soundboard-sounds/'
 	var MAX_BYTES = 12 * 1024 * 1024
 	var VOLUMES = [25, 50, 75, 100]
@@ -1268,6 +1268,108 @@
 		try { step() } catch (e) { note(label + ' failed: ' + errorText(e)) }
 	}
 
+	// ---- Buzzing (haptics) ---------------------------------------------------------------------
+	var hapticHooks = { menus: 'not found yet', libraries: 'none found', vibration: 'not found' }
+	var buzzes = [] // { label, note, count, at }: buzzes that went by, newest first
+
+	/** Remembers a buzz that went by, with what was done about it. The log gets a line the first time, then every 5 s. */
+	function sawBuzz(label, what) {
+		var item = buzzes.filter(function (x) { return x.label === label && x.note === what })[0]
+		if (!item) {
+			item = { label: label, note: what, count: 0 }
+			buzzes.unshift(item)
+			if (buzzes.length > 30) buzzes.pop()
+		}
+		item.count++
+		if (!item.at || Date.now() - item.at > 5000) note('buzz: ' + label + ' -> ' + what + ' (' + item.count + 'x so far)')
+		item.at = Date.now()
+	}
+	function shortArgs(args) {
+		try { return Array.prototype.slice.call(args, 0, 2).map(function (a) { return typeof a === 'string' || typeof a === 'number' ? String(a) : typeof a }).join(', ') } catch (e) { return '' }
+	}
+
+	/** A haptic function that Discord's code calls: logged, and swallowed when its switch is off. */
+	function hookBuzz(cleanup, holder, name, label) {
+		if (!holder || typeof holder[name] !== 'function') return false
+		cleanup(
+			valenced.patcher.instead(holder, name, function (args, original) {
+				var off = !setting('hapticOther')
+				sawBuzz(label + '.' + name + '(' + shortArgs(args) + ')', off ? 'swallowed' : 'allowed')
+				if (off) return /Async$/.test(name) ? Promise.resolve() : undefined
+				return Reflect.apply(original, this, args)
+			}),
+		)
+		return true
+	}
+
+	function installHaptics(cleanup) {
+		// Long-press menus: Discord opens them with an option that skips the buzz.
+		attempt('hooking menus', function () {
+			var creators = valenced.discord.actions && valenced.discord.actions.ActionSheetActionCreators
+			if (!creators || typeof creators.openLazy !== 'function') return note('Buzz: the menu opener was not found')
+			cleanup(
+				valenced.patcher.instead(creators, 'openLazy', function (args, original) {
+					try {
+						if (!setting('hapticMenus')) {
+							args[2] = Object.assign({}, args[2], { disableHapticOnOpen: true })
+							sawBuzz('Menu opened', 'buzz removed')
+						} else sawBuzz('Menu opened', 'buzz kept')
+					} catch (e) {}
+					return Reflect.apply(original, this, args)
+				}),
+			)
+			hapticHooks.menus = 'working'
+		})
+		// Haptic libraries, found by what they export.
+		attempt('hooking haptic libraries', function () {
+			var f = valenced.modules.finders
+			var found = []
+			function add(label) { found.push(label); hapticHooks.libraries = found.join(', '); note('Buzz: hooked ' + label); changed() }
+			cleanup(
+				f.getModules(f.filters.withProps('impactAsync', 'notificationAsync', 'selectionAsync'), function (module) {
+					attempt('hooking the haptics library', function () {
+						var holder = module && typeof module.impactAsync === 'function' ? module : module && module.default
+						var any = false
+						;['impactAsync', 'notificationAsync', 'selectionAsync'].forEach(function (n) { if (hookBuzz(cleanup, holder, n, 'haptics')) any = true })
+						if (any) add('haptics')
+					})
+				}),
+			)
+			cleanup(
+				f.getModules(f.filters.withProps('trigger', 'HapticFeedbackTypes'), function (module) {
+					attempt('hooking the haptic feedback library', function () {
+						var any = hookBuzz(cleanup, module, 'trigger', 'hapticFeedback')
+						if (module && module.default && module.default !== module && hookBuzz(cleanup, module.default, 'trigger', 'hapticFeedback')) any = true
+						if (any) add('haptic feedback')
+					})
+				}),
+			)
+			// Native modules, looked up by exact name only (their members are never listed).
+			var natives = (valenced.react.ReactNative && valenced.react.ReactNative.NativeModules) || {}
+			;[['RNHapticFeedback', ['trigger']], ['ExpoHaptics', ['impactAsync', 'notificationAsync', 'selectionAsync']]].forEach(function (pair) {
+				var m = natives[pair[0]]
+				if (!m) return
+				var any = false
+				pair[1].forEach(function (n) { if (hookBuzz(cleanup, m, n, pair[0])) any = true })
+				if (any) add(pair[0])
+			})
+		})
+		// Plain vibrations, from React Native's own Vibration API.
+		attempt('hooking vibrations', function () {
+			var vib = valenced.react.ReactNative && valenced.react.ReactNative.Vibration
+			if (!vib || typeof vib.vibrate !== 'function') return
+			cleanup(
+				valenced.patcher.instead(vib, 'vibrate', function (args, original) {
+					var off = !setting('hapticVibration')
+					sawBuzz('Vibration', off ? 'swallowed' : 'allowed')
+					if (off) return undefined
+					return Reflect.apply(original, this, args)
+				}),
+			)
+			hapticHooks.vibration = 'working'
+		})
+	}
+
 	function installPatches(cleanup) {
 		attempt('finding the sound player', function () { sm = native('DCDSoundManager') })
 		if (!sm) return note('The sound player (DCDSoundManager) is missing on this phone')
@@ -1751,6 +1853,12 @@
 			return page([
 				title('Sounds', enabled ? count + ' changed · pack: ' + (packs().filter(function (p) { return p.id === activePackId() })[0] || { name: 'none' }).name : 'Custom sounds are off'),
 				h(Design.TableRowGroup, { key: 'master', title: 'Custom sounds' }, h(Design.TableSwitchRow, { key: 'on', label: 'Use custom sounds', subLabel: 'Turn everything off without losing your setup', value: enabled, onValueChange: function (v) { json.set({ enabled: v }); setTimeout(warm, 300) } })),
+				h(Design.TableRowGroup, { key: 'buzzing', title: 'Buzzing' }, [
+					h(Design.TableSwitchRow, { key: 'hapticMenus', label: 'Buzz when a menu opens', subLabel: 'The buzz when you long-press a message, server or person', value: !!data.hapticMenus, onValueChange: function (v) { json.set({ hapticMenus: v }) } }),
+					h(Design.TableSwitchRow, { key: 'hapticOther', label: 'Other haptic feedback', subLabel: 'Taps, switches and other small buzzes from Discord', value: !!data.hapticOther, onValueChange: function (v) { json.set({ hapticOther: v }) } }),
+					h(Design.TableSwitchRow, { key: 'hapticVibration', label: 'Vibrations', subLabel: 'Longer vibrations an app asks for', value: !!data.hapticVibration, onValueChange: function (v) { json.set({ hapticVibration: v }) } }),
+				]),
+				note2('Turn a switch off to stop that buzz. If something still buzzes, Tools, then Copy the log, lists what Discord asked for. Menus: ' + hapticHooks.menus + ' · Haptics: ' + hapticHooks.libraries + ' · Vibrations: ' + hapticHooks.vibration),
 				h(Field, { key: 'search', label: 'Search', placeholder: 'Search sounds', value: search, instant: true, onCommit: function (v) { setUi({ search: v }) } }),
 				recent.length && !search
 					? group('Heard from Discord, not in the list', recent.map(function (x) { return row(x.raw, (/#\d+$/.test(x.raw) ? 'Tap to find out which sound this is' : describe(x.key)) + ' · heard ' + x.count + 'x', function () { openHeard(x) }) }))
@@ -1956,12 +2064,12 @@
 				h(Field, { key: 'testUrl', label: 'Try a link', placeholder: 'https://…/sound.mp3', value: u.test, onCommit: function (v) { setUi({ test: v }) } }),
 				button('Play it', function () { var l = String(u.test).trim(); if (/^https?:\/\//.test(l)) previewUrl(l, 100); else toast('Paste a link starting with https://') }),
 				group('Backup', [
-					row('Copy all my settings', 'Share or keep a copy', function () { copyText(JSON.stringify({ sounds: data.sounds, userPacks: data.userPacks, activePack: data.activePack, autoPacks: data.autoPacks }), 'Settings') }),
+					row('Copy all my settings', 'Share or keep a copy', function () { copyText(JSON.stringify({ sounds: data.sounds, userPacks: data.userPacks, activePack: data.activePack, autoPacks: data.autoPacks, hapticMenus: data.hapticMenus, hapticOther: data.hapticOther, hapticVibration: data.hapticVibration }), 'Settings') }),
 					row('Paste settings from the clipboard', 'Replaces what you have now', function () {
 						Promise.resolve(valenced.externals.ReactNativeClipboard.Clipboard.getString()).then(function (text) {
 							var parsed
 							try { parsed = JSON.parse(text) } catch (e) { return toast('That is not a settings backup') }
-							json.set({ sounds: parsed.sounds || {}, userPacks: parsed.userPacks || {}, activePack: parsed.activePack || 'none', autoPacks: !!parsed.autoPacks })
+							json.set({ sounds: parsed.sounds || {}, userPacks: parsed.userPacks || {}, activePack: parsed.activePack || 'none', autoPacks: !!parsed.autoPacks, hapticMenus: parsed.hapticMenus !== false, hapticOther: parsed.hapticOther !== false, hapticVibration: parsed.hapticVibration !== false })
 							setTimeout(warm, 400)
 							toast('Settings restored')
 						}, function () { toast('Could not read the clipboard') })
@@ -1976,14 +2084,14 @@
 						Object.keys(setting('sounds') || {}).forEach(function (k) { cleared[k] = { mode: 'pack', url: '', label: '', volume: 100 } })
 						var removed = {}
 						Object.keys(setting('userPacks') || {}).forEach(function (id) { removed[id] = { deleted: true } })
-						json.set({ sounds: cleared, userPacks: removed, activePack: 'none', autoPacks: false, enabled: true })
+						json.set({ sounds: cleared, userPacks: removed, activePack: 'none', autoPacks: false, enabled: true, hapticMenus: true, hapticOther: true, hapticVibration: true })
 						ready = {}; failed = {}; failedAt = {}
 						toast('Everything was reset')
 					}),
 				]),
 				group('Log', diag.slice(-8).map(function (l, i) { return row(l, undefined, undefined, { key: 'log' + i }) })),
 				group('About', [
-					row('What this does', 'Replaces the sounds Discord plays inside the app (calls, mute, deafen, join, leave, messages) with your own links or a ready-made pack such as Halloween or Winter. Pick a sound on the Sounds tab, or switch a whole pack on in the Packs tab.'),
+					row('What this does', 'Replaces the sounds Discord plays inside the app (calls, mute, deafen, join, leave, messages) with your own links or a ready-made pack such as Halloween or Winter. Pick a sound on the Sounds tab, or switch a whole pack on in the Packs tab. The Sounds tab also has switches for the buzzing from Discord (haptics).'),
 					row('What it cannot change', 'Sounds that Android plays itself: the incoming call ringtone and message notifications, especially when the app is closed or the phone is locked. Those follow your phone settings.'),
 					row('Good to know', 'Your sounds play from their links, so they need internet. If the app ever closes during a step, the plugin skips that step from then on. When something does not work, send the log from this tab.'),
 				]),
@@ -2044,6 +2152,7 @@
 				return journalCheck()
 			}).catch(function () {}).then(loadPreviousLog).catch(function () {})
 			installPatches(cleanup)
+			attempt('hooking buzzing', function () { installHaptics(cleanup) })
 			// Sounds are loaded once the settings are in, so the first ring after a restart already uses yours.
 			journalReady.then(function () { setTimeout(warm, 1500) })
 			// Packs that switch with the date: look again once an hour, so a new season starts without a restart.
