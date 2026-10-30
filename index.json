@@ -87,7 +87,7 @@
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "contributors": [],
       "channels": {
-        "latest": "0.1.29"
+        "latest": "0.1.34"
       },
       "versions": {
         "0.1.0": {
@@ -224,6 +224,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.custom-sounds@0.1.29.zip",
           "sha256": "dd7a59761b9c9fd18f9f0018df148499929a982034fdecabbf71af9537167ffe",
           "size": 24863,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "0.1.34": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.custom-sounds@0.1.34.zip",
+          "sha256": "6bcbb699e3be68a233dc6779ff91d71f72cee21f74f80d56b744ec24664beef1",
+          "size": 25240,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
