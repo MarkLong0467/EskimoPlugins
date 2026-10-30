@@ -185,13 +185,26 @@
       "description": "Flips Discord left to right, so the chat reads right to left like Arabic but in English, with avatars on the right.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.0.0"
+        "latest": "1.0.1"
       },
       "versions": {
         "1.0.0": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.rtl-chat@1.0.0.zip",
           "sha256": "a93e5bcb446df8bfb76bff8a140bf0f2f18f6ac495b75d6bc1293a97552dc04f",
           "size": 2998,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.0.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.rtl-chat@1.0.1.zip",
+          "sha256": "b2c8cb6ff65cabc11c2d26b7ea29ecb6defa659e0378e98a6703c276ff5bc9de",
+          "size": 4675,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
