@@ -191,6 +191,11 @@
 						var href = rel && /href=["']([^"']+)["']/i.exec(rel)
 						if (href) found = href[1]
 					}
+					if (!found) {
+						// Pages like postimg.cc show the direct link in the page even without preview tags.
+						var direct = /https:\/\/i\.postimg\.cc\/[^"'\s<>]+?\.(?:png|jpe?g|gif|webp)/i.exec(html)
+						if (direct) found = direct[0]
+					}
 					var abs = found && absoluteUrl(found, link)
 					if (abs) result = abs
 				}
