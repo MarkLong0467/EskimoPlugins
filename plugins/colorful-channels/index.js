@@ -50,10 +50,8 @@
 	}
 
 	var storage
-	var status = { icons: 'waiting for Discord to load it', nsfw: 'waiting for Discord to load it', seen: [], drawn: 0, calls: 0, error: '' }
 
 	function finders() { return valenced.modules.finders }
-	function find(filter) { return finders().lookupModule(filter)[0] }
 	function setting(key) {
 		var s = storage && storage.cache
 		return s && s[key] !== undefined ? s[key] : defaults[key]
@@ -131,12 +129,9 @@
 		if (!setting('colorIcons') || !ret || !ret.props) return ret
 		var props = args[0] || {}
 		var name = assetName(props.source)
-		status.calls++
 		if (!name) return ret
 		var glyph = glyphFor(name)
-		if (status.seen.indexOf(name + (glyph ? ' *' : '')) === -1 && status.seen.length < 14) status.seen.push(name + (glyph ? ' *' : ''))
 		if (!glyph) return ret
-		status.drawn++
 		var RN = valenced.react.ReactNative
 		var kind = KIND[glyph.kind]
 		var overlay = glyph.kind === 'Controller' ? IMAGES.controller : IMAGES[glyph.kind === 'Lock' ? (glyph.bottom ? 'lockBottom' : 'lock') : glyph.bottom ? 'warningBottom' : 'warning']
@@ -204,22 +199,15 @@
 	var registerCleanup = function (fn) { return fn }
 	function patchIcons(module) {
 		var holder = module && typeof module.BaseChannelIcon === 'function' ? module : module && module.default && typeof module.default.BaseChannelIcon === 'function' ? module.default : null
-		if (!holder) {
-			status.icons = 'found a module, but it has no BaseChannelIcon function'
-			return
-		}
+		if (!holder) return
 		try {
 			registerCleanup(
 				valenced.patcher.instead(holder, 'BaseChannelIcon', function (args, original) {
 					var ret = Reflect.apply(original, this, args)
-					try { return decorateIcon(args, ret) } catch (e) { status.error = String((e && e.message) || e); return ret }
+					try { return decorateIcon(args, ret) } catch (e) { return ret }
 				}),
 			)
-			status.icons = 'found and patched'
-		} catch (e) {
-			status.icons = 'found, but could not patch it'
-			status.error = String((e && e.message) || e)
-		}
+		} catch (e) {}
 	}
 
 	Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
@@ -238,7 +226,6 @@
 					f.filters.withName('ChannelInfo'),
 					function (module) {
 						if (!module || typeof module.default !== 'function') return
-						status.nsfw = 'found'
 						cleanup(
 							valenced.patcher.instead(module, 'default', function (args, original) {
 								var ret = Reflect.apply(original, this, args)
@@ -265,15 +252,6 @@
 					{ returnNamespace: true },
 				),
 			)
-
-			// If Discord has not reported the icon module after a few seconds, look for it directly.
-			var timer = setTimeout(function () {
-				if (status.icons.indexOf('waiting') !== 0) return
-				var found = find(f.filters.withProps('BaseChannelIcon'))
-				if (found) patchIcons(found)
-				else status.icons = 'not found in this version of Discord'
-			}, 5000)
-			cleanup(function () { clearTimeout(timer) })
 		},
 	})
 	return exports
