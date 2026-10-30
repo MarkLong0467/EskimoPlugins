@@ -861,66 +861,129 @@
 		return item
 	}
 
+	var SOUND_METHODS = ['prepare', 'play', 'stop', 'pause', 'release', 'setVolume', 'setNumberOfLoops', 'setCurrentTime', 'setPan', 'getCurrentTime']
+	var hooks = { native: 'not tried', js: 'not tried' }
+
+	/**
+	 * Handles one request from Discord to play a sound. Returns true when it was dealt with here (your
+	 * sound played, or the sound was silenced), false when Discord should play its own.
+	 */
+	function handleSound(name) {
+		var item = hear(name)
+		var r
+		try { r = resolve(item.key) } catch (e) {}
+		item.replaced = !!r
+		changed()
+		if (!r) return false
+		if (r.off) return true
+		var slot = ready[r.url]
+		if (!slot) {
+			// Not downloaded yet: let Discord's own sound play this time, and get ours ready.
+			if (!coolingDown(r.url)) ensureReady(r.url).catch(function () {})
+			return false
+		}
+		setVolume(slot.key, r.volume)
+		try { orig.play.call(sm, slot.key) } catch (e) { note('could not play: ' + errorText(e)); return false }
+		return true
+	}
+
+	/** Runs one step of setting up, so a problem in one place never stops the rest. */
+	function attempt(label, step) {
+		try { step() } catch (e) { note(label + ' failed: ' + errorText(e)) }
+	}
+
 	function installPatches(cleanup) {
-		sm = native('DCDSoundManager')
+		attempt('finding the sound player', function () { sm = native('DCDSoundManager') })
 		if (!sm) return note('The sound player (DCDSoundManager) is missing on this phone')
-		;['prepare', 'play', 'stop', 'pause', 'release', 'setVolume', 'setNumberOfLoops', 'setCurrentTime', 'setPan', 'getCurrentTime'].forEach(function (m) {
-			if (typeof sm[m] === 'function') orig[m] = sm[m]
+		var present = []
+		SOUND_METHODS.forEach(function (m) {
+			attempt('checking ' + m, function () {
+				if (typeof sm[m] === 'function') {
+					orig[m] = sm[m]
+					present.push(m)
+				}
+			})
 		})
-		note('DCDSoundManager methods: ' + Object.keys(sm).join(', '))
-		var files = fileModule()
-		note('File module: ' + (files ? 'found (' + Object.keys(files).join(', ') + ')' : 'missing'))
+		note('Sound player methods: ' + (present.join(', ') || 'none found'))
+		attempt('finding the file module', function () { note('File module: ' + (fileModule() ? 'found' : 'missing')) })
 		var lastPrepare = {}
-		if (typeof orig.prepare === 'function')
-			cleanup(
-				valenced.patcher.instead(sm, 'prepare', function (args, original) {
-					try {
-						var shown = watchPrepare(args)
-						for (var i = 0; i < shown.length; i++) if (typeof shown[i] === 'string') lastPrepare[shown[i]] = args.slice()
-					} catch (e) {}
-					return Reflect.apply(original, this, args)
-				}),
-			)
 
-		if (typeof orig.play === 'function')
-			cleanup(
-				valenced.patcher.instead(sm, 'play', function (args, original) {
-					var name = args[0]
-					if (typeof name !== 'string') return Reflect.apply(original, this, args)
-					var item = hear(name)
-					try { learnTemplate(lastPrepare[name], name) } catch (e) {}
-					var r
-					try { r = resolve(item.key) } catch (e) {}
-					item.replaced = !!r
-					changed()
-					if (!r) return Reflect.apply(original, this, args)
-					if (r.off) return undefined
-					var slot = ready[r.url]
-					if (!slot) {
-						// Not downloaded yet: let Discord's own sound play this time, and get ours ready.
-						if (!coolingDown(r.url)) ensureReady(r.url).catch(function () {})
-						return Reflect.apply(original, this, args)
-					}
-					setVolume(slot.key, r.volume)
-					return Reflect.apply(original, this, [slot.key].concat(args.slice(1)))
-				}),
-			)
-
+		// Layer 1: the native sound player itself.
+		var patched = 0
+		function patchNative(method, make) {
+			if (typeof orig[method] !== 'function') return
+			attempt('patching ' + method, function () {
+				cleanup(valenced.patcher.instead(sm, method, make))
+				patched++
+			})
+		}
+		patchNative('prepare', function (args, original) {
+			try {
+				var shown = watchPrepare(args)
+				for (var i = 0; i < shown.length; i++) if (typeof shown[i] === 'string') lastPrepare[shown[i]] = args.slice()
+			} catch (e) {}
+			return Reflect.apply(original, this, args)
+		})
+		patchNative('play', function (args, original) {
+			var name = args[0]
+			if (typeof name !== 'string') return Reflect.apply(original, this, args)
+			try { learnTemplate(lastPrepare[name], name) } catch (e) {}
+			var item = hear(name)
+			var r
+			try { r = resolve(item.key) } catch (e) {}
+			item.replaced = !!r
+			changed()
+			if (!r) return Reflect.apply(original, this, args)
+			if (r.off) return undefined
+			var slot = ready[r.url]
+			if (!slot) {
+				if (!coolingDown(r.url)) ensureReady(r.url).catch(function () {})
+				return Reflect.apply(original, this, args)
+			}
+			setVolume(slot.key, r.volume)
+			return Reflect.apply(original, this, [slot.key].concat(args.slice(1)))
+		})
 		// Stopping, pausing and looping a sound that was replaced has to reach the file that is playing.
 		;['stop', 'pause', 'setNumberOfLoops', 'setCurrentTime', 'setPan'].forEach(function (m) {
-			if (typeof orig[m] !== 'function') return
+			patchNative(m, function (args, original) {
+				var name = args[0]
+				if (typeof name === 'string') {
+					try {
+						var r = resolve(keyOf(name))
+						if (r && r.off) return undefined
+						if (r && ready[r.url]) return Reflect.apply(original, this, [ready[r.url].key].concat(args.slice(1)))
+					} catch (e) {}
+				}
+				return Reflect.apply(original, this, args)
+			})
+		})
+		hooks.native = patched ? 'working (' + patched + ' methods)' : 'could not be patched'
+		note('Native sound player hook: ' + hooks.native)
+
+		// Layer 2: Discord's own sound helper, for phones where the native player cannot be patched.
+		attempt('finding the sound helper', function () {
+			var f = valenced.modules.finders
 			cleanup(
-				valenced.patcher.instead(sm, m, function (args, original) {
-					var name = args[0]
-					if (typeof name === 'string') {
-						try {
-							var r = resolve(keyOf(name))
-							if (r && r.off) return undefined
-							if (r && ready[r.url]) return Reflect.apply(original, this, [ready[r.url].key].concat(args.slice(1)))
-						} catch (e) {}
-					}
-					return Reflect.apply(original, this, args)
-				}),
+				f.getModules(
+					f.filters.withProps('playSound'),
+					function (module) {
+						var holder = module && typeof module.playSound === 'function' ? module : module && module.default && typeof module.default.playSound === 'function' ? module.default : null
+						if (!holder) return
+						attempt('patching playSound', function () {
+							cleanup(
+								valenced.patcher.instead(holder, 'playSound', function (args, original) {
+									var name = args[0]
+									try { if (typeof name === 'string' && handleSound(name)) return undefined } catch (e) {}
+									return Reflect.apply(original, this, args)
+								}),
+							)
+							hooks.js = 'working'
+							note('Sound helper hook: working')
+							changed()
+						})
+					},
+					{ returnNamespace: true },
+				),
 			)
 		})
 	}
@@ -1330,6 +1393,7 @@
 				group('Status', [
 					row('Sound player', sm ? 'Found (DCDSoundManager)' : 'Not found on this phone'),
 					row('File module', fileModule() ? 'Found' : 'Not found, links are played directly'),
+					row('Hooks into Discord\'s sounds', 'Player: ' + hooks.native + ' · Helper: ' + hooks.js),
 					row('Custom sounds ready', readyCount + ' ready' + (failCount ? ', ' + failCount + ' failed' : '')),
 					row('How files are loaded', learned.variant >= 0 ? 'Method ' + (learned.variant + 1) + ' worked' : 'Not learned yet, play a custom sound'),
 				]),
