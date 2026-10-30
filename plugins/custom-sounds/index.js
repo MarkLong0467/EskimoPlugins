@@ -10,7 +10,7 @@
 	 * watches those calls. For a sound you changed, it plays your file (downloaded once to the app
 	 * cache) in its place, and passes stop/pause for that name on to your file.
 	 */
-	var defaults = { enabled: true, activePack: 'none', autoPacks: false, sounds: {}, userPacks: {} }
+	var defaults = { enabled: true, activePack: 'none', autoPacks: false, sounds: {}, userPacks: {}, keyNames: {} }
 	var CDN_SOUNDBOARD = 'https://cdn.discordapp.com/soundboard-sounds/'
 	var MAX_BYTES = 12 * 1024 * 1024
 	var VOLUMES = [25, 50, 75, 100, 150, 200, 300, 500]
@@ -710,25 +710,58 @@
 
 	// The shape of prepare is learned from what Discord itself sends (see watchPrepare). Until then these are
 	// tried in order, the way Discord's sound player (a fork of react-native-sound) is most likely to take them.
+	function textKey(n) { return 'cs-' + n }
 	var VARIANTS = [
-		{ name: 'uri, usage, key, cb', build: function (u, k) { return [u, 'notification', k, CALLBACK] } },
 		{ name: 'uri, key, options, cb', build: function (u, k) { return [u, k, { loadSync: true }, CALLBACK] } },
 		{ name: 'uri, key, cb', build: function (u, k) { return [u, k, CALLBACK] } },
-		{ name: 'uri, ringtone, key, cb', build: function (u, k) { return [u, 'ringtone', k, CALLBACK] } },
-		{ name: 'uri, voice, key, cb', build: function (u, k) { return [u, 'voice', k, CALLBACK] } },
+		{ name: 'uri, usage, key, cb', build: function (u, k) { return [u, 'notification', k, CALLBACK] } },
+		{ name: 'uri, usage, key, options, cb', build: function (u, k) { return [u, 'notification', k, { loadSync: true }, CALLBACK] } },
+		{ name: 'uri, key, usage, cb', build: function (u, k) { return [u, k, 'notification', CALLBACK] } },
 		{ name: 'uri, 0, key, cb', build: function (u, k) { return [u, 0, k, CALLBACK] } },
-		{ name: 'uri, 1, key, cb', build: function (u, k) { return [u, 1, k, CALLBACK] } },
+		{ name: 'uri, name, options, cb', keyFor: textKey, build: function (u, k) { return [u, k, { loadSync: true }, CALLBACK] } },
+		{ name: 'uri, usage, name, cb', keyFor: textKey, build: function (u, k) { return [u, 'notification', k, CALLBACK] } },
+		{ name: 'uri, name, cb', keyFor: textKey, build: function (u, k) { return [u, k, CALLBACK] } },
+		{ name: 'uri, 0, name, cb', keyFor: textKey, build: function (u, k) { return [u, 0, k, CALLBACK] } },
 	]
 
+	var nameOfKey = {} // Discord's key for a sound -> the sound it is (from its prepare calls)
+	var keyOfName = {} // the other way round
 	var observedPrepare = [] // what Discord's own prepare calls looked like
 	var learnedTemplate // function(uri, key) -> arguments, built from one of those calls
+	var learnedKeyIsNumber = true
 
 	function plain(value) {
 		return typeof value === 'function' ? '[function]' : value && typeof value === 'object' ? JSON.stringify(value).slice(0, 60) : value
 	}
 
 	/** Remembers how Discord calls prepare, and works out which argument is the sound and which is its name. */
+	/** The Discord sound a file name or path belongs to, or undefined. The longest matching name wins. */
+	function soundFromText(text) {
+		var t = keyOf(String(text))
+		var best
+		SOUNDS.forEach(function (sound) {
+			var id = keyOf(sound.id)
+			if (t === id || t.slice(-id.length) === id || t.indexOf(id) >= 0) if (!best || id.length > keyOf(best.id).length) best = sound
+		})
+		return best
+	}
+
+	function learnKeys(args) {
+		var number
+		var text
+		for (var i = 0; i < args.length; i++) {
+			if (typeof args[i] === 'number') number = args[i]
+			else if (typeof args[i] === 'string' && !text && args[i].length > 2 && !/^(notification|ringtone|voice|media|alarm|default)$/i.test(args[i])) text = args[i]
+		}
+		if (number === undefined || !text) return
+		var sound = soundFromText(text)
+		var name = sound ? keyOf(sound.id) : keyOf(text)
+		nameOfKey[number] = name
+		keyOfName[name] = number
+	}
+
 	function watchPrepare(args) {
+		try { learnKeys(args) } catch (e) {}
 		var shown = args.map(plain)
 		if (observedPrepare.length < 6) {
 			observedPrepare.push(shown)
@@ -740,7 +773,7 @@
 	function learnTemplate(prepareArgs, playedName) {
 		if (learnedTemplate || !prepareArgs) return
 		var keyAt = -1
-		for (var i = 0; i < prepareArgs.length; i++) if (prepareArgs[i] === playedName) keyAt = i
+		for (var i = 0; i < prepareArgs.length; i++) if (prepareArgs[i] === playedName && (typeof playedName === 'number' || typeof prepareArgs[i] === 'string')) keyAt = i
 		if (keyAt < 0) return
 		var uriAt = -1
 		for (var j = 0; j < prepareArgs.length; j++) {
@@ -756,6 +789,7 @@
 			out[keyAt] = k
 			return out
 		}
+		learnedKeyIsNumber = typeof playedName === 'number'
 		note('Learned how Discord calls prepare: sound is argument ' + (uriAt + 1) + ', name is argument ' + (keyAt + 1) + ' of ' + copy.length)
 	}
 
@@ -781,7 +815,7 @@
 		loading[url] = (async function () {
 			try {
 				if (!sm || typeof orig.prepare !== 'function') throw new Error('The sound player was not found on this phone')
-				var key = 'cs-' + hash(url)
+				var number = 900000 + (parseInt(hash(url), 36) % 90000)
 				var paths = []
 				if (/^(file:|\/)/.test(url)) paths = [url]
 				else {
@@ -789,7 +823,7 @@
 				}
 				var candidates = candidatesFor(url, paths)
 				var variants = []
-				if (learnedTemplate) variants.push({ name: 'what Discord uses', build: learnedTemplate })
+				if (learnedTemplate) variants.push({ name: 'what Discord uses', build: learnedTemplate, keyFor: learnedKeyIsNumber ? undefined : textKey })
 				if (learnedVariant) variants.push(learnedVariant)
 				else VARIANTS.forEach(function (v) { variants.push(v) })
 				var started = Date.now()
@@ -799,13 +833,14 @@
 					for (var v = 0; v < variants.length; v++) {
 						if (Date.now() - started > 25000) throw lastError || new Error('Gave up after 25 seconds')
 						try {
-							await callPrepare(variants[v].build(candidates[c], key))
+							var usedKey = variants[v].keyFor ? variants[v].keyFor(number) : number
+							await callPrepare(variants[v].build(candidates[c], usedKey))
 							if (variants[v] !== learnedVariant) {
 								learnedVariant = variants[v]
 								rememberLayout(variants[v].name)
 							}
 							note('ready: ' + variants[v].name + ' with ' + (candidates[c].length > 60 ? candidates[c].slice(0, 60) + '…' : candidates[c]))
-							ready[url] = { key: key, path: candidates[c] }
+							ready[url] = { key: usedKey, path: candidates[c] }
 							delete failed[url]
 							delete failedAt[url]
 							return ready[url]
@@ -903,15 +938,23 @@
 
 	/** Plays Discord's own version of a sound, for the preview buttons. */
 	function previewOriginal(id) {
-		try { nativeCall('play', [id]) } catch (e) { toast('Could not play it: ' + errorText(e).slice(0, 120)) }
+		var key = keyOfName[keyOf(id)]
+		if (key === undefined) {
+			note('no Discord key known yet for ' + id)
+			return toast('Discord has not loaded this sound yet. Do something that makes it play once, then try again.')
+		}
+		try { nativeCall('play', [key]) } catch (e) {
+			note('play failed: ' + errorText(e))
+			toast('Could not play it. See Tools > Log.')
+		}
 	}
 
 	// ---- Listening to Discord ------------------------------------------------------------------
-	function hear(raw) {
+	function hear(raw, label) {
 		var key = keyOf(raw)
 		var item = heard.filter(function (x) { return x.key === key })[0]
 		if (!item) {
-			item = { key: key, raw: String(raw), count: 0 }
+			item = { key: key, raw: String(label || raw), count: 0 }
 			heard.unshift(item)
 			if (heard.length > 30) heard.pop()
 		}
@@ -921,7 +964,7 @@
 	}
 
 	var SOUND_METHODS = ['prepare', 'play', 'stop', 'pause', 'release', 'setVolume', 'setNumberOfLoops', 'setCurrentTime', 'setPan', 'getCurrentTime']
-	var hooks = { native: 'not tried', js: 'not tried' }
+	var hooks = { native: 'not tried', js: 'not tried', cls: 'not found' }
 
 	/**
 	 * Handles one request from Discord to play a sound. Returns true when it was dealt with here (your
@@ -976,21 +1019,32 @@
 				patched++
 			})
 		}
+		/** Which sound a request from Discord is about: its name, or a number it was given when it was loaded. */
+		function soundOf(first) {
+			if (typeof first === 'number') return nameOfKey[first] || ''
+			if (typeof first === 'string') return keyOf(first)
+			return ''
+		}
+		function rawName(first) {
+			return typeof first === 'number' ? (nameOfKey[first] ? nameOfKey[first] : 'Sound #' + first) : String(first)
+		}
+
 		patchNative('prepare', function (args, original) {
 			try {
 				var shown = watchPrepare(args)
-				for (var i = 0; i < shown.length; i++) if (typeof shown[i] === 'string') lastPrepare[shown[i]] = args.slice()
+				for (var i = 0; i < shown.length; i++) if (typeof args[i] === 'string' || typeof args[i] === 'number') lastPrepare[String(args[i])] = args.slice()
 			} catch (e) {}
 			return Reflect.apply(original, this, args)
 		})
 		patchNative('play', function (args, original) {
-			var name = args[0]
-			if (typeof name !== 'string') return Reflect.apply(original, this, args)
-			try { learnTemplate(lastPrepare[name], name) } catch (e) {}
+			var first = args[0]
+			if (typeof first !== 'string' && typeof first !== 'number') return Reflect.apply(original, this, args)
+			try { learnTemplate(lastPrepare[String(first)], first) } catch (e) {}
 			if (!tails.play && args.length > 1) tails.play = args.slice(1).map(function (x) { return typeof x === 'function' ? noop : x })
-			var item = hear(name)
+			var sound = soundOf(first)
+			var item = hear(sound || rawName(first), rawName(first))
 			var r
-			try { r = resolve(item.key) } catch (e) {}
+			try { r = sound ? resolve(sound) : null } catch (e) {}
 			item.replaced = !!r
 			changed()
 			if (!r) return Reflect.apply(original, this, args)
@@ -1006,10 +1060,10 @@
 		// Stopping, pausing and looping a sound that was replaced has to reach the file that is playing.
 		;['stop', 'pause', 'setNumberOfLoops', 'setCurrentTime', 'setPan'].forEach(function (m) {
 			patchNative(m, function (args, original) {
-				var name = args[0]
-				if (typeof name === 'string') {
+				var sound = soundOf(args[0])
+				if (sound) {
 					try {
-						var r = resolve(keyOf(name))
+						var r = resolve(sound)
 						if (r && r.off) return undefined
 						if (r && ready[r.url]) return Reflect.apply(original, this, [ready[r.url].key].concat(args.slice(1)))
 					} catch (e) {}
@@ -1019,6 +1073,46 @@
 		})
 		hooks.native = patched ? 'working (' + patched + ' methods)' : 'could not be patched'
 		note('Native sound player hook: ' + hooks.native)
+
+		// Layer 1b: Discord's sound class on the JS side, which knows each sound by name.
+		attempt('finding the sound class', function () {
+			var f = valenced.modules.finders
+			var told = false
+			cleanup(
+				f.getModules(
+					f.filters.withName('MobileAudioSound'),
+					function (module) {
+						var cls = typeof module === 'function' ? module : module && typeof module.default === 'function' ? module.default : null
+						if (!cls || !cls.prototype || typeof cls.prototype.play !== 'function') return
+						attempt('patching the sound class', function () {
+							cleanup(
+								valenced.patcher.instead(cls.prototype, 'play', function (args, original) {
+									try {
+										var found
+										var fields = []
+										Object.keys(this).forEach(function (k) {
+											var v = this[k]
+											if (typeof v === 'string' || typeof v === 'number') fields.push(k + '=' + String(v).slice(0, 40))
+											if (!found && typeof v === 'string' && v.length < 90) {
+												var sound = soundFromText(v)
+												if (sound) found = keyOf(sound.id)
+											}
+										}, this)
+										if (!told) { told = true; note('Sound class fields: ' + fields.join(', ')) }
+										if (found && handleSound(found)) return undefined
+									} catch (e) {}
+									return Reflect.apply(original, this, args)
+								}),
+							)
+							hooks.cls = 'working'
+							note('Sound class hook: working')
+							changed()
+						})
+					},
+					{ returnNamespace: true },
+				),
+			)
+		})
 
 		// Layer 2: Discord's own sound helper, for phones where the native player cannot be patched.
 		attempt('finding the sound helper', function () {
@@ -1187,6 +1281,46 @@
 		function backBar() { return button('‹ Back', back) }
 
 		// ---- one list of every sound, used by the Sounds tab and the "use for" picker
+		function openHeard(x) {
+			var m = /#(\d+)$/.exec(x.raw)
+			if (m) go({ name: 'identify', number: Number(m[1]) })
+			else go({ name: 'edit', key: x.key, title: x.raw, id: x.raw })
+		}
+
+		function IdentifyScreen(screen) {
+			return page([
+				backBar(),
+				title('Sound #' + screen.number, 'Discord played a sound it had loaded before this plugin started'),
+				group('Find out which sound it is', [
+					row('Play it', 'Listen to what Discord plays', function () { try { nativeCall('play', [screen.number]) } catch (e) { note('play failed: ' + errorText(e)); toast('Could not play it. See Tools > Log.') } }),
+					row('This is…', 'Choose which Discord sound this is', function () { go({ name: 'identifyPick', number: screen.number }) }),
+				]),
+				note2('Numbers can change after Discord restarts, so you may need to do this again.'),
+			])
+		}
+
+		function IdentifyPickScreen(screen) {
+			return page(
+				[
+					backBar(),
+					title('Which sound is #' + screen.number + '?'),
+					h(Field, { key: 'identifySearch', label: 'Search', placeholder: 'Search sounds', value: u.pickSearch, instant: true, onCommit: function (v) { setUi({ pickSearch: v }) } }),
+				].concat(
+					soundGroups(u.pickSearch, function (sound) {
+						var name = keyOf(sound.id)
+						nameOfKey[screen.number] = name
+						keyOfName[name] = screen.number
+						var all = {}
+						all[screen.number] = name
+						json.set({ keyNames: all })
+						heard = heard.filter(function (x) { return !(/#\d+$/.test(x.raw) && Number(/#(\d+)$/.exec(x.raw)[1]) === screen.number) })
+						toast('Sound #' + screen.number + ' is ' + sound.name)
+						home()
+					}),
+				),
+			)
+		}
+
 		function soundGroups(search, onPick) {
 			var q = String(search || '').toLowerCase().trim()
 			var order = ['Messages & pings', 'Calls', 'Voice controls', 'Camera & streams', 'Activities & games', 'Other']
@@ -1265,7 +1399,7 @@
 				h(Design.TableRowGroup, { key: 'master', title: 'Custom sounds' }, h(Design.TableSwitchRow, { key: 'on', label: 'Use custom sounds', subLabel: 'Turn everything off without losing your setup', value: enabled, onValueChange: function (v) { json.set({ enabled: v }); setTimeout(warm, 300) } })),
 				h(Field, { key: 'search', label: 'Search', placeholder: 'Search sounds', value: search, instant: true, onCommit: function (v) { setUi({ search: v }) } }),
 				recent.length && !search
-					? group('Heard from Discord, not in the list', recent.map(function (x) { return row(x.raw, describe(x.key) + ' · heard ' + x.count + 'x', function () { go({ name: 'edit', key: x.key, title: x.raw, id: x.raw }) }) }))
+					? group('Heard from Discord, not in the list', recent.map(function (x) { return row(x.raw, (/#\d+$/.test(x.raw) ? 'Tap to find out which sound this is' : describe(x.key)) + ' · heard ' + x.count + 'x', function () { openHeard(x) }) }))
 					: null,
 			].concat(soundGroups(search)))
 		}
@@ -1453,14 +1587,14 @@
 				group('Status', [
 					row('Sound player', sm ? 'Found (DCDSoundManager)' : 'Not found on this phone'),
 					row('File module', fileModule() ? 'Found' : 'Not found, links are played directly'),
-					row('Hooks into Discord\'s sounds', 'Player: ' + hooks.native + ' · Helper: ' + hooks.js),
+					row('Hooks into Discord\'s sounds', 'Player: ' + hooks.native + ' · Helper: ' + hooks.js + ' · Class: ' + hooks.cls),
 					row('Custom sounds ready', readyCount + ' ready' + (failCount ? ', ' + failCount + ' failed' : '')),
 					row('How files are loaded', learnedVariant ? 'Works with: ' + learnedVariant.name : 'Not learned yet, play a custom sound'),
 				]),
 				group(
 					'Heard from Discord',
 					heard.length
-						? heard.slice(0, 12).map(function (x) { return row(x.raw, (x.replaced ? 'Replaced' : 'Discord\'s own') + ' · ' + x.count + 'x', function () { go({ name: 'edit', key: x.key, title: (soundInfo(x.key) || { name: x.raw }).name, id: x.raw }) }) })
+						? heard.slice(0, 12).map(function (x) { return row(x.raw, (x.replaced ? 'Replaced' : 'Discord\'s own') + ' · ' + x.count + 'x', function () { openHeard(x) }) })
 						: [row('Nothing yet', 'Do something that makes a sound, then come back here')],
 				),
 				h(Field, { key: 'testUrl', label: 'Try a link', placeholder: 'https://…/sound.mp3', value: u.test, onCommit: function (v) { setUi({ test: v }) } }),
@@ -1496,6 +1630,8 @@
 			if (screen.name === 'board') return BoardScreen(screen)
 			if (screen.name === 'clip') return ClipScreen(screen)
 			if (screen.name === 'pick') return PickScreen(screen)
+			if (screen.name === 'identify') return IdentifyScreen(screen)
+			if (screen.name === 'identifyPick') return IdentifyPickScreen(screen)
 		}
 		var tabs = [['sounds', 'Sounds'], ['packs', 'Packs'], ['discover', 'Discover'], ['tools', 'Tools']]
 		var body = view.tab === 'packs' ? PacksTab() : view.tab === 'discover' ? DiscoverTab() : view.tab === 'tools' ? ToolsTab() : SoundsTab()
@@ -1519,6 +1655,10 @@
 			var cleanup = api.cleanup
 			storage = api.jsonStorage
 			restoreLayout()
+			attempt('loading saved sound names', function () {
+				var saved = setting('keyNames') || {}
+				Object.keys(saved).forEach(function (n) { if (nameOfKey[n] === undefined) { nameOfKey[n] = saved[n]; keyOfName[saved[n]] = Number(n) } })
+			})
 			installPatches(cleanup)
 			setTimeout(warm, 5000)
 			// Packs that switch with the date: look again once an hour, so a new season starts without a restart.
