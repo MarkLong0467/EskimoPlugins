@@ -817,11 +817,13 @@
 				if (!sm || typeof orig.prepare !== 'function') throw new Error('The sound player was not found on this phone')
 				var number = 900000 + (parseInt(hash(url), 36) % 90000)
 				var paths = []
-				if (/^(file:|\/)/.test(url)) paths = [url]
+				var bundled = /^bundled:/.test(url) ? url.slice(8) : ''
+				if (bundled) paths = [bundled, bundled + '.mp3', bundled + '.ogg', bundled + '.wav', bundled.replace(/_/g, '')]
+				else if (/^(file:|\/)/.test(url)) paths = [url]
 				else {
 					try { paths = await download(url) } catch (e) { note('download problem: ' + errorText(e) + ' (trying the link directly)') }
 				}
-				var candidates = candidatesFor(url, paths)
+				var candidates = bundled ? paths : candidatesFor(url, paths)
 				var variants = []
 				if (learnedTemplate) variants.push({ name: 'what Discord uses', build: learnedTemplate, keyFor: learnedKeyIsNumber ? undefined : textKey })
 				if (learnedVariant) variants.push(learnedVariant)
@@ -938,15 +940,23 @@
 
 	/** Plays Discord's own version of a sound, for the preview buttons. */
 	function previewOriginal(id) {
-		var key = keyOfName[keyOf(id)]
-		if (key === undefined) {
-			note('no Discord key known yet for ' + id)
-			return toast('Discord has not loaded this sound yet. Do something that makes it play once, then try again.')
+		var known = keyOfName[keyOf(id)]
+		if (known !== undefined) {
+			try { return nativeCall('play', [known]) } catch (e) { note('play failed: ' + errorText(e)) }
 		}
-		try { nativeCall('play', [key]) } catch (e) {
-			note('play failed: ' + errorText(e))
-			toast('Could not play it. See Tools > Log.')
-		}
+		// Discord has not loaded this sound yet, so load the same built-in file ourselves.
+		ensureReady('bundled:' + id, true).then(
+			function (slot) {
+				try { nativeCall('play', [slot.key]) } catch (e) {
+					note('play failed: ' + errorText(e))
+					toast('Could not play it. See Tools > Log.')
+				}
+			},
+			function (e) {
+				note('could not load the built-in sound ' + id + ': ' + errorText(e))
+				toast('Could not play Discord\'s own version of this sound. See Tools > Log.')
+			},
+		)
 	}
 
 	// ---- Listening to Discord ------------------------------------------------------------------
