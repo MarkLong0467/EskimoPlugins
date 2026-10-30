@@ -182,10 +182,10 @@
     },
     "marklong.rtl-chat": {
       "name": "RTL Chat",
-      "description": "Flips Discord left to right, so the chat reads right to left like Arabic but in English, with avatars on the right.",
+      "description": "Read Discord right to left in English: message text is right-aligned and profile pictures are on the right. Mirroring the whole app is an option.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.0.1"
+        "latest": "1.1.0"
       },
       "versions": {
         "1.0.0": {
@@ -205,6 +205,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.rtl-chat@1.0.1.zip",
           "sha256": "b2c8cb6ff65cabc11c2d26b7ea29ecb6defa659e0378e98a6703c276ff5bc9de",
           "size": 4675,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.1.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.rtl-chat@1.1.0.zip",
+          "sha256": "f768687125af91e2ac43f7bd6344ff55f23fe8430cf721fc4b199d7939ada88f",
+          "size": 5025,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
