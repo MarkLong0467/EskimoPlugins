@@ -480,6 +480,7 @@
 	var failedAt = {} // url -> when, so a broken sound is not retried on every play
 	var toldAbout = {} // url -> true once the failure was shown
 	var learned = { variant: -1, path: -1, writer: '' }
+	var learnedVariant // the prepare layout that worked
 	var heard = [] // { raw, at, count, replaced }
 	var diag = []
 	var listeners = []
@@ -669,36 +670,80 @@
 		return paths.filter(function (p, i) { return paths.indexOf(p) === i })
 	}
 
+	/** Calls prepare. `args` holds CALLBACK where the completion callback goes (or none, for a promise). */
+	var CALLBACK = { callback: true }
 	function callPrepare(args) {
 		return new Promise(function (resolve, reject) {
 			var timer = setTimeout(function () { reject(new Error('prepare never answered')) }, 3000)
+			var finished = false
 			function done(error) {
+				if (finished) return
+				finished = true
 				clearTimeout(timer)
-				if (error) reject(new Error(typeof error === 'string' ? error : JSON.stringify(error)))
+				if (error) reject(new Error(typeof error === 'string' ? error : (error && error.message) || JSON.stringify(error)))
 				else resolve()
 			}
 			try {
-				var result = orig.prepare.apply(sm, args.concat([function (error) { done(error) }]))
+				var real = args.map(function (a) { return a === CALLBACK ? function (error) { done(error) } : a })
+				var result = orig.prepare.apply(sm, real)
 				if (result && typeof result.then === 'function') result.then(function () { done() }, function (e) { done(e || 'rejected') })
+				else if (args.indexOf(CALLBACK) < 0) done() // nothing to wait for
 			} catch (e) {
 				clearTimeout(timer)
+				finished = true
 				reject(e)
 			}
 		})
 	}
 
-	// The shape of prepare is learned from what Discord itself sends (see watchPrepare). Until then these are tried
-	// in order, the way Discord's sound player (a fork of react-native-sound) is most likely to take them.
+	// The shape of prepare is learned from what Discord itself sends (see watchPrepare). Until then these are
+	// tried in order, the way Discord's sound player (a fork of react-native-sound) is most likely to take them.
 	var VARIANTS = [
-		{ name: 'uri, usage, key', build: function (u, k) { return [u, 'notification', k] } },
-		{ name: 'uri, key, options', build: function (u, k) { return [u, k, { loadSync: true }] } },
-		{ name: 'uri, key', build: function (u, k) { return [u, k] } },
-		{ name: 'uri, ringtone, key', build: function (u, k) { return [u, 'ringtone', k] } },
-		{ name: 'uri, voice, key', build: function (u, k) { return [u, 'voice', k] } },
-		{ name: 'uri, 0, key', build: function (u, k) { return [u, 0, k] } },
-		{ name: 'uri, 1, key', build: function (u, k) { return [u, 1, k] } },
-		{ name: 'uri, key, empty options', build: function (u, k) { return [u, k, {}] } },
+		{ name: 'uri, usage, key, cb', build: function (u, k) { return [u, 'notification', k, CALLBACK] } },
+		{ name: 'uri, key, options, cb', build: function (u, k) { return [u, k, { loadSync: true }, CALLBACK] } },
+		{ name: 'uri, key, cb', build: function (u, k) { return [u, k, CALLBACK] } },
+		{ name: 'uri, ringtone, key, cb', build: function (u, k) { return [u, 'ringtone', k, CALLBACK] } },
+		{ name: 'uri, voice, key, cb', build: function (u, k) { return [u, 'voice', k, CALLBACK] } },
+		{ name: 'uri, 0, key, cb', build: function (u, k) { return [u, 0, k, CALLBACK] } },
+		{ name: 'uri, 1, key, cb', build: function (u, k) { return [u, 1, k, CALLBACK] } },
 	]
+
+	/**
+	 * Every sensible way to line up the pieces prepare could take: the sound, its name, and any of a usage
+	 * word, a usage number and an options object, with the callback last or left out. A call whose
+	 * arguments are refused fails at once, so trying all of them costs almost nothing.
+	 */
+	function generatedVariants() {
+		var out = []
+		var seen = {}
+		function permutations(list) {
+			if (list.length <= 1) return [list]
+			var all = []
+			list.forEach(function (item, i) {
+				permutations(list.slice(0, i).concat(list.slice(i + 1))).forEach(function (rest) { all.push([item].concat(rest)) })
+			})
+			return all
+		}
+		;[[], ['S'], ['N'], ['O'], ['S', 'O'], ['N', 'O'], ['S', 'N'], ['S', 'N', 'O']].forEach(function (extra) {
+			permutations(['U', 'K'].concat(extra)).forEach(function (order) {
+				;[true, false].forEach(function (withCallback) {
+					var name = order.join(',') + (withCallback ? ',cb' : '')
+					if (seen[name]) return
+					seen[name] = true
+					out.push({
+						name: name,
+						build: function (u, k) {
+							var args = order.map(function (t) { return t === 'U' ? u : t === 'K' ? k : t === 'S' ? 'notification' : t === 'N' ? 0 : {} })
+							if (withCallback) args.push(CALLBACK)
+							return args
+						},
+					})
+				})
+			})
+		})
+		return out
+	}
+
 	var observedPrepare = [] // what Discord's own prepare calls looked like
 	var learnedTemplate // function(uri, key) -> arguments, built from one of those calls
 
@@ -728,8 +773,7 @@
 			break
 		}
 		if (uriAt < 0) return
-		var copy = prepareArgs.slice()
-		while (copy.length && typeof copy[copy.length - 1] === 'function') copy.pop()
+		var copy = prepareArgs.map(function (a) { return typeof a === 'function' ? CALLBACK : a })
 		learnedTemplate = function (u, k) {
 			var out = copy.slice()
 			out[uriAt] = u
@@ -770,17 +814,17 @@
 				var candidates = candidatesFor(url, paths)
 				var variants = []
 				if (learnedTemplate) variants.push({ name: 'what Discord uses', build: learnedTemplate })
-				if (learned.variant >= 0 && VARIANTS[learned.variant]) variants.push(VARIANTS[learned.variant])
-				else VARIANTS.forEach(function (v) { variants.push(v) })
+				if (learnedVariant) variants.push(learnedVariant)
+				else VARIANTS.concat(generatedVariants()).forEach(function (v) { variants.push(v) })
 				var started = Date.now()
 				var lastError
+				var messages = {}
 				for (var c = 0; c < candidates.length; c++)
 					for (var v = 0; v < variants.length; v++) {
 						if (Date.now() - started > 25000) throw lastError || new Error('Gave up after 25 seconds')
 						try {
 							await callPrepare(variants[v].build(candidates[c], key))
-							var at = VARIANTS.indexOf(variants[v])
-							if (at >= 0) learned.variant = at
+							learnedVariant = variants[v]
 							note('ready: ' + variants[v].name + ' with ' + (candidates[c].length > 60 ? candidates[c].slice(0, 60) + '…' : candidates[c]))
 							ready[url] = { key: key, path: candidates[c] }
 							delete failed[url]
@@ -788,10 +832,14 @@
 							return ready[url]
 						} catch (e) {
 							lastError = e
-							note('prepare (' + variants[v].name + ') failed: ' + errorText(e).slice(0, 80))
+							var text = errorText(e).replace(/^Exception in HostFunction: /, '').slice(0, 110)
+							if (!messages[text]) {
+								messages[text] = true
+								note('prepare (' + variants[v].name + ') failed: ' + text)
+							}
 						}
 					}
-				throw lastError || new Error('prepare failed')
+				throw new Error(Object.keys(messages).slice(0, 2).join(' | ') || (lastError ? errorText(lastError) : 'prepare failed'))
 			} catch (e) {
 				failed[url] = errorText(e)
 				failedAt[url] = Date.now()
@@ -823,28 +871,59 @@
 		}, Promise.resolve())
 	}
 
+	function noop() {}
+	var tails = {} // method -> the extra arguments it turned out to need
+
+	/**
+	 * Calls a method of the sound player. Native methods check how many arguments they get, so when a call
+	 * is refused for its arguments it is tried again with a callback or two added at the end.
+	 */
+	function nativeCall(method, args) {
+		var fn = orig[method]
+		if (typeof fn !== 'function') throw new Error('The sound player has no ' + method)
+		var options = tails[method] ? [tails[method]] : [[], [noop], [noop, noop]]
+		var lastError
+		for (var i = 0; i < options.length; i++) {
+			try {
+				var result = fn.apply(sm, args.concat(options[i]))
+				tails[method] = options[i]
+				return result
+			} catch (e) {
+				lastError = e
+				if (!/expected|argument|arity/i.test(errorText(e))) throw e
+			}
+		}
+		throw lastError
+	}
+
 	function setVolume(key, percent) {
 		var v = Number(percent)
 		if (!isFinite(v)) v = 100
 		if (typeof orig.setVolume === 'function') {
-			try { orig.setVolume(key, Math.max(0, v) / 100) } catch (e) {} // GUESS: setVolume(key, 0..1)
+			try { nativeCall('setVolume', [key, Math.max(0, v) / 100]) } catch (e) { note('setVolume: ' + errorText(e).slice(0, 90)) }
 		}
 	}
 
 	/** Plays a link right now, for the preview buttons. */
 	async function previewUrl(url, volume) {
+		var slot
 		try {
-			var slot = await ensureReady(url, true)
-			setVolume(slot.key, volume)
-			orig.play.call(sm, slot.key)
+			slot = await ensureReady(url, true)
 		} catch (e) {
-			toast('Could not play it: ' + errorText(e))
+			return toast('Could not load the sound: ' + errorText(e).slice(0, 120))
+		}
+		try {
+			setVolume(slot.key, volume)
+			nativeCall('play', [slot.key])
+		} catch (e) {
+			note('play failed: ' + errorText(e))
+			toast('Loaded, but could not play it: ' + errorText(e).slice(0, 120))
 		}
 	}
 
 	/** Plays Discord's own version of a sound, for the preview buttons. */
 	function previewOriginal(id) {
-		try { orig.play.call(sm, id) } catch (e) { toast('Could not play it: ' + errorText(e)) }
+		try { nativeCall('play', [id]) } catch (e) { toast('Could not play it: ' + errorText(e).slice(0, 120)) }
 	}
 
 	// ---- Listening to Discord ------------------------------------------------------------------
@@ -883,7 +962,7 @@
 			return false
 		}
 		setVolume(slot.key, r.volume)
-		try { orig.play.call(sm, slot.key) } catch (e) { note('could not play: ' + errorText(e)); return false }
+		try { nativeCall('play', [slot.key]) } catch (e) { note('could not play: ' + errorText(e)); return false }
 		return true
 	}
 
@@ -928,6 +1007,7 @@
 			var name = args[0]
 			if (typeof name !== 'string') return Reflect.apply(original, this, args)
 			try { learnTemplate(lastPrepare[name], name) } catch (e) {}
+			if (!tails.play && args.length > 1) tails.play = args.slice(1).map(function (x) { return typeof x === 'function' ? noop : x })
 			var item = hear(name)
 			var r
 			try { r = resolve(item.key) } catch (e) {}
@@ -1395,7 +1475,7 @@
 					row('File module', fileModule() ? 'Found' : 'Not found, links are played directly'),
 					row('Hooks into Discord\'s sounds', 'Player: ' + hooks.native + ' · Helper: ' + hooks.js),
 					row('Custom sounds ready', readyCount + ' ready' + (failCount ? ', ' + failCount + ' failed' : '')),
-					row('How files are loaded', learned.variant >= 0 ? 'Method ' + (learned.variant + 1) + ' worked' : 'Not learned yet, play a custom sound'),
+					row('How files are loaded', learnedVariant ? 'Works with: ' + learnedVariant.name : 'Not learned yet, play a custom sound'),
 				]),
 				group(
 					'Heard from Discord',
