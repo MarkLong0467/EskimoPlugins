@@ -209,6 +209,30 @@
         }
       }
     },
+    "marklong.haptics": {
+      "versions": {
+        "0.1.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.haptics@0.1.1.zip",
+          "sha256": "695614d16f9bfe5f9565a81e7229d51fb028f9006a36e9181a7d5c108f97c883",
+          "size": 4337,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "name": "Haptics",
+      "description": "Turn Discord's buzzing on or off: the buzz when a long-press menu opens, other haptic feedback and vibrations. Includes a log of what buzzed.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "contributors": [],
+      "channels": {
+        "latest": "0.1.1"
+      }
+    },
     "marklong.hypesquad": {
       "name": "HypeSquad Switcher",
       "description": "Switch your HypeSquad house (Bravery, Brilliance or Balance) or leave it with one tap from the plugin settings.",
