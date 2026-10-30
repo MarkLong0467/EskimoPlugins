@@ -10,10 +10,10 @@
 	 * watches those calls. For a sound you changed, it plays your file (downloaded once to the app
 	 * cache) in its place, and passes stop/pause for that name on to your file.
 	 */
-	var defaults = { enabled: true, activePack: 'none', autoPacks: false, sounds: {}, userPacks: {}, keyNames: {} }
+	var defaults = { enabled: true, activePack: 'none', autoPacks: false, sounds: {}, userPacks: {}, keyNames: {}, bad: {}, proven: {} }
 	var CDN_SOUNDBOARD = 'https://cdn.discordapp.com/soundboard-sounds/'
 	var MAX_BYTES = 12 * 1024 * 1024
-	var VOLUMES = [25, 50, 75, 100, 150, 200, 300, 500]
+	var VOLUMES = [25, 50, 75, 100]
 
 	var SOUNDS = [
 	{
@@ -649,6 +649,73 @@
 		return 'mp3'
 	}
 
+	// ---- Crash journal ---------------------------------------------------------------------------
+	// Some calls into the phone's sound player can close the whole app instead of failing politely. Before a
+	// call that has never worked on this phone, a note is written to a file. If the app closes during the call,
+	// the note is still there at the next start, and that call is skipped from then on.
+	var JOURNAL = 'custom-sounds/journal.json'
+	var journalReady = Promise.resolve()
+	var bad = {} // calls that closed the app before
+	var proven = {} // calls that have worked
+
+	function sleep(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms) }) }
+	function saveFlags() {
+		try { if (storage && typeof storage.set === 'function') storage.set({ bad: bad, proven: proven }) } catch (e) {}
+	}
+	async function journalSet(kind) {
+		var files = fileModule()
+		if (!files) return
+		try { await files.writeFile('cache', JOURNAL, JSON.stringify({ kind: kind, at: Date.now() }), 'utf8') } catch (e) {}
+	}
+	async function journalClear() {
+		var files = fileModule()
+		if (!files) return
+		try { await files.removeFile('cache', JOURNAL) } catch (e) {}
+	}
+	/** Runs once at start: if the app closed in the middle of a risky call last time, remember which one. */
+	async function journalCheck() {
+		var files = fileModule()
+		if (!files || typeof files.fileExists !== 'function' || typeof files.readFile !== 'function') return
+		try {
+			var constants = typeof files.getConstants === 'function' ? files.getConstants() : {}
+			if (!constants.CacheDirPath) return
+			var path = String(constants.CacheDirPath).replace(/\/$/, '') + '/' + JOURNAL
+			if (!(await files.fileExists(path))) return
+			var entry = JSON.parse(await files.readFile(path, 'utf8'))
+			if (entry && entry.kind) {
+				bad[entry.kind] = true
+				proven[entry.kind] = false
+				var parts = String(entry.kind).split('|')
+				// A crash while loading a file is blamed on how the file was given, not on the argument layout.
+				if (parts[0] === 'prepare' && parts.length === 4) bad['prepare|*|' + parts[2] + '|' + parts[3]] = true
+				saveFlags()
+				note('The app closed during "' + entry.kind + '". That step is skipped from now on.')
+				toast('Custom Sounds skipped a step that closed the app last time. See Tools > Log.')
+			}
+			await journalClear()
+		} catch (e) {
+			note('could not read the crash journal: ' + errorText(e))
+		}
+	}
+	/** Runs one risky call with the journal around it. Rejects at once for a call that closed the app before. */
+	async function guarded(kind, fn, graceMs) {
+		await journalReady
+		if (bad[kind]) throw new Error('skipped, it closed the app before (' + kind + ')')
+		var risky = !proven[kind]
+		if (risky) await journalSet(kind)
+		try {
+			var out = await fn()
+			if (risky) {
+				await sleep(graceMs || 600)
+				proven[kind] = true
+				saveFlags()
+			}
+			return out
+		} finally {
+			if (risky) await journalClear()
+		}
+	}
+
 	/** Downloads the sound and writes it to the app cache. Resolves to the paths to try. */
 	async function download(url) {
 		var files = fileModule()
@@ -665,7 +732,7 @@
 		var dirs = ['cache', 'documents']
 		for (var i = 0; i < dirs.length && written === undefined; i++) {
 			try {
-				written = await files.writeFile(dirs[i], name, base, 'base64')
+				written = await guarded('write', function () { return files.writeFile(dirs[i], name, base, 'base64') }, 300)
 				dir = dirs[i]
 				if (written === undefined) written = null
 			} catch (e) { lastError = e }
@@ -811,8 +878,9 @@
 	function ensureReady(url, force) {
 		if (ready[url]) return Promise.resolve(ready[url])
 		if (!force && coolingDown(url)) return Promise.reject(new Error(failed[url] || 'could not load'))
-		if (loading[url]) return loading[url]
-		loading[url] = (async function () {
+		var slotKey = url + (force ? '!' : '')
+		if (loading[slotKey]) return loading[slotKey]
+		loading[slotKey] = (async function () {
 			try {
 				if (!sm || typeof orig.prepare !== 'function') throw new Error('The sound player was not found on this phone')
 				var number = 900000 + (parseInt(hash(url), 36) % 90000)
@@ -831,18 +899,26 @@
 				var started = Date.now()
 				var lastError
 				var messages = {}
+				var attempted = 0
 				for (var c = 0; c < candidates.length; c++)
 					for (var v = 0; v < variants.length; v++) {
 						if (Date.now() - started > 25000) throw lastError || new Error('Gave up after 25 seconds')
+						var candidate = candidates[c]
+						var how = /^https?:/.test(candidate) ? 'link' : /^file:/.test(candidate) ? 'fileuri' : candidate.charAt(0) === '/' ? 'path' : 'name'
+						var kind = 'prepare|' + variants[v].name + '|' + how + '|' + (bundled ? 'bundled' : 'file')
+						if (bad[kind] || bad['prepare|*|' + how + '|' + (bundled ? 'bundled' : 'file')]) continue
+						// Nothing new is tried unless you asked for it (a play button); background loading only repeats what worked.
+						if (!force && !proven[kind]) continue
+						attempted++
 						try {
 							var usedKey = variants[v].keyFor ? variants[v].keyFor(number) : number
-							await callPrepare(variants[v].build(candidates[c], usedKey))
+							await guarded(kind, function () { return callPrepare(variants[v].build(candidates[c], usedKey)) }, 700)
 							if (variants[v] !== learnedVariant) {
 								learnedVariant = variants[v]
 								rememberLayout(variants[v].name)
 							}
 							note('ready: ' + variants[v].name + ' with ' + (candidates[c].length > 60 ? candidates[c].slice(0, 60) + '…' : candidates[c]))
-							ready[url] = { key: usedKey, path: candidates[c] }
+							ready[url] = { key: usedKey, path: candidates[c], source: bundled ? 'bundled' : 'file' }
 							delete failed[url]
 							delete failedAt[url]
 							return ready[url]
@@ -855,8 +931,10 @@
 							}
 						}
 					}
+				if (!attempted) throw new Error(force ? 'Every way of loading this sound was skipped because it closed the app before' : 'waiting for a play button press')
 				throw new Error(Object.keys(messages).slice(0, 2).join(' | ') || (lastError ? errorText(lastError) : 'prepare failed'))
 			} catch (e) {
+				if (/waiting for a play button press/.test(errorText(e))) throw e
 				failed[url] = errorText(e)
 				failedAt[url] = Date.now()
 				if (!toldAbout[url]) {
@@ -866,11 +944,11 @@
 				note('could not load ' + url.slice(0, 50) + ': ' + failed[url])
 				throw e
 			} finally {
-				delete loading[url]
+				delete loading[slotKey]
 				changed()
 			}
 		})()
-		return loading[url]
+		return loading[slotKey]
 	}
 
 	/** Gets every sound you changed ready ahead of time, so the first ring is not late. */
@@ -913,12 +991,24 @@
 		throw lastError
 	}
 
-	function setVolume(key, percent) {
+	/** Sets how loud a sound plays. Full volume needs no call at all, and nothing goes above 100%. */
+	async function setVolumeSafely(key, percent, automatic) {
 		var v = Number(percent)
-		if (!isFinite(v)) v = 100
-		if (typeof orig.setVolume === 'function') {
-			try { nativeCall('setVolume', [key, Math.max(0, v) / 100]) } catch (e) { note('setVolume: ' + errorText(e).slice(0, 90)) }
-		}
+		if (!isFinite(v) || v >= 100 || typeof orig.setVolume !== 'function') return
+		if (automatic && !proven.volume) return
+		try { await guarded('volume', function () { return nativeCall('setVolume', [key, Math.max(0, v) / 100]) }, 400) } catch (e) { note('volume: ' + errorText(e).slice(0, 90)) }
+	}
+
+	/** Volume for a sound played in the background: only when that call has worked before. */
+	function autoVolume(slot, percent) {
+		var v = Number(percent)
+		if (!isFinite(v) || v >= 100 || !proven.volume) return
+		try { nativeCall('setVolume', [slot.key, Math.max(0, v) / 100]) } catch (e) {}
+	}
+
+	/** Plays one of our own sounds, with the journal around the first time. */
+	async function playOurs(slot) {
+		return guarded('play|' + (slot.source || 'file'), function () { return nativeCall('play', [slot.key]) }, 900)
 	}
 
 	/** Plays a link right now, for the preview buttons. */
@@ -930,8 +1020,8 @@
 			return toast('Could not load the sound: ' + errorText(e).slice(0, 120))
 		}
 		try {
-			setVolume(slot.key, volume)
-			nativeCall('play', [slot.key])
+			await setVolumeSafely(slot.key, volume, false)
+			await playOurs(slot)
 		} catch (e) {
 			note('play failed: ' + errorText(e))
 			toast('Loaded, but could not play it: ' + errorText(e).slice(0, 120))
@@ -947,10 +1037,10 @@
 		// Discord has not loaded this sound yet, so load the same built-in file ourselves.
 		ensureReady('bundled:' + id, true).then(
 			function (slot) {
-				try { nativeCall('play', [slot.key]) } catch (e) {
+				playOurs(slot).catch(function (e) {
 					note('play failed: ' + errorText(e))
-					toast('Could not play it. See Tools > Log.')
-				}
+					toast('Could not play it: ' + errorText(e).slice(0, 80))
+				})
 			},
 			function (e) {
 				note('could not load the built-in sound ' + id + ': ' + errorText(e))
@@ -994,7 +1084,8 @@
 			if (layoutKnown() && !coolingDown(r.url)) ensureReady(r.url).catch(function () {})
 			return false
 		}
-		setVolume(slot.key, r.volume)
+		if (!proven['play|' + (slot.source || 'file')]) return false // never played on this phone yet: Discord's own sound plays
+		autoVolume(slot, r.volume)
 		try { nativeCall('play', [slot.key]) } catch (e) { note('could not play: ' + errorText(e)); return false }
 		return true
 	}
@@ -1064,7 +1155,8 @@
 				if (layoutKnown() && !coolingDown(r.url)) ensureReady(r.url).catch(function () {})
 				return Reflect.apply(original, this, args)
 			}
-			setVolume(slot.key, r.volume)
+			if (!proven['play|' + (slot.source || 'file')]) return Reflect.apply(original, this, args)
+			autoVolume(slot, r.volume)
 			return Reflect.apply(original, this, [slot.key].concat(args.slice(1)))
 		})
 		// Stopping, pausing and looping a sound that was replaced has to reach the file that is playing.
@@ -1386,7 +1478,7 @@
 					: null,
 				radio(
 					'Volume',
-					String(e.volume || 100),
+					String(Math.min(100, e.volume || 100)),
 					VOLUMES.map(function (v) { return { value: String(v), label: v + '%', subLabel: v === 100 ? 'Normal' : undefined } }),
 					function (v) { put(key, { volume: Number(v) }) },
 				),
@@ -1597,6 +1689,7 @@
 				group('Status', [
 					row('Sound player', sm ? 'Found (DCDSoundManager)' : 'Not found on this phone'),
 					row('File module', fileModule() ? 'Found' : 'Not found, links are played directly'),
+					row('Safety', Object.keys(bad).length ? Object.keys(bad).length + ' step(s) skipped because they closed the app' : 'Nothing has closed the app', Object.keys(bad).length ? function () { bad = {}; var cleared = {}; Object.keys(json.cache && json.cache.bad || {}).forEach(function (k) { cleared[k] = false }); json.set({ bad: cleared }); toast('Skipped steps will be tried again') } : undefined),
 					row('Hooks into Discord\'s sounds', 'Player: ' + hooks.native + ' · Helper: ' + hooks.js + ' · Class: ' + hooks.cls),
 					row('Custom sounds ready', readyCount + ' ready' + (failCount ? ', ' + failCount + ' failed' : '')),
 					row('How files are loaded', learnedVariant ? 'Works with: ' + learnedVariant.name : 'Not learned yet, play a custom sound'),
@@ -1664,6 +1757,15 @@
 		start: function (api) {
 			var cleanup = api.cleanup
 			storage = api.jsonStorage
+			attempt('loading safety flags', function () {
+				var savedBad = setting('bad') || {}
+				var savedProven = setting('proven') || {}
+				bad = {}
+				proven = {}
+				Object.keys(savedBad).forEach(function (k) { if (savedBad[k]) bad[k] = true })
+				Object.keys(savedProven).forEach(function (k) { if (savedProven[k]) proven[k] = true })
+			})
+			journalReady = journalCheck().catch(function () {})
 			restoreLayout()
 			attempt('loading saved sound names', function () {
 				var saved = setting('keyNames') || {}
