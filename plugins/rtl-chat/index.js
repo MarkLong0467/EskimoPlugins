@@ -12,7 +12,7 @@
 	var defaults = { mode: 'rtl', readable: true, forced: false }
 	var storage
 	var listeners = []
-	var hooked = { how: 'not hooked yet', keys: [], fired: '', direction: '', image: false, input: false }
+	var hooked = { how: 'not hooked yet', keys: [], fired: '', direction: '', image: false, input: false, rows: 'not hooked', seen: 0, changed: 0 }
 	var FLIP = [{ scaleX: -1 }]
 
 	function setting(key) {
@@ -52,6 +52,7 @@
 		try {
 			if (want) {
 				if (typeof m.allowRTL === 'function') m.allowRTL(true)
+				if (typeof m.swapLeftAndRightInRTL === 'function') m.swapLeftAndRightInRTL(true)
 				m.forceRTL(true)
 				if (storage && !setting('forced')) storage.set({ forced: true })
 			} else if (setting('forced')) {
@@ -75,6 +76,88 @@
 			if (dev && typeof dev.reload === 'function') return dev.reload()
 		} catch (e) {}
 		try { valenced.discord.actions.ToastActionCreators.open('MARKLONG_RTL', { text: 'Close Discord completely and open it again' }) } catch (e) {}
+	}
+
+	// ======================================================================================
+	// Right-aligned message text
+	// ======================================================================================
+	// Discord draws messages natively and lines text up from the language of the text. Starting each paragraph
+	// with an invisible right-to-left mark makes it a right-to-left paragraph, so it lines up on the right.
+	// The words themselves are put inside a left-to-right embedding, so English keeps its order and its
+	// full stops stay at the end of the sentence.
+	var RLM = '\u200F'
+	var LRE = '\u202A'
+	var PDF = '\u202C'
+
+	function textAligned() {
+		var mode = setting('mode')
+		return mode === 'rtl' || mode === 'text'
+	}
+
+	function markText(text) {
+		return String(text).replace(/\n/g, PDF + '\n' + RLM + LRE)
+	}
+
+	/** One line of inline pieces (text, links, emoji, mentions), wrapped so that it is a right-to-left paragraph. */
+	function alignInline(nodes) {
+		var out = [{ type: 'text', content: RLM + LRE }]
+		nodes.forEach(function (node) {
+			if (node && node.type === 'text' && typeof node.content === 'string') out.push(Object.assign({}, node, { content: markText(node.content) }))
+			else out.push(node)
+		})
+		out.push({ type: 'text', content: PDF })
+		return out
+	}
+
+	var BLOCKS = { paragraph: 1 }
+	function alignContent(content) {
+		if (typeof content === 'string') return RLM + LRE + markText(content) + PDF
+		if (!Array.isArray(content) || !content.length) return content
+		var hasBlocks = content.some(function (n) { return n && BLOCKS[n.type] && Array.isArray(n.content) })
+		if (!hasBlocks) return alignInline(content)
+		return content.map(function (n) {
+			return n && BLOCKS[n.type] && Array.isArray(n.content) ? Object.assign({}, n, { content: alignInline(n.content) }) : n
+		})
+	}
+
+	/** Rewrites the rows Discord hands to its native chat. If anything is unexpected the rows go through untouched. */
+	function alignRows(json) {
+		if (typeof json !== 'string' || !textAligned()) return json
+		var rows = JSON.parse(json)
+		if (!Array.isArray(rows)) return json
+		var touched = 0
+		rows.forEach(function (row) {
+			if (!row || row.type !== 1 || !row.message) return
+			hooked.seen++
+			var before = row.message.content
+			if (before === undefined || before === null) return
+			row.message.content = alignContent(before)
+			touched++
+			hooked.changed++
+		})
+		return touched ? JSON.stringify(rows) : json
+	}
+
+	function installRowAlignment(cleanup) {
+		var chat
+		try { chat = valenced.react.ReactNative.NativeModules.DCDChatManager } catch (e) {}
+		if (!chat || typeof chat.updateRows !== 'function') {
+			hooked.rows = 'chat module not found'
+			return
+		}
+		cleanup(
+			valenced.patcher.instead(chat, 'updateRows', function (args, original) {
+				var next = args
+				try {
+					var json = alignRows(args[1])
+					if (json !== args[1]) next = [args[0], json].concat(args.slice(2))
+				} catch (e) {
+					next = args
+				}
+				return Reflect.apply(original, this, next)
+			}),
+		)
+		hooked.rows = 'hooked'
 	}
 
 	// ======================================================================================
@@ -244,8 +327,9 @@
 					Design.TableRadioGroup,
 					{ title: 'Style', value: mode, onChange: function (v) { put('mode', v); hooked.direction = applyDirection(v) } },
 					[
-						{ value: 'rtl', label: 'Right to left (like Arabic)', subLabel: 'Profile pictures on the right and text lined up on the right, the way Discord looks in Arabic, but in English. Needs a restart of Discord' },
-						{ value: 'mirror', label: 'Mirror everything', subLabel: 'The whole app is flipped sideways, like a mirror' },
+						{ value: 'rtl', label: 'Right to left (like Arabic)', subLabel: 'Asks the phone for the layout Discord has in Arabic (profile pictures on the right), and lines message text up on the right. Needs a restart of Discord' },
+						{ value: 'text', label: 'Right-aligned text only', subLabel: 'Message text lines up on the right. Nothing else moves, no restart needed' },
+						{ value: 'mirror', label: 'Mirror everything', subLabel: 'The whole app is flipped sideways, like a mirror. Letters in messages are reversed' },
 						{ value: 'off', label: 'Off', subLabel: 'Normal left to right' },
 					].map(function (r) { return h(Design.TableRadioRow, { key: r.value, label: r.label, subLabel: r.subLabel, value: r.value }) }),
 				),
@@ -268,6 +352,7 @@
 					Design.TableRowGroup,
 					{ title: 'Status' },
 					h(Design.TableRow, { key: 'dir', label: 'Layout direction right now', subLabel: now ? 'Right to left' : 'Left to right' }),
+					h(Design.TableRow, { key: 'rows', label: 'Message text', subLabel: hooked.rows + ' · rows seen: ' + hooked.seen + ' · lined up: ' + hooked.changed + (textAligned() ? '' : ' · (off in this style)') }),
 					hooked.direction ? h(Design.TableRow, { key: 'dirError', label: 'Problem', subLabel: hooked.direction }) : null,
 					mode === 'mirror' ? h(Design.TableRow, { key: 'hook', label: 'Mirror hooked into', subLabel: hooked.how + (hooked.fired ? ' · flipped through ' + hooked.fired : '') }) : null,
 					mode === 'mirror' ? h(Design.TableRow, { key: 'registry', label: 'Apps Discord registered', subLabel: hooked.registry || 'unknown' }) : null,
@@ -288,6 +373,7 @@
 			function attempt(label, step) { try { step() } catch (e) { hooked[label] = 'failed: ' + String((e && e.message) || e).slice(0, 60) } }
 
 			hooked.direction = applyDirection()
+			attempt('rows', function () { installRowAlignment(cleanup) })
 
 			// Mirror everything: its hooks are always installed, and only flip anything when that style is chosen.
 			var tried = []
