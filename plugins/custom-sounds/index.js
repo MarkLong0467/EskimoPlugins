@@ -142,7 +142,7 @@
 	}
 	function note(line) {
 		diag.push(new Date().toTimeString().slice(0, 8) + ' ' + line)
-		if (diag.length > 40) diag.shift()
+		if (diag.length > 80) diag.shift()
 		persistLog()
 		changed()
 	}
@@ -429,12 +429,12 @@
 	var VARIANTS = [
 		{ name: 'uri, key, options, cb', build: function (u, k) { return [u, k, { loadSync: true }, CALLBACK] } },
 		{ name: 'uri, key, cb', build: function (u, k) { return [u, k, CALLBACK] } },
-		{ name: 'uri, usage, key, cb', build: function (u, k) { return [u, 'notification', k, CALLBACK] } },
-		{ name: 'uri, usage, key, options, cb', build: function (u, k) { return [u, 'notification', k, { loadSync: true }, CALLBACK] } },
-		{ name: 'uri, key, usage, cb', build: function (u, k) { return [u, k, 'notification', CALLBACK] } },
+		{ name: 'uri, usage, key, cb', build: function (u, k) { return [u, 'media', k, CALLBACK] } },
+		{ name: 'uri, usage, key, options, cb', build: function (u, k) { return [u, 'media', k, { loadSync: true }, CALLBACK] } },
+		{ name: 'uri, key, usage, cb', build: function (u, k) { return [u, k, 'media', CALLBACK] } },
 		{ name: 'uri, 0, key, cb', build: function (u, k) { return [u, 0, k, CALLBACK] } },
 		{ name: 'uri, name, options, cb', keyFor: textKey, build: function (u, k) { return [u, k, { loadSync: true }, CALLBACK] } },
-		{ name: 'uri, usage, name, cb', keyFor: textKey, build: function (u, k) { return [u, 'notification', k, CALLBACK] } },
+		{ name: 'uri, usage, name, cb', keyFor: textKey, build: function (u, k) { return [u, 'media', k, CALLBACK] } },
 		{ name: 'uri, name, cb', keyFor: textKey, build: function (u, k) { return [u, k, CALLBACK] } },
 		{ name: 'uri, 0, name, cb', keyFor: textKey, build: function (u, k) { return [u, 0, k, CALLBACK] } },
 	]
@@ -513,15 +513,17 @@
 		return !!failedAt[url] && Date.now() - failedAt[url] < 60000
 	}
 
-	function ensureReady(url, force) {
-		if (ready[url]) return Promise.resolve(ready[url])
+	var generation = {} // url -> which copy is the newest (each copy has its own number)
+	function ensureReady(url, force, fresh) {
+		if (ready[url] && !fresh) return Promise.resolve(ready[url])
 		if (!force && coolingDown(url)) return Promise.reject(new Error(failed[url] || 'could not load'))
 		var slotKey = url + (force ? '!' : '')
 		if (loading[slotKey]) return loading[slotKey]
 		loading[slotKey] = (async function () {
 			try {
 				if (!sm || typeof orig.prepare !== 'function') throw new Error('The sound player was not found on this phone')
-				var number = 900000 + (parseInt(hash(url), 36) % 90000)
+				if (fresh) generation[url] = ((generation[url] || 0) + 1) % 6
+				var number = 900000 + (parseInt(hash(url), 36) % 90000) + 100000 * (generation[url] || 0)
 					if (!/^https?:/.test(url)) throw new Error('Only links starting with https:// can be played')
 				var variants = []
 				if (learnedTemplate) variants.push({ name: 'what Discord uses', build: learnedTemplate, keyFor: learnedKeyIsNumber ? undefined : textKey })
@@ -640,6 +642,8 @@
 	 * second play of the same number does nothing. Loading it again uses the call that already worked.
 	 */
 	function refresh(slot) {
+		if (loading[slot.url + '!']) return loading[slot.url + '!']
+		if (ready[slot.url] && ready[slot.url] !== slot) return Promise.resolve(ready[slot.url])
 		if (typeof orig.stop === 'function') { try { nativeCall('stop', [slot.key]) } catch (e) {} }
 		if (typeof orig.release === 'function') { try { nativeCall('release', [slot.key]) } catch (e) {} }
 		delete ready[slot.url]
@@ -647,12 +651,28 @@
 		return ensureReady(slot.url, true)
 	}
 
+	/**
+	 * The phone's player lets go of a sound once it ended, and loading one takes a moment (seconds, for some).
+	 * So just after a sound starts, the next copy is loaded under another number. The next play is then instant
+	 * and the one playing is never cut off. The old copy is let go of later.
+	 */
+	function prepareNext(slot) {
+		setTimeout(function () {
+			if (ready[slot.url] !== slot) return
+			ensureReady(slot.url, true, true).then(function () {
+				setTimeout(function () { try { nativeCall('release', [slot.key]) } catch (e) {} }, 15000)
+			}, function () {})
+		}, 400)
+	}
+
 	/** Plays one of our own sounds, with the journal around the first time. */
 	async function playOurs(slot, volume) {
 		if (slot.played) slot = await refresh(slot)
 		slot.played = true
 		if (volume !== undefined) await setVolumeSafely(slot.key, volume, false)
-		return guarded('play|' + (slot.source || 'file'), function () { return nativeCall('play', [slot.key]) }, 900)
+		var played = guarded('play|' + (slot.source || 'file'), function () { return nativeCall('play', [slot.key]) }, 900)
+		prepareNext(slot)
+		return played
 	}
 
 	/** Plays a link right now, for the preview buttons. */
@@ -760,6 +780,11 @@
 		if (!r) { said(name, 'Discord plays its own (nothing is set for it)'); return false }
 		if (r.off) { said(name, 'silenced'); return true }
 		var slot = ready[r.url]
+		if (!slot && loading[r.url + '!']) {
+			said(name, 'waiting for yours to finish loading')
+			loading[r.url + '!'].then(function (fresh) { return startOurs(fresh, r, loop) }).catch(function (e) { note('could not play: ' + errorText(e)) })
+			return true
+		}
 		if (!slot) {
 			said(name, 'Discord plays its own (yours is not loaded yet)')
 			// Not downloaded yet: let Discord's own sound play this time, and get ours ready.
@@ -781,6 +806,7 @@
 			try { await guarded('loops', function () { return nativeCall('setNumberOfLoops', [slot.key, -1]) }, 300) } catch (e) { note('looping: ' + errorText(e).slice(0, 90)) }
 		}
 		nativeCall('play', [slot.key])
+		if (!loop) prepareNext(slot) // a repeating sound is loaded again at its next play instead
 	}
 
 	/** Stops your version of a sound, when Discord stops its own (a ringtone ending). */
@@ -809,7 +835,7 @@
 			if (buzzes.length > 30) buzzes.pop()
 		}
 		item.count++
-		if (!item.at || Date.now() - item.at > 5000) note('buzz: ' + label + ' -> ' + what + ' (' + item.count + 'x so far)')
+		if (what === 'swallowed' || what === 'buzz removed') if (!item.at || Date.now() - item.at > 5000) note('buzz: ' + label + ' -> ' + what + ' (' + item.count + 'x so far)')
 		item.at = Date.now()
 	}
 	function shortArgs(args) {
@@ -974,6 +1000,7 @@
 			}
 			slot.played = true
 			autoVolume(slot, r.volume)
+			prepareNext(slot)
 			return Reflect.apply(original, this, [slot.key].concat(args.slice(1)))
 		})
 		// Stopping, pausing and looping a sound that was replaced has to reach the file that is playing.
