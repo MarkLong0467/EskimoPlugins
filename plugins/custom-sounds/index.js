@@ -481,6 +481,18 @@
 	var toldAbout = {} // url -> true once the failure was shown
 	var learned = { variant: -1, path: -1, writer: '' }
 	var learnedVariant // the prepare layout that worked
+
+	/** Saves the layout that worked, so later starts can use it without any trial and error. */
+	function rememberLayout(name) {
+		try { if (storage && typeof storage.set === 'function' && name !== 'what Discord uses') storage.set({ layout: name }) } catch (e) {}
+	}
+	function restoreLayout() {
+		var saved = setting('layout')
+		if (!saved) return
+		for (var i = 0; i < VARIANTS.length; i++) if (VARIANTS[i].name === saved) learnedVariant = VARIANTS[i]
+	}
+	/** Whether sounds can be loaded on their own: only once a layout is known to work. */
+	function layoutKnown() { return !!(learnedVariant || learnedTemplate) }
 	var heard = [] // { raw, at, count, replaced }
 	var diag = []
 	var listeners = []
@@ -708,42 +720,6 @@
 		{ name: 'uri, 1, key, cb', build: function (u, k) { return [u, 1, k, CALLBACK] } },
 	]
 
-	/**
-	 * Every sensible way to line up the pieces prepare could take: the sound, its name, and any of a usage
-	 * word, a usage number and an options object, with the callback last or left out. A call whose
-	 * arguments are refused fails at once, so trying all of them costs almost nothing.
-	 */
-	function generatedVariants() {
-		var out = []
-		var seen = {}
-		function permutations(list) {
-			if (list.length <= 1) return [list]
-			var all = []
-			list.forEach(function (item, i) {
-				permutations(list.slice(0, i).concat(list.slice(i + 1))).forEach(function (rest) { all.push([item].concat(rest)) })
-			})
-			return all
-		}
-		;[[], ['S'], ['N'], ['O'], ['S', 'O'], ['N', 'O'], ['S', 'N'], ['S', 'N', 'O']].forEach(function (extra) {
-			permutations(['U', 'K'].concat(extra)).forEach(function (order) {
-				;[true, false].forEach(function (withCallback) {
-					var name = order.join(',') + (withCallback ? ',cb' : '')
-					if (seen[name]) return
-					seen[name] = true
-					out.push({
-						name: name,
-						build: function (u, k) {
-							var args = order.map(function (t) { return t === 'U' ? u : t === 'K' ? k : t === 'S' ? 'notification' : t === 'N' ? 0 : {} })
-							if (withCallback) args.push(CALLBACK)
-							return args
-						},
-					})
-				})
-			})
-		})
-		return out
-	}
-
 	var observedPrepare = [] // what Discord's own prepare calls looked like
 	var learnedTemplate // function(uri, key) -> arguments, built from one of those calls
 
@@ -815,7 +791,7 @@
 				var variants = []
 				if (learnedTemplate) variants.push({ name: 'what Discord uses', build: learnedTemplate })
 				if (learnedVariant) variants.push(learnedVariant)
-				else VARIANTS.concat(generatedVariants()).forEach(function (v) { variants.push(v) })
+				else VARIANTS.forEach(function (v) { variants.push(v) })
 				var started = Date.now()
 				var lastError
 				var messages = {}
@@ -824,7 +800,10 @@
 						if (Date.now() - started > 25000) throw lastError || new Error('Gave up after 25 seconds')
 						try {
 							await callPrepare(variants[v].build(candidates[c], key))
-							learnedVariant = variants[v]
+							if (variants[v] !== learnedVariant) {
+								learnedVariant = variants[v]
+								rememberLayout(variants[v].name)
+							}
 							note('ready: ' + variants[v].name + ' with ' + (candidates[c].length > 60 ? candidates[c].slice(0, 60) + '…' : candidates[c]))
 							ready[url] = { key: key, path: candidates[c] }
 							delete failed[url]
@@ -859,6 +838,7 @@
 
 	/** Gets every sound you changed ready ahead of time, so the first ring is not late. */
 	function warm() {
+		if (!layoutKnown()) return Promise.resolve()
 		var urls = {}
 		var all = setting('sounds') || {}
 		var pack = activePackId() !== 'none' ? packSounds(activePackId()) : {}
@@ -958,7 +938,7 @@
 		var slot = ready[r.url]
 		if (!slot) {
 			// Not downloaded yet: let Discord's own sound play this time, and get ours ready.
-			if (!coolingDown(r.url)) ensureReady(r.url).catch(function () {})
+			if (layoutKnown() && !coolingDown(r.url)) ensureReady(r.url).catch(function () {})
 			return false
 		}
 		setVolume(slot.key, r.volume)
@@ -1017,7 +997,7 @@
 			if (r.off) return undefined
 			var slot = ready[r.url]
 			if (!slot) {
-				if (!coolingDown(r.url)) ensureReady(r.url).catch(function () {})
+				if (layoutKnown() && !coolingDown(r.url)) ensureReady(r.url).catch(function () {})
 				return Reflect.apply(original, this, args)
 			}
 			setVolume(slot.key, r.volume)
@@ -1538,8 +1518,9 @@
 		start: function (api) {
 			var cleanup = api.cleanup
 			storage = api.jsonStorage
+			restoreLayout()
 			installPatches(cleanup)
-			setTimeout(warm, 1500)
+			setTimeout(warm, 5000)
 			// Packs that switch with the date: look again once an hour, so a new season starts without a restart.
 			var lastPack = activePackId()
 			var timer = setInterval(function () {
