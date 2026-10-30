@@ -477,6 +477,8 @@
 	var ready = {} // url -> { key, path }
 	var loading = {} // url -> promise
 	var failed = {} // url -> message
+	var failedAt = {} // url -> when, so a broken sound is not retried on every play
+	var toldAbout = {} // url -> true once the failure was shown
 	var learned = { variant: -1, path: -1, writer: '' }
 	var heard = [] // { raw, at, count, replaced }
 	var diag = []
@@ -495,9 +497,26 @@
 		changed()
 	}
 	function errorText(e) { return String((e && e.message) || e) }
+	/** A native module by name, looked up every way a phone can expose it. */
 	function native(name) {
 		var RN = valenced.react.ReactNative
-		return RN.NativeModules && RN.NativeModules[name]
+		var found = RN.NativeModules && RN.NativeModules[name]
+		if (found) return found
+		try { if (typeof nativeModuleProxy !== 'undefined' && nativeModuleProxy[name]) return nativeModuleProxy[name] } catch (e) {}
+		try { if (typeof __turboModuleProxy === 'function') return __turboModuleProxy(name) || undefined } catch (e) {}
+	}
+
+	/** Discord's file module (NativeFileModule): Valenced exposes it, and older builds call it DCDFileManager. */
+	function fileModule() {
+		try {
+			var viaValenced = valenced.discord.native && valenced.discord.native.FileModule
+			if (viaValenced && typeof viaValenced.writeFile === 'function') return viaValenced
+		} catch (e) {}
+		var names = ['NativeFileModule', 'DCDFileManager']
+		for (var i = 0; i < names.length; i++) {
+			var m = native(names[i])
+			if (m && typeof m.writeFile === 'function') return m
+		}
 	}
 	function toast(text) {
 		try { valenced.discord.actions.ToastActionCreators.open('MARKLONG_CUSTOM_SOUNDS', { text: String(text) }) } catch (e) {}
@@ -598,11 +617,15 @@
 	}
 
 	// ---- Getting a sound ready -----------------------------------------------------------------
+	var B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 	function toBase64(buffer) {
 		var bytes = new Uint8Array(buffer)
 		var out = ''
-		for (var i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000))
-		return btoa(out)
+		for (var i = 0; i < bytes.length; i += 3) {
+			var n = (bytes[i] << 16) | ((bytes[i + 1] || 0) << 8) | (bytes[i + 2] || 0)
+			out += B64[(n >> 18) & 63] + B64[(n >> 12) & 63] + (i + 1 < bytes.length ? B64[(n >> 6) & 63] : '=') + (i + 2 < bytes.length ? B64[n & 63] : '=')
+		}
+		return out
 	}
 	function extensionOf(url, type) {
 		var m = /\.(mp3|ogg|oga|wav|m4a|aac|opus|flac)(\?|#|$)/i.exec(url)
@@ -615,40 +638,40 @@
 
 	/** Downloads the sound and writes it to the app cache. Resolves to the paths to try. */
 	async function download(url) {
-		var files = native('DCDFileManager')
-		if (!files || typeof files.writeFile !== 'function') throw new Error('The file module (DCDFileManager) was not found')
+		var files = fileModule()
+		if (!files) throw new Error('The file module was not found on this phone')
 		var res = await fetch(url)
 		if (!res.ok) throw new Error('Could not download it (' + res.status + ')')
 		var buffer = await res.arrayBuffer()
 		if (buffer.byteLength > MAX_BYTES) throw new Error('That file is bigger than 12 MB')
-		var name = 'cs-' + hash(url) + '.' + extensionOf(url, res.headers && res.headers.get && res.headers.get('content-type'))
-		var written
-		var dirs = ['cache', 'documents']
+		var name = 'custom-sounds/cs-' + hash(url) + '.' + extensionOf(url, res.headers && res.headers.get && res.headers.get('content-type'))
 		var base = toBase64(buffer)
+		var written
+		var dir
 		var lastError
-		for (var i = 0; i < dirs.length; i++) {
+		var dirs = ['cache', 'documents']
+		for (var i = 0; i < dirs.length && written === undefined; i++) {
 			try {
 				written = await files.writeFile(dirs[i], name, base, 'base64')
-				learned.writer = dirs[i]
-				break
+				dir = dirs[i]
+				if (written === undefined) written = null
 			} catch (e) { lastError = e }
 		}
-		if (written === undefined && lastError) throw lastError
+		if (written === undefined) throw lastError || new Error('Could not write the file')
 		var paths = []
 		if (typeof written === 'string' && written) paths.push(written)
 		try {
-			var constants = typeof files.getConstants === 'function' ? files.getConstants() : files
-			var root = constants && (learned.writer === 'cache' ? constants.CacheDirPath || constants.CachesDirPath : constants.DocumentsDirPath)
+			var constants = typeof files.getConstants === 'function' ? files.getConstants() : {}
+			var root = dir === 'cache' ? constants.CacheDirPath : constants.DocumentsDirPath
 			if (root) paths.push(String(root).replace(/\/$/, '') + '/' + name)
 		} catch (e) {}
-		paths.push(name)
-		note('wrote ' + name + ' -> ' + paths.join(' | '))
+		note('wrote ' + name + ' to ' + dir + ' -> ' + (paths.join(' | ') || '(no path returned)'))
 		return paths.filter(function (p, i) { return paths.indexOf(p) === i })
 	}
 
 	function callPrepare(args) {
 		return new Promise(function (resolve, reject) {
-			var timer = setTimeout(function () { reject(new Error('prepare never answered')) }, 4000)
+			var timer = setTimeout(function () { reject(new Error('prepare never answered')) }, 3000)
 			function done(error) {
 				clearTimeout(timer)
 				if (error) reject(new Error(typeof error === 'string' ? error : JSON.stringify(error)))
@@ -664,47 +687,118 @@
 		})
 	}
 
-	// GUESS: the shape of prepare(uri, usage, key, callback). Tried in order; the first to work is remembered.
+	// The shape of prepare is learned from what Discord itself sends (see watchPrepare). Until then these are tried
+	// in order, the way Discord's sound player (a fork of react-native-sound) is most likely to take them.
 	var VARIANTS = [
-		function (u, k) { return [u, 'notification', k] },
-		function (u, k) { return [u, 'ringtone', k] },
-		function (u, k) { return [u, 0, k] },
-		function (u, k) { return [u, k] },
+		{ name: 'uri, usage, key', build: function (u, k) { return [u, 'notification', k] } },
+		{ name: 'uri, key, options', build: function (u, k) { return [u, k, { loadSync: true }] } },
+		{ name: 'uri, key', build: function (u, k) { return [u, k] } },
+		{ name: 'uri, ringtone, key', build: function (u, k) { return [u, 'ringtone', k] } },
+		{ name: 'uri, voice, key', build: function (u, k) { return [u, 'voice', k] } },
+		{ name: 'uri, 0, key', build: function (u, k) { return [u, 0, k] } },
+		{ name: 'uri, 1, key', build: function (u, k) { return [u, 1, k] } },
+		{ name: 'uri, key, empty options', build: function (u, k) { return [u, k, {}] } },
 	]
+	var observedPrepare = [] // what Discord's own prepare calls looked like
+	var learnedTemplate // function(uri, key) -> arguments, built from one of those calls
 
-	function ensureReady(url) {
+	function plain(value) {
+		return typeof value === 'function' ? '[function]' : value && typeof value === 'object' ? JSON.stringify(value).slice(0, 60) : value
+	}
+
+	/** Remembers how Discord calls prepare, and works out which argument is the sound and which is its name. */
+	function watchPrepare(args) {
+		var shown = args.map(plain)
+		if (observedPrepare.length < 6) {
+			observedPrepare.push(shown)
+			note('Discord prepare: ' + JSON.stringify(shown))
+		}
+		return shown
+	}
+
+	function learnTemplate(prepareArgs, playedName) {
+		if (learnedTemplate || !prepareArgs) return
+		var keyAt = -1
+		for (var i = 0; i < prepareArgs.length; i++) if (prepareArgs[i] === playedName) keyAt = i
+		if (keyAt < 0) return
+		var uriAt = -1
+		for (var j = 0; j < prepareArgs.length; j++) {
+			if (j === keyAt || typeof prepareArgs[j] !== 'string' || /^(notification|ringtone|voice|media|alarm|default|system|music|game|ambient|playback|call)$/i.test(prepareArgs[j])) continue
+			uriAt = j
+			break
+		}
+		if (uriAt < 0) return
+		var copy = prepareArgs.slice()
+		while (copy.length && typeof copy[copy.length - 1] === 'function') copy.pop()
+		learnedTemplate = function (u, k) {
+			var out = copy.slice()
+			out[uriAt] = u
+			out[keyAt] = k
+			return out
+		}
+		note('Learned how Discord calls prepare: sound is argument ' + (uriAt + 1) + ', name is argument ' + (keyAt + 1) + ' of ' + copy.length)
+	}
+
+	function candidatesFor(url, paths) {
+		var list = []
+		paths.forEach(function (p) {
+			list.push(p)
+			if (!/^file:/.test(p) && p.charAt(0) === '/') list.push('file://' + p)
+		})
+		if (/^https?:/.test(url)) list.push(url) // Android's player can stream a link itself
+		return list
+	}
+
+	/** Whether a sound that failed to load should be left alone for now. */
+	function coolingDown(url) {
+		return !!failedAt[url] && Date.now() - failedAt[url] < 60000
+	}
+
+	function ensureReady(url, force) {
 		if (ready[url]) return Promise.resolve(ready[url])
+		if (!force && coolingDown(url)) return Promise.reject(new Error(failed[url] || 'could not load'))
 		if (loading[url]) return loading[url]
 		loading[url] = (async function () {
 			try {
-				if (!sm || typeof orig.prepare !== 'function') throw new Error('The sound player (DCDSoundManager) was not found')
+				if (!sm || typeof orig.prepare !== 'function') throw new Error('The sound player was not found on this phone')
 				var key = 'cs-' + hash(url)
-				var local = /^(file:|\/)/.test(url)
-				var paths = local ? [url] : await download(url)
-				var candidates = []
-				paths.forEach(function (p) {
-					candidates.push(p)
-					if (!/^file:/.test(p) && p.charAt(0) === '/') candidates.push('file://' + p)
-				})
-				if (!local && /^https?:/.test(url)) candidates.push(url)
-				var variants = learned.variant >= 0 ? [learned.variant] : VARIANTS.map(function (v, i) { return i })
+				var paths = []
+				if (/^(file:|\/)/.test(url)) paths = [url]
+				else {
+					try { paths = await download(url) } catch (e) { note('download problem: ' + errorText(e) + ' (trying the link directly)') }
+				}
+				var candidates = candidatesFor(url, paths)
+				var variants = []
+				if (learnedTemplate) variants.push({ name: 'what Discord uses', build: learnedTemplate })
+				if (learned.variant >= 0 && VARIANTS[learned.variant]) variants.push(VARIANTS[learned.variant])
+				else VARIANTS.forEach(function (v) { variants.push(v) })
+				var started = Date.now()
 				var lastError
 				for (var c = 0; c < candidates.length; c++)
 					for (var v = 0; v < variants.length; v++) {
+						if (Date.now() - started > 25000) throw lastError || new Error('Gave up after 25 seconds')
 						try {
-							await callPrepare(VARIANTS[variants[v]](candidates[c], key))
-							learned.variant = variants[v]
-							note('ready with variant ' + (variants[v] + 1) + ' and ' + candidates[c])
+							await callPrepare(variants[v].build(candidates[c], key))
+							var at = VARIANTS.indexOf(variants[v])
+							if (at >= 0) learned.variant = at
+							note('ready: ' + variants[v].name + ' with ' + (candidates[c].length > 60 ? candidates[c].slice(0, 60) + '…' : candidates[c]))
 							ready[url] = { key: key, path: candidates[c] }
 							delete failed[url]
+							delete failedAt[url]
 							return ready[url]
 						} catch (e) {
 							lastError = e
+							note('prepare (' + variants[v].name + ') failed: ' + errorText(e).slice(0, 80))
 						}
 					}
 				throw lastError || new Error('prepare failed')
 			} catch (e) {
 				failed[url] = errorText(e)
+				failedAt[url] = Date.now()
+				if (!toldAbout[url]) {
+					toldAbout[url] = true
+					toast('Custom Sounds could not load a sound: ' + failed[url].slice(0, 90) + '. See Tools > Log.')
+				}
 				note('could not load ' + url.slice(0, 50) + ': ' + failed[url])
 				throw e
 			} finally {
@@ -740,7 +834,7 @@
 	/** Plays a link right now, for the preview buttons. */
 	async function previewUrl(url, volume) {
 		try {
-			var slot = await ensureReady(url)
+			var slot = await ensureReady(url, true)
 			setVolume(slot.key, volume)
 			orig.play.call(sm, slot.key)
 		} catch (e) {
@@ -774,8 +868,19 @@
 			if (typeof sm[m] === 'function') orig[m] = sm[m]
 		})
 		note('DCDSoundManager methods: ' + Object.keys(sm).join(', '))
-		var files = native('DCDFileManager')
-		note('DCDFileManager methods: ' + (files ? Object.keys(files).join(', ') : 'missing'))
+		var files = fileModule()
+		note('File module: ' + (files ? 'found (' + Object.keys(files).join(', ') + ')' : 'missing'))
+		var lastPrepare = {}
+		if (typeof orig.prepare === 'function')
+			cleanup(
+				valenced.patcher.instead(sm, 'prepare', function (args, original) {
+					try {
+						var shown = watchPrepare(args)
+						for (var i = 0; i < shown.length; i++) if (typeof shown[i] === 'string') lastPrepare[shown[i]] = args.slice()
+					} catch (e) {}
+					return Reflect.apply(original, this, args)
+				}),
+			)
 
 		if (typeof orig.play === 'function')
 			cleanup(
@@ -783,6 +888,7 @@
 					var name = args[0]
 					if (typeof name !== 'string') return Reflect.apply(original, this, args)
 					var item = hear(name)
+					try { learnTemplate(lastPrepare[name], name) } catch (e) {}
 					var r
 					try { r = resolve(item.key) } catch (e) {}
 					item.replaced = !!r
@@ -792,7 +898,7 @@
 					var slot = ready[r.url]
 					if (!slot) {
 						// Not downloaded yet: let Discord's own sound play this time, and get ours ready.
-						ensureReady(r.url).catch(function () {})
+						if (!coolingDown(r.url)) ensureReady(r.url).catch(function () {})
 						return Reflect.apply(original, this, args)
 					}
 					setVolume(slot.key, r.volume)
@@ -1223,6 +1329,7 @@
 				title('Tools', 'Status, backups and troubleshooting'),
 				group('Status', [
 					row('Sound player', sm ? 'Found (DCDSoundManager)' : 'Not found on this phone'),
+					row('File module', fileModule() ? 'Found' : 'Not found, links are played directly'),
 					row('Custom sounds ready', readyCount + ' ready' + (failCount ? ', ' + failCount + ' failed' : '')),
 					row('How files are loaded', learned.variant >= 0 ? 'Method ' + (learned.variant + 1) + ' worked' : 'Not learned yet, play a custom sound'),
 				]),
@@ -1247,9 +1354,9 @@
 					}),
 				]),
 				group('Troubleshooting', [
-					row('Download my sounds again', 'Clears what was loaded and loads it again', function () { ready = {}; failed = {}; loading = {}; changed(); warm().then(function () { toast('Done') }) }),
+					row('Download my sounds again', 'Clears what was loaded and loads it again', function () { ready = {}; failed = {}; failedAt = {}; toldAbout = {}; loading = {}; changed(); warm().then(function () { toast('Done') }) }),
 					row('Copy the log', 'Send this when something does not work', function () { copyText(diag.join('\n') || 'empty', 'Log') }),
-					row('Reset everything', 'Back to Discord\'s own sounds', function () { json.set({ sounds: {}, userPacks: {}, activePack: 'none', autoPacks: false, enabled: true }); ready = {}; failed = {}; toast('Everything was reset') }),
+					row('Reset everything', 'Back to Discord\'s own sounds', function () { json.set({ sounds: {}, userPacks: {}, activePack: 'none', autoPacks: false, enabled: true }); ready = {}; failed = {}; failedAt = {}; toast('Everything was reset') }),
 				]),
 				group('Log', diag.slice(-8).map(function (l, i) { return row(l, undefined, undefined, { key: 'log' + i }) })),
 				group('About', [row('Credits', 'The list of Discord sounds and its seasonal sound files come from ScattrdBlade\'s Vencord CustomSounds plugin.')]),
