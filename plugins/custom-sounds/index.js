@@ -13,462 +13,84 @@
 	 */
 	var defaults = { hapticMenus: true, hapticOther: true, hapticVibration: true, enabled: true, activePack: 'none', autoPacks: false, sounds: {}, userPacks: {}, keyNames: {}, bad: {}, proven: {} }
 	var CDN_SOUNDBOARD = 'https://cdn.discordapp.com/soundboard-sounds/'
-	var MAX_BYTES = 12 * 1024 * 1024
 	var VOLUMES = [25, 50, 75, 100]
 
 	var SOUNDS = [
-	{
-		"id": "message1",
-		"name": "Message 1 (All Message Notifications)",
-		"cat": "Messages & pings",
-		"seasonal": {
-			"halloween_message1": "https://discord.com/assets/c269de500ca3cb7b.mp3"
-		}
-	},
-	{
-		"id": "message2",
-		"name": "Message 2 (Friend Started Playing)",
-		"cat": "Messages & pings",
-		"seasonal": {}
-	},
-	{
-		"id": "message3",
-		"name": "Message 3 (Current Channel, if enabled in Discord)",
-		"cat": "Messages & pings",
-		"seasonal": {}
-	},
-	{
-		"id": "mention1",
-		"name": "Mention 1 (Unused by Discord)",
-		"cat": "Messages & pings",
-		"seasonal": {}
-	},
-	{
-		"id": "mention2",
-		"name": "Mention 2 (Unused by Discord)",
-		"cat": "Messages & pings",
-		"seasonal": {}
-	},
-	{
-		"id": "mention3",
-		"name": "Mention 3 (Audio Device Changed)",
-		"cat": "Messages & pings",
-		"seasonal": {}
-	},
-	{
-		"id": "ducky_message1",
-		"name": "Ducky Message",
-		"cat": "Messages & pings",
-		"seasonal": {}
-	},
-	{
-		"id": "asmr_message1",
-		"name": "ASMR Message",
-		"cat": "Messages & pings",
-		"seasonal": {}
-	},
-	{
-		"id": "bit_message1",
-		"name": "Bit Message",
-		"cat": "Messages & pings",
-		"seasonal": {}
-	},
-	{
-		"id": "bop_message1",
-		"name": "Bop Message",
-		"cat": "Messages & pings",
-		"seasonal": {}
-	},
-	{
-		"id": "lofi_message1",
-		"name": "LoFi Message",
-		"cat": "Messages & pings",
-		"seasonal": {}
-	},
-	{
-		"id": "poggermode_message_send",
-		"name": "Poggermode Message",
-		"cat": "Messages & pings",
-		"seasonal": {}
-	},
-	{
-		"id": "call_calling",
-		"name": "Call Calling",
-		"cat": "Calls",
-		"seasonal": {
-			"halloween_call_calling": "https://discord.com/assets/ef24e229a3413c8a.mp3",
-			"winter_call_calling": "https://discord.com/assets/a07935fe464c324c.mp3"
-		}
-	},
-	{
-		"id": "call_ringing",
-		"name": "Call Ringing",
-		"cat": "Calls",
-		"seasonal": {
-			"halloween_call_ringing": "https://discord.com/assets/7a287e2f88531f25.mp3",
-			"winter_call_ringing": "https://discord.com/assets/daf6c21d9f92979a.mp3",
-			"call_ringing_beat": "https://discord.com/assets/574220f72e718dad.mp3",
-			"call_ringing_snow_halation": "https://discord.com/assets/82954088613583bc.mp3",
-			"call_ringing_snowsgiving": "https://discord.com/assets/4261355196740dab.mp3"
-		}
-	},
-	{
-		"id": "disconnect",
-		"name": "Disconnect",
-		"cat": "Calls",
-		"seasonal": {
-			"halloween_disconnect": "https://discord.com/assets/9b8ef0a59d731dd6.mp3",
-			"winter_disconnect": "https://discord.com/assets/600991ad4560f288.mp3"
-		}
-	},
-	{
-		"id": "reconnect",
-		"name": "Reconnect",
-		"cat": "Calls",
-		"seasonal": {}
-	},
-	{
-		"id": "user_join",
-		"name": "User Join",
-		"cat": "Calls",
-		"seasonal": {
-			"halloween_user_join": "https://discord.com/assets/00b48ea9fc787786.mp3",
-			"winter_user_join": "https://discord.com/assets/b766ee70384a56ce.mp3"
-		}
-	},
-	{
-		"id": "user_leave",
-		"name": "User Leave",
-		"cat": "Calls",
-		"seasonal": {
-			"halloween_user_leave": "https://discord.com/assets/c9b6b9d1ef992f1b.mp3",
-			"winter_user_leave": "https://discord.com/assets/cf2c36fde50eb05d.mp3"
-		}
-	},
-	{
-		"id": "user_moved",
-		"name": "User Moved",
-		"cat": "Calls",
-		"seasonal": {}
-	},
-	{
-		"id": "stage_waiting",
-		"name": "Stage Waiting",
-		"cat": "Calls",
-		"seasonal": {}
-	},
-	{
-		"id": "hang_status_select",
-		"name": "Hang Status Select",
-		"cat": "Calls",
-		"seasonal": {}
-	},
-	{
-		"id": "ptt_start",
-		"name": "PTT Start",
-		"cat": "Calls",
-		"seasonal": {}
-	},
-	{
-		"id": "ptt_stop",
-		"name": "PTT Stop",
-		"cat": "Calls",
-		"seasonal": {}
-	},
-	{
-		"id": "mute",
-		"name": "Mute",
-		"cat": "Voice controls",
-		"seasonal": {
-			"halloween_mute": "https://discord.com/assets/d5e69d2c2aac0a27.mp3",
-			"winter_mute": "https://discord.com/assets/81034fa14558e50f.mp3"
-		}
-	},
-	{
-		"id": "unmute",
-		"name": "Unmute",
-		"cat": "Voice controls",
-		"seasonal": {
-			"halloween_unmute": "https://discord.com/assets/6f0d538ed066a1a6.mp3",
-			"winter_unmute": "https://discord.com/assets/b2c49178b1a4e3d9.mp3"
-		}
-	},
-	{
-		"id": "deafen",
-		"name": "Deafen",
-		"cat": "Voice controls",
-		"seasonal": {
-			"halloween_deafen": "https://discord.com/assets/514663b657bc4c7d.mp3",
-			"winter_deafen": "https://discord.com/assets/70fe5e248588bb13.mp3"
-		}
-	},
-	{
-		"id": "undeafen",
-		"name": "Undeafen",
-		"cat": "Voice controls",
-		"seasonal": {
-			"halloween_undeafen": "https://discord.com/assets/4dfa756a71484219.mp3",
-			"winter_undeafen": "https://discord.com/assets/5b518eba0a73ec4a.mp3"
-		}
-	},
-	{
-		"id": "camera_on",
-		"name": "Camera On",
-		"cat": "Camera & streams",
-		"seasonal": {}
-	},
-	{
-		"id": "camera_off",
-		"name": "Camera Off",
-		"cat": "Camera & streams",
-		"seasonal": {}
-	},
-	{
-		"id": "stream_started",
-		"name": "Stream Started",
-		"cat": "Camera & streams",
-		"seasonal": {}
-	},
-	{
-		"id": "stream_ended",
-		"name": "Stream Ended",
-		"cat": "Camera & streams",
-		"seasonal": {}
-	},
-	{
-		"id": "stream_user_joined",
-		"name": "Stream User Joined",
-		"cat": "Camera & streams",
-		"seasonal": {}
-	},
-	{
-		"id": "stream_user_left",
-		"name": "Stream User Left",
-		"cat": "Camera & streams",
-		"seasonal": {}
-	},
-	{
-		"id": "clip_save",
-		"name": "Clip Save",
-		"cat": "Camera & streams",
-		"seasonal": {}
-	},
-	{
-		"id": "clip_error",
-		"name": "Clip Error",
-		"cat": "Camera & streams",
-		"seasonal": {}
-	},
-	{
-		"id": "voice_message_recording_stopped",
-		"name": "Voice Message Recording Stopped",
-		"cat": "Camera & streams",
-		"seasonal": {}
-	},
-	{
-		"id": "activity_end",
-		"name": "Activity End",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "activity_launch",
-		"name": "Activity Launch",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "activity_user_join",
-		"name": "Activity User Join",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "activity_user_left",
-		"name": "Activity User Left",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "ddr-down",
-		"name": "DDR Down",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "ddr-left",
-		"name": "DDR Left",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "ddr-right",
-		"name": "DDR Right",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "ddr-up",
-		"name": "DDR Up",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "discodo",
-		"name": "Discodo",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "doggo_bark",
-		"name": "Doggo Game: Bark (Game Start)",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "doggo_cat",
-		"name": "Doggo Game: Cat Death",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "doggo_cat_hurt",
-		"name": "Doggo Game: Cat Hurt",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "doggo_dog_death",
-		"name": "Doggo Game: Dog Death",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "doggo_dog_hurt",
-		"name": "Doggo Game: Dog Hurt",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "doggo_slash",
-		"name": "Doggo Game: Knife Slash",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "doggo_music",
-		"name": "Doggo Game: Music",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "doggo_death",
-		"name": "Doggo Game: Player Death",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "doggo_human_hit",
-		"name": "Doggo Game: Player Hit",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "doggo_rat",
-		"name": "Doggo Game: Rat Attack",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "doggo_rat_hit",
-		"name": "Doggo Game: Rat Hit",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "doggo_skeleton",
-		"name": "Doggo Game: Skeleton Attack",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "doggo_skeleton_die",
-		"name": "Doggo Game: Skeleton Death",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "doggo_skeleton_hit",
-		"name": "Doggo Game: Skeleton Hit",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "doggo_zombie",
-		"name": "Doggo Game: Zombie Attack",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "doggo_zombie_hit",
-		"name": "Doggo Game: Zombie Hit",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "human_man",
-		"name": "Human Man",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "overlayunlock",
-		"name": "Overlay Unlock",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "poggermode_achievement_unlock",
-		"name": "Poggermode Achievement",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "poggermode_applause",
-		"name": "Poggermode Applause",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "poggermode_enabled",
-		"name": "Poggermode Enabled",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "robot_man",
-		"name": "Robot Man",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "vibing_wumpus",
-		"name": "Vibing Wumpus",
-		"cat": "Activities & games",
-		"seasonal": {}
-	},
-	{
-		"id": "success",
-		"name": "Success",
-		"cat": "Other",
-		"seasonal": {}
-	}
-]
+		{ id: "message1", name: "Message 1 (All Message Notifications)", cat: "Messages & pings", seasonal: {"halloween_message1": "https://discord.com/assets/c269de500ca3cb7b.mp3"} },
+		{ id: "message2", name: "Message 2 (Friend Started Playing)", cat: "Messages & pings", seasonal: {} },
+		{ id: "message3", name: "Message 3 (Current Channel, if enabled in Discord)", cat: "Messages & pings", seasonal: {} },
+		{ id: "mention1", name: "Mention 1 (Unused by Discord)", cat: "Messages & pings", seasonal: {} },
+		{ id: "mention2", name: "Mention 2 (Unused by Discord)", cat: "Messages & pings", seasonal: {} },
+		{ id: "mention3", name: "Mention 3 (Audio Device Changed)", cat: "Messages & pings", seasonal: {} },
+		{ id: "ducky_message1", name: "Ducky Message", cat: "Messages & pings", seasonal: {} },
+		{ id: "asmr_message1", name: "ASMR Message", cat: "Messages & pings", seasonal: {} },
+		{ id: "bit_message1", name: "Bit Message", cat: "Messages & pings", seasonal: {} },
+		{ id: "bop_message1", name: "Bop Message", cat: "Messages & pings", seasonal: {} },
+		{ id: "lofi_message1", name: "LoFi Message", cat: "Messages & pings", seasonal: {} },
+		{ id: "poggermode_message_send", name: "Poggermode Message", cat: "Messages & pings", seasonal: {} },
+		{ id: "call_calling", name: "Call Calling", cat: "Calls", seasonal: {"halloween_call_calling": "https://discord.com/assets/ef24e229a3413c8a.mp3", "winter_call_calling": "https://discord.com/assets/a07935fe464c324c.mp3"} },
+		{ id: "call_ringing", name: "Call Ringing", cat: "Calls", seasonal: {"halloween_call_ringing": "https://discord.com/assets/7a287e2f88531f25.mp3", "winter_call_ringing": "https://discord.com/assets/daf6c21d9f92979a.mp3", "call_ringing_beat": "https://discord.com/assets/574220f72e718dad.mp3", "call_ringing_snow_halation": "https://discord.com/assets/82954088613583bc.mp3", "call_ringing_snowsgiving": "https://discord.com/assets/4261355196740dab.mp3"} },
+		{ id: "disconnect", name: "Disconnect", cat: "Calls", seasonal: {"halloween_disconnect": "https://discord.com/assets/9b8ef0a59d731dd6.mp3", "winter_disconnect": "https://discord.com/assets/600991ad4560f288.mp3"} },
+		{ id: "reconnect", name: "Reconnect", cat: "Calls", seasonal: {} },
+		{ id: "user_join", name: "User Join", cat: "Calls", seasonal: {"halloween_user_join": "https://discord.com/assets/00b48ea9fc787786.mp3", "winter_user_join": "https://discord.com/assets/b766ee70384a56ce.mp3"} },
+		{ id: "user_leave", name: "User Leave", cat: "Calls", seasonal: {"halloween_user_leave": "https://discord.com/assets/c9b6b9d1ef992f1b.mp3", "winter_user_leave": "https://discord.com/assets/cf2c36fde50eb05d.mp3"} },
+		{ id: "user_moved", name: "User Moved", cat: "Calls", seasonal: {} },
+		{ id: "stage_waiting", name: "Stage Waiting", cat: "Calls", seasonal: {} },
+		{ id: "hang_status_select", name: "Hang Status Select", cat: "Calls", seasonal: {} },
+		{ id: "ptt_start", name: "PTT Start", cat: "Calls", seasonal: {} },
+		{ id: "ptt_stop", name: "PTT Stop", cat: "Calls", seasonal: {} },
+		{ id: "mute", name: "Mute", cat: "Voice controls", seasonal: {"halloween_mute": "https://discord.com/assets/d5e69d2c2aac0a27.mp3", "winter_mute": "https://discord.com/assets/81034fa14558e50f.mp3"} },
+		{ id: "unmute", name: "Unmute", cat: "Voice controls", seasonal: {"halloween_unmute": "https://discord.com/assets/6f0d538ed066a1a6.mp3", "winter_unmute": "https://discord.com/assets/b2c49178b1a4e3d9.mp3"} },
+		{ id: "deafen", name: "Deafen", cat: "Voice controls", seasonal: {"halloween_deafen": "https://discord.com/assets/514663b657bc4c7d.mp3", "winter_deafen": "https://discord.com/assets/70fe5e248588bb13.mp3"} },
+		{ id: "undeafen", name: "Undeafen", cat: "Voice controls", seasonal: {"halloween_undeafen": "https://discord.com/assets/4dfa756a71484219.mp3", "winter_undeafen": "https://discord.com/assets/5b518eba0a73ec4a.mp3"} },
+		{ id: "camera_on", name: "Camera On", cat: "Camera & streams", seasonal: {} },
+		{ id: "camera_off", name: "Camera Off", cat: "Camera & streams", seasonal: {} },
+		{ id: "stream_started", name: "Stream Started", cat: "Camera & streams", seasonal: {} },
+		{ id: "stream_ended", name: "Stream Ended", cat: "Camera & streams", seasonal: {} },
+		{ id: "stream_user_joined", name: "Stream User Joined", cat: "Camera & streams", seasonal: {} },
+		{ id: "stream_user_left", name: "Stream User Left", cat: "Camera & streams", seasonal: {} },
+		{ id: "clip_save", name: "Clip Save", cat: "Camera & streams", seasonal: {} },
+		{ id: "clip_error", name: "Clip Error", cat: "Camera & streams", seasonal: {} },
+		{ id: "voice_message_recording_stopped", name: "Voice Message Recording Stopped", cat: "Camera & streams", seasonal: {} },
+		{ id: "activity_end", name: "Activity End", cat: "Activities & games", seasonal: {} },
+		{ id: "activity_launch", name: "Activity Launch", cat: "Activities & games", seasonal: {} },
+		{ id: "activity_user_join", name: "Activity User Join", cat: "Activities & games", seasonal: {} },
+		{ id: "activity_user_left", name: "Activity User Left", cat: "Activities & games", seasonal: {} },
+		{ id: "ddr-down", name: "DDR Down", cat: "Activities & games", seasonal: {} },
+		{ id: "ddr-left", name: "DDR Left", cat: "Activities & games", seasonal: {} },
+		{ id: "ddr-right", name: "DDR Right", cat: "Activities & games", seasonal: {} },
+		{ id: "ddr-up", name: "DDR Up", cat: "Activities & games", seasonal: {} },
+		{ id: "discodo", name: "Discodo", cat: "Activities & games", seasonal: {} },
+		{ id: "doggo_bark", name: "Doggo Game: Bark (Game Start)", cat: "Activities & games", seasonal: {} },
+		{ id: "doggo_cat", name: "Doggo Game: Cat Death", cat: "Activities & games", seasonal: {} },
+		{ id: "doggo_cat_hurt", name: "Doggo Game: Cat Hurt", cat: "Activities & games", seasonal: {} },
+		{ id: "doggo_dog_death", name: "Doggo Game: Dog Death", cat: "Activities & games", seasonal: {} },
+		{ id: "doggo_dog_hurt", name: "Doggo Game: Dog Hurt", cat: "Activities & games", seasonal: {} },
+		{ id: "doggo_slash", name: "Doggo Game: Knife Slash", cat: "Activities & games", seasonal: {} },
+		{ id: "doggo_music", name: "Doggo Game: Music", cat: "Activities & games", seasonal: {} },
+		{ id: "doggo_death", name: "Doggo Game: Player Death", cat: "Activities & games", seasonal: {} },
+		{ id: "doggo_human_hit", name: "Doggo Game: Player Hit", cat: "Activities & games", seasonal: {} },
+		{ id: "doggo_rat", name: "Doggo Game: Rat Attack", cat: "Activities & games", seasonal: {} },
+		{ id: "doggo_rat_hit", name: "Doggo Game: Rat Hit", cat: "Activities & games", seasonal: {} },
+		{ id: "doggo_skeleton", name: "Doggo Game: Skeleton Attack", cat: "Activities & games", seasonal: {} },
+		{ id: "doggo_skeleton_die", name: "Doggo Game: Skeleton Death", cat: "Activities & games", seasonal: {} },
+		{ id: "doggo_skeleton_hit", name: "Doggo Game: Skeleton Hit", cat: "Activities & games", seasonal: {} },
+		{ id: "doggo_zombie", name: "Doggo Game: Zombie Attack", cat: "Activities & games", seasonal: {} },
+		{ id: "doggo_zombie_hit", name: "Doggo Game: Zombie Hit", cat: "Activities & games", seasonal: {} },
+		{ id: "human_man", name: "Human Man", cat: "Activities & games", seasonal: {} },
+		{ id: "overlayunlock", name: "Overlay Unlock", cat: "Activities & games", seasonal: {} },
+		{ id: "poggermode_achievement_unlock", name: "Poggermode Achievement", cat: "Activities & games", seasonal: {} },
+		{ id: "poggermode_applause", name: "Poggermode Applause", cat: "Activities & games", seasonal: {} },
+		{ id: "poggermode_enabled", name: "Poggermode Enabled", cat: "Activities & games", seasonal: {} },
+		{ id: "robot_man", name: "Robot Man", cat: "Activities & games", seasonal: {} },
+		{ id: "vibing_wumpus", name: "Vibing Wumpus", cat: "Activities & games", seasonal: {} },
+		{ id: "success", name: "Success", cat: "Other", seasonal: {} },
+	]
 
 	// Seasonal files Discord itself ships. A pack is every sound that has a file for that season.
 	var SEASONS = {
-		halloween: { name: 'Halloween', blurb: 'Spooky versions of calls, mute, join and leave', from: 'Oct 15', to: 'Nov 2', test: function (m, d) { return (m === 10 && d >= 15) || (m === 11 && d <= 2) } },
-		winter: { name: 'Winter', blurb: 'Snowy versions of calls, mute, join and leave', from: 'Dec 1', to: 'Jan 5', test: function (m, d) { return m === 12 || (m === 1 && d <= 5) } },
+		halloween: { name: 'Halloween', blurb: 'Spooky versions of calls, mute, join and leave', test: function (m, d) { return (m === 10 && d >= 15) || (m === 11 && d <= 2) } },
+		winter: { name: 'Winter', blurb: 'Snowy versions of calls, mute, join and leave', test: function (m, d) { return m === 12 || (m === 1 && d <= 5) } },
 	}
 	var VARIANT_NAMES = { halloween: 'Halloween', winter: 'Winter', beat: 'Beat', snow_halation: 'Snow Halation', snowsgiving: 'Snowsgiving' }
 
@@ -480,7 +102,6 @@
 	var failed = {} // url -> message
 	var failedAt = {} // url -> when, so a broken sound is not retried on every play
 	var toldAbout = {} // url -> true once the failure was shown
-	var learned = { variant: -1, path: -1, writer: '' }
 	var learnedVariant // the prepare layout that worked
 
 	/** Saves the layout that worked, so later starts can use it without any trial and error. */
@@ -703,25 +324,6 @@
 	}
 
 	// ---- Getting a sound ready -----------------------------------------------------------------
-	var B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-	function toBase64(buffer) {
-		var bytes = new Uint8Array(buffer)
-		var out = ''
-		for (var i = 0; i < bytes.length; i += 3) {
-			var n = (bytes[i] << 16) | ((bytes[i + 1] || 0) << 8) | (bytes[i + 2] || 0)
-			out += B64[(n >> 18) & 63] + B64[(n >> 12) & 63] + (i + 1 < bytes.length ? B64[(n >> 6) & 63] : '=') + (i + 2 < bytes.length ? B64[n & 63] : '=')
-		}
-		return out
-	}
-	function extensionOf(url, type) {
-		var m = /\.(mp3|ogg|oga|wav|m4a|aac|opus|flac)(\?|#|$)/i.exec(url)
-		if (m) return m[1].toLowerCase()
-		if (/ogg/.test(type || '')) return 'ogg'
-		if (/wav/.test(type || '')) return 'wav'
-		if (/mp4|m4a|aac/.test(type || '')) return 'm4a'
-		return 'mp3'
-	}
-
 	// ---- Crash journal ---------------------------------------------------------------------------
 	// Some calls into the phone's sound player can close the whole app instead of failing politely. Before a
 	// call that has never worked on this phone, a note is written to a file. If the app closes during the call,
@@ -795,46 +397,6 @@
 		}
 	}
 
-	/** Downloads the sound and writes it to the app cache. Resolves to the paths to try. */
-	async function download(url) {
-		var files = fileModule()
-		if (!files) throw new Error('The file module was not found on this phone')
-		var res = await fetch(url)
-		if (!res.ok) throw new Error('Could not download it (' + res.status + ')')
-		var buffer = await res.arrayBuffer()
-		if (buffer.byteLength > MAX_BYTES) throw new Error('That file is bigger than 12 MB')
-		var name = 'custom-sounds/cs-' + hash(url) + '.' + extensionOf(url, res.headers && res.headers.get && res.headers.get('content-type'))
-		var base = toBase64(buffer)
-		var written
-		var dir
-		var lastError
-		var dirs = ['cache', 'documents']
-		for (var i = 0; i < dirs.length && written === undefined; i++) {
-			try {
-				written = await guarded('write', function () { return files.writeFile(dirs[i], name, base, 'base64') }, 300)
-				dir = dirs[i]
-				if (written === undefined) written = null
-			} catch (e) { lastError = e }
-		}
-		if (written === undefined) throw lastError || new Error('Could not write the file')
-		var paths = []
-		if (typeof written === 'string' && written) paths.push(written)
-		try {
-			var constants = typeof files.getConstants === 'function' ? files.getConstants() : {}
-			var root = dir === 'cache' ? constants.CacheDirPath : constants.DocumentsDirPath
-			if (root) paths.push(String(root).replace(/\/$/, '') + '/' + name)
-		} catch (e) {}
-		note('wrote ' + name + ' to ' + dir + ' -> ' + (paths.join(' | ') || '(no path returned)'))
-		return paths.filter(function (p, i) { return paths.indexOf(p) === i })
-	}
-
-	/** Whether a file written by this plugin is really on the phone. Unknown counts as yes. */
-	async function fileThere(path) {
-		var files = fileModule()
-		if (!files || typeof files.fileExists !== 'function') return true
-		try { return !!(await files.fileExists(String(path).replace(/^file:\/\//, ''))) } catch (e) { return true }
-	}
-
 	/** Calls prepare. `args` holds CALLBACK where the completion callback goes (or none, for a promise). */
 	var CALLBACK = { callback: true }
 	function callPrepare(args) {
@@ -888,7 +450,6 @@
 		return typeof value === 'function' ? '[function]' : value && typeof value === 'object' ? JSON.stringify(value).slice(0, 60) : value
 	}
 
-	/** Remembers how Discord calls prepare, and works out which argument is the sound and which is its name. */
 	/** The Discord sound a file name or path belongs to, or undefined. The longest matching name wins. */
 	function soundFromText(text) {
 		var t = keyOf(String(text))
@@ -947,16 +508,6 @@
 		note('Learned how Discord calls prepare: sound is argument ' + (uriAt + 1) + ', name is argument ' + (keyAt + 1) + ' of ' + copy.length)
 	}
 
-	function candidatesFor(url, paths) {
-		var list = []
-		if (/^https?:/.test(url)) return [url] // only the link: a raw file path closed the app on a real phone, and a link is what Discord's player is built for
-		paths.forEach(function (p) {
-			list.push(p)
-			if (!/^file:/.test(p) && p.charAt(0) === '/') list.push('file://' + p)
-		})
-		return list
-	}
-
 	/** Whether a sound that failed to load should be left alone for now. */
 	function coolingDown(url) {
 		return !!failedAt[url] && Date.now() - failedAt[url] < 60000
@@ -971,25 +522,7 @@
 			try {
 				if (!sm || typeof orig.prepare !== 'function') throw new Error('The sound player was not found on this phone')
 				var number = 900000 + (parseInt(hash(url), 36) % 90000)
-				var paths = []
-				var bundled = /^bundled:/.test(url) ? url.slice(8) : ''
-				if (bundled) paths = [bundled, bundled + '.mp3', bundled + '.ogg', bundled + '.wav', bundled.replace(/_/g, '')]
-				else if (/^(file:|\/)/.test(url)) paths = [url]
-				else {
-					var linkWorks = /^https?:/.test(url)
-					if (linkWorks) paths = []
-					else try { paths = await download(url) } catch (e) { note('download problem: ' + errorText(e) + ' (trying the link directly)') }
-				}
-				var candidates = bundled ? paths : candidatesFor(url, paths)
-				if (!bundled && paths.length) {
-					var present = []
-					for (var q = 0; q < candidates.length; q++) {
-						var c0 = candidates[q]
-						if (/^https?:/.test(c0) || await fileThere(c0)) present.push(c0)
-						else note('skipping ' + c0.slice(0, 60) + ': the file is not there')
-					}
-					candidates = present
-				}
+					if (!/^https?:/.test(url)) throw new Error('Only links starting with https:// can be played')
 				var variants = []
 				if (learnedTemplate) variants.push({ name: 'what Discord uses', build: learnedTemplate, keyFor: learnedKeyIsNumber ? undefined : textKey })
 				if (learnedVariant) variants.push(learnedVariant)
@@ -998,28 +531,23 @@
 				var lastError
 				var messages = {}
 				var attempted = 0
-				for (var c = 0; c < candidates.length; c++)
-					for (var v = 0; v < variants.length; v++) {
+				for (var v = 0; v < variants.length; v++) {
 						if (Date.now() - started > 25000) throw lastError || new Error('Gave up after 25 seconds')
-						var candidate = candidates[c]
-						var how = /^https?:/.test(candidate) ? 'link' : /^file:/.test(candidate) ? 'fileuri' : candidate.charAt(0) === '/' ? 'path' : 'name'
-						var kind = 'prepare|' + variants[v].name + '|' + how + '|' + (bundled ? 'bundled' : 'file')
-						// A built-in sound is journaled by its own name too: one name can close the app even when others loaded fine.
-						var stepKey = bundled ? kind + '|' + candidate : kind
-						if (bad[kind] || bad[stepKey] || bad['prepare|*|' + how + '|' + (bundled ? 'bundled' : 'file')]) continue
+						var kind = 'prepare|' + variants[v].name + '|link|file'
+						if (bad[kind] || bad['prepare|*|link|file']) continue
 						// Nothing new is tried unless you asked for it (a play button); background loading only repeats what worked.
 						if (!force && !proven[kind]) continue
 						attempted++
 						try {
 							var usedKey = variants[v].keyFor ? variants[v].keyFor(number) : number
-							await guarded(stepKey, function () { return callPrepare(variants[v].build(candidates[c], usedKey)) }, 700)
+							await guarded(kind, function () { return callPrepare(variants[v].build(url, usedKey)) }, 700)
 							proven[kind] = true
 							if (variants[v] !== learnedVariant) {
 								learnedVariant = variants[v]
 								rememberLayout(variants[v].name)
 							}
-							note('ready: ' + variants[v].name + ' with ' + (candidates[c].length > 60 ? candidates[c].slice(0, 60) + '…' : candidates[c]))
-							ready[url] = { key: usedKey, path: candidates[c], source: bundled ? 'bundled' : 'file', url: url }
+							note('ready: ' + variants[v].name + ' with ' + url.slice(0, 60))
+							ready[url] = { key: usedKey, url: url, source: 'file' }
 							delete failed[url]
 							delete failedAt[url]
 							return ready[url]
