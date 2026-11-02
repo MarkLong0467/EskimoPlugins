@@ -2,30 +2,28 @@
 	/*
 	 * Pin DMs for Valenced.
 	 * The idea comes from PinDMs for Vencord and BetterDiscord. The code is written from scratch for Valenced.
-	 * Pinned chats are moved to the top of the list Discord uses for the DM list. Hold a DM and choose
-	 * Pin DM, or pick them in this plugin's settings.
+	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var defaults = { pins: [] }
+	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [] }
 	var DM = 1
 	var GROUP_DM = 3
 	var METHODS = ['getPrivateChannelIds', 'getSortedChannels']
+	var EDIT_KEY = 'marklong.pin-dms.edit'
+	var MENU_KEY = 'marklong.pin-dms.menu'
+	var PRESETS = [
+		'#1abc9c', '#2ecc71', '#3498db', '#9b59b6', '#e91e63', '#f1c40f', '#e67e22', '#e74c3c', '#95a5a6', '#607d8b',
+		'#11806a', '#1f8b4c', '#206694', '#71368a', '#ad1457', '#c27c0e', '#a84300', '#992d22', '#979c9f', '#546e7a',
+	]
 
 	var storage
 	var listeners = []
-	var status = { store: 'not found', hooks: [], menus: 0, error: '' }
-	var memo = {} // method -> { key, result }, so the same list gives the same array
+	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '' }
+	var memo = {}
 
 	function finders() { return valenced.modules.finders }
 	function stores() { return valenced.discord.flux.Stores }
-	function setting(key) {
-		var s = storage && storage.cache
-		return s && s[key] !== undefined ? s[key] : defaults[key]
-	}
-	function pins() {
-		var list = setting('pins')
-		return Array.isArray(list) ? list.filter(function (x) { return typeof x === 'string' }) : []
-	}
+	function sheets() { return valenced.discord.actions.ActionSheetActionCreators }
 	function changed() { listeners.slice().forEach(function (l) { try { l() } catch (e) {} }) }
 	function toast(text) {
 		try { valenced.discord.actions.ToastActionCreators.open('MARKLONG_PIN_DMS', { text: String(text) }) } catch (e) {}
@@ -40,6 +38,41 @@
 		else if (children.length > 1) p.children = children
 		return (children.length > 1 ? rt.jsxs : rt.jsx)(type, p, key)
 	}
+	function parse(text, fallback) {
+		try { var v = JSON.parse(text); return v === null || v === undefined ? fallback : v } catch (e) { return fallback }
+	}
+
+	// ---- What is saved -----------------------------------------------------------------------------
+	// Everything is saved as text, so saving always replaces the old value and nothing is merged by accident.
+	function read() {
+		var s = (storage && storage.cache) || {}
+		var pinsText = s.pinsJson !== undefined ? s.pinsJson : s.pins ? JSON.stringify(s.pins) : '[]' // version 1.0 saved a plain list
+		var pins = parse(pinsText, [])
+		var sections = parse(s.sectionsJson !== undefined ? s.sectionsJson : '[]', [])
+		var assign = parse(s.assignJson !== undefined ? s.assignJson : '{}', {})
+		return {
+			pins: Array.isArray(pins) ? pins.filter(function (x) { return typeof x === 'string' }) : [],
+			sections: Array.isArray(sections) ? sections.filter(function (x) { return x && typeof x.id === 'string' }) : [],
+			assign: assign && typeof assign === 'object' && !Array.isArray(assign) ? assign : {},
+		}
+	}
+	function commit(state) {
+		memo = {}
+		var patch = { pinsJson: JSON.stringify(state.pins), sectionsJson: JSON.stringify(state.sections), assignJson: JSON.stringify(state.assign) }
+		try { if (storage && typeof storage.set === 'function') storage.set(patch) } catch (e) {}
+		try { if (storage && storage.cache) Object.assign(storage.cache, patch) } catch (e) {}
+		refreshList()
+	}
+	function sectionOf(state, id) {
+		var sid = state.assign[id]
+		if (!sid) return undefined
+		for (var i = 0; i < state.sections.length; i++) if (state.sections[i].id === sid) return state.sections[i]
+	}
+	function cleanColor(text) {
+		var m = /^#?([0-9a-f]{6})$/i.exec(String(text || '').trim())
+		return m ? '#' + m[1].toLowerCase() : null
+	}
+	function newId() { return 's' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36) }
 
 	function sortStore() {
 		var s = stores().PrivateChannelSortStore
@@ -48,25 +81,37 @@
 		return f.lookupModule(f.filters.withProps('getPrivateChannelIds'))[0]
 	}
 
-	// ---- Putting pinned chats first -----------------------------------------------------------
+	// ---- Putting pinned chats first, section by section ---------------------------------------------
 	function idOf(entry) {
 		if (typeof entry === 'string') return entry
 		if (entry && typeof entry === 'object') return entry.id || entry.channel_id || entry.channelId
 	}
 
-	/** The same list with pinned chats first, in the order they were pinned. Anything not recognised is left alone. */
+	/** Pinned chats with no section first, then each section's chats in order, then everything else. */
+	function pinnedOrder(ids) {
+		var state = read()
+		var out = []
+		var seen = {}
+		state.pins.forEach(function (id) { if (ids.indexOf(id) >= 0 && !sectionOf(state, id) && !seen[id]) { out.push(id); seen[id] = 1 } })
+		state.sections.forEach(function (section) {
+			state.pins.forEach(function (id) { if (ids.indexOf(id) >= 0 && state.assign[id] === section.id && !seen[id]) { out.push(id); seen[id] = 1 } })
+		})
+		return out
+	}
+
 	function pinnedFirst(list, method) {
-		var chosen = pins()
-		if (!Array.isArray(list) || !chosen.length) return list
-		var key = method + '|' + chosen.join(',') + '|' + list.map(idOf).join(',')
+		var state = read()
+		if (!Array.isArray(list) || !state.pins.length) return list
+		var ids = list.map(idOf)
+		var key = method + '|' + JSON.stringify(state) + '|' + ids.join(',')
 		if (memo[method] && memo[method].key === key) return memo[method].result
 		var byId = {}
 		list.forEach(function (entry) { var id = idOf(entry); if (id) byId[id] = entry })
-		var top = []
-		chosen.forEach(function (id) { if (byId[id] !== undefined) top.push(byId[id]) })
+		var top = pinnedOrder(ids).map(function (id) { return byId[id] })
 		if (!top.length) return list
-		var rest = list.filter(function (entry) { return chosen.indexOf(idOf(entry)) < 0 })
-		var result = top.concat(rest)
+		var chosen = {}
+		pinnedOrder(ids).forEach(function (id) { chosen[id] = 1 })
+		var result = top.concat(list.filter(function (entry) { return !chosen[idOf(entry)] }))
 		memo[method] = { key: key, result: result }
 		return result
 	}
@@ -78,11 +123,7 @@
 		METHODS.forEach(function (method) {
 			if (typeof store[method] !== 'function') return
 			try {
-				cleanup(
-					valenced.patcher.after(store, method, function (result) {
-						try { return pinnedFirst(result, method) } catch (e) { return result }
-					}),
-				)
+				cleanup(valenced.patcher.after(store, method, function (result) { try { return pinnedFirst(result, method) } catch (e) { return result } }))
 				status.hooks.push(method)
 			} catch (e) {
 				status.error = String((e && e.message) || e).slice(0, 80)
@@ -90,7 +131,6 @@
 		})
 	}
 
-	/** Tells Discord the DM list changed, so it is drawn again. */
 	function refreshList() {
 		memo = {}
 		var store = sortStore()
@@ -98,33 +138,64 @@
 		changed()
 	}
 
-	// ---- Pinning ---------------------------------------------------------------------------------
-	function isPinned(id) { return pins().indexOf(id) >= 0 }
-
-	function save(list) {
-		// A list is replaced, not merged, so removals stick.
-		if (storage && typeof storage.set === 'function') storage.set({ pins: list }, true)
-		if (storage && storage.cache) storage.cache.pins = list
-		refreshList()
-	}
-
-	function pin(id) {
-		if (isPinned(id)) return
-		save(pins().concat([id]))
+	// ---- Changing things -------------------------------------------------------------------------------
+	function isPinned(id) { return read().pins.indexOf(id) >= 0 }
+	function pin(id, sectionId) {
+		var state = read()
+		if (state.pins.indexOf(id) < 0) state.pins.push(id)
+		state.assign[id] = sectionId || ''
+		commit(state)
 	}
 	function unpin(id) {
-		save(pins().filter(function (x) { return x !== id }))
+		var state = read()
+		state.pins = state.pins.filter(function (x) { return x !== id })
+		state.assign[id] = ''
+		commit(state)
 	}
-	function toggle(id) {
-		if (isPinned(id)) { unpin(id); toast('Unpinned') } else { pin(id); toast('Pinned to the top') }
-	}
-	function move(id, by) {
-		var list = pins()
-		var at = list.indexOf(id)
+	function moveIn(id, by) {
+		var state = read()
+		var group = state.pins.filter(function (x) { return (state.assign[x] || '') === (state.assign[id] || '') })
+		var at = group.indexOf(id)
 		var to = at + by
-		if (at < 0 || to < 0 || to >= list.length) return
-		list.splice(to, 0, list.splice(at, 1)[0])
-		save(list)
+		if (at < 0 || to < 0 || to >= group.length) return
+		var other = group[to]
+		var a = state.pins.indexOf(id)
+		var b = state.pins.indexOf(other)
+		state.pins[a] = other
+		state.pins[b] = id
+		commit(state)
+	}
+	function saveSection(id, name, color) {
+		var state = read()
+		var cleaned = String(name || '').trim().slice(0, 30)
+		if (!cleaned) return toast('Give the section a name')
+		var hex = cleanColor(color)
+		if (!hex) return toast('That colour is not valid. Use something like #00d4ff')
+		var existing = state.sections.filter(function (s) { return s.id === id })[0]
+		if (existing) { existing.name = cleaned; existing.color = hex } else state.sections.push({ id: newId(), name: cleaned, color: hex, collapsed: false })
+		commit(state)
+		return true
+	}
+	function deleteSection(id) {
+		var state = read()
+		state.sections = state.sections.filter(function (s) { return s.id !== id })
+		Object.keys(state.assign).forEach(function (k) { if (state.assign[k] === id) state.assign[k] = '' })
+		commit(state)
+	}
+	function moveSection(id, by) {
+		var state = read()
+		var at = state.sections.findIndex(function (s) { return s.id === id })
+		var to = at + by
+		if (at < 0 || to < 0 || to >= state.sections.length) return
+		state.sections.splice(to, 0, state.sections.splice(at, 1)[0])
+		commit(state)
+	}
+	function toggleCollapsed(id) {
+		var state = read()
+		var section = state.sections.filter(function (s) { return s.id === id })[0]
+		if (!section) return
+		section.collapsed = !section.collapsed
+		commit(state)
 	}
 
 	// ---- Names -----------------------------------------------------------------------------------
@@ -143,18 +214,13 @@
 			return 'Direct message'
 		}
 	}
-
 	function allDmIds() {
 		var store = sortStore()
-		var list = []
 		try {
 			var ids = store && typeof store.getPrivateChannelIds === 'function' ? store.getPrivateChannelIds() : []
-			list = (ids || []).map(idOf).filter(Boolean)
-		} catch (e) {}
-		return list
+			return (ids || []).map(idOf).filter(Boolean)
+		} catch (e) { return [] }
 	}
-
-	// ---- The hold-down menu ------------------------------------------------------------------------
 	function isDm(id) {
 		try {
 			var ch = stores().ChannelStore.getChannel(id)
@@ -162,12 +228,179 @@
 		} catch (e) { return false }
 	}
 
-	/** Which DM a menu is about, from the props it was given. */
+	// ---- Sheets ------------------------------------------------------------------------------------------
+	function SheetBody(props) {
+		var Design = valenced.discord.design.Design
+		var RN = valenced.react.ReactNative
+		var size = RN.useWindowDimensions ? RN.useWindowDimensions() : { height: 800 }
+		return h(Design.ActionSheet, null, h(RN.ScrollView, { style: { maxHeight: Math.round(size.height * 0.8) }, keyboardShouldPersistTaps: 'handled' }, h(Design.Stack, { spacing: 16, style: { padding: 16 } }, props.children)))
+	}
+	function openSheet(key, Component, props) {
+		sheets().openLazy(Promise.resolve({ default: function () { return h(Component, props) } }), key, {})
+	}
+
+	/** Edit Category: a name and a colour, like the desktop plugin. */
+	function EditSection(props) {
+		var React = valenced.react.React
+		var Design = valenced.discord.design.Design
+		var RN = valenced.react.ReactNative
+		var section = props.section
+		var nameState = React.useState(section ? section.name : '')
+		var colorState = React.useState(section ? section.color : PRESETS[2])
+		var hexState = React.useState(section ? section.color : PRESETS[2])
+		var color = colorState[0]
+		function pick(hex) { colorState[1](hex); hexState[1](hex) }
+		return h(
+			SheetBody,
+			null,
+			h(Design.Text, { variant: 'heading-lg/bold' }, section ? 'Edit Category' : 'New Category'),
+			h(Design.TextInput, { label: 'Name', placeholder: 'Boys', size: 'md', maxLength: 30, value: nameState[0], onChange: function (v) { nameState[1](v) } }),
+			h(Design.Text, { variant: 'text-md/semibold' }, 'Color'),
+			h(
+				RN.View,
+				{ style: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 } },
+				PRESETS.map(function (hex) {
+					return h(
+						RN.Pressable,
+						{ key: hex, onPress: function () { pick(hex) } },
+						h(RN.View, { style: { width: 30, height: 30, borderRadius: 15, backgroundColor: hex, borderWidth: color === hex ? 3 : 0, borderColor: '#ffffff' } }),
+					)
+				}),
+			),
+			h(
+				RN.View,
+				{ style: { flexDirection: 'row', alignItems: 'center', gap: 12 } },
+				h(RN.View, { style: { width: 44, height: 44, borderRadius: 8, backgroundColor: cleanColor(hexState[0]) || '#000000' } }),
+				h(RN.View, { style: { flex: 1 } }, h(Design.TextInput, { label: 'Custom colour', placeholder: '#00d4ff', size: 'md', value: hexState[0], onChange: function (v) { hexState[1](v); var c = cleanColor(v); if (c) colorState[1](c) } })),
+			),
+			h(Design.Button, {
+				text: 'Save',
+				variant: 'primary',
+				onPress: function () {
+					if (saveSection(section && section.id, nameState[0], cleanColor(hexState[0]) || color)) sheets().hideActionSheet(EDIT_KEY)
+				},
+			}),
+			section
+				? h(Design.Button, { text: 'Delete section', variant: 'destructive', onPress: function () { deleteSection(section.id); sheets().hideActionSheet(EDIT_KEY) } })
+				: null,
+		)
+	}
+	function openEditSection(section) { openSheet(EDIT_KEY, EditSection, { section: section }) }
+
+	/** What to do with one chat: pin it into a section, move it, or unpin it. */
+	function ChatMenu(props) {
+		var Design = valenced.discord.design.Design
+		var id = props.id
+		var state = read()
+		var pinned = state.pins.indexOf(id) >= 0
+		var current = state.assign[id] || ''
+		function close() { try { sheets().hideActionSheet(MENU_KEY) } catch (e) {} }
+		function row(label, sub, onPress) { return h(Design.TableRow, { key: label + sub, label: label, subLabel: sub, onPress: onPress }) }
+		var rows = []
+		rows.push(row(pinned ? (current ? 'Keep pinned, no section' : 'Pinned, no section') : 'Pin to the top', 'Without a section', function () { pin(id, ''); toast('Pinned'); close() }))
+		state.sections.forEach(function (s) { rows.push(row((current === s.id ? '✓ ' : '') + s.name, 'Pin into this section', function () { pin(id, s.id); toast('Pinned in ' + s.name); close() })) })
+		if (pinned) {
+			rows.push(row('Move up', 'Within its group', function () { moveIn(id, -1) }))
+			rows.push(row('Move down', 'Within its group', function () { moveIn(id, 1) }))
+			rows.push(row('Unpin', 'Back to the normal list', function () { unpin(id); toast('Unpinned'); close() }))
+		}
+		return h(SheetBody, null, h(Design.Text, { variant: 'heading-lg/bold', numberOfLines: 2 }, channelLabel(id)), h(Design.TableRowGroup, null, rows))
+	}
+	function openChatMenu(id) { openSheet(MENU_KEY, ChatMenu, { id: id }) }
+
+	// ---- Section headers in the DM list --------------------------------------------------------------
+	function SectionHeader(props) {
+		var Design = valenced.discord.design.Design
+		var RN = valenced.react.ReactNative
+		var s = props.section
+		var rest = !!s.rest
+		var line = { flex: 1, height: 2, borderRadius: 1, backgroundColor: s.color, opacity: rest ? 0.35 : 0.75 }
+		return h(
+			RN.Pressable,
+			rest ? {} : { onPress: function () { toggleCollapsed(s.id) }, onLongPress: function () { openEditSection(s) }, delayLongPress: 350 },
+			h(
+				RN.View,
+				{ style: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 } },
+				h(RN.View, { style: line }),
+				h(Design.Text, { variant: 'text-md/bold', style: { color: s.color, marginHorizontal: 12, letterSpacing: 1 } }, String(s.name).toUpperCase()),
+				h(RN.View, { style: line }),
+				rest ? null : h(Design.Text, { variant: 'text-md/bold', style: { color: s.color, marginLeft: 10 } }, s.collapsed ? '▸' : '▾'),
+			),
+		)
+	}
+
+	/** The same list with a header in front of each section, and a folded section's chats left out. */
+	function withHeaders(data) {
+		var state = read()
+		if (!state.sections.length) return data
+		var out = []
+		var shown = {}
+		var restShown = false
+		var anyPinned = false
+		data.forEach(function (entry) {
+			var id = idOf(entry)
+			var pinnedHere = !!id && state.pins.indexOf(id) >= 0
+			var section = pinnedHere ? sectionOf(state, id) : undefined
+			if (pinnedHere) anyPinned = true
+			if (!pinnedHere && anyPinned && !restShown) {
+				restShown = true
+				out.push({ __pinHeader: true, id: 'pin-section-rest', section: { id: 'rest', name: 'Direct messages', color: '#80848e', rest: true } })
+			}
+			if (section) {
+				if (!shown[section.id]) {
+					shown[section.id] = true
+					out.push({ __pinHeader: true, id: 'pin-section-' + section.id, section: section })
+				}
+				if (section.collapsed) return
+			}
+			out.push(entry)
+		})
+		return out
+	}
+
+	/** Recognises the list the DM tab draws, and gives it the headers. */
+	function decorateList(result) {
+		try {
+			var props = result && result.props
+			if (!props || !Array.isArray(props.data) || typeof props.renderItem !== 'function' || props.data.length < 1) return result
+			var state = read()
+			if (!state.sections.length || !state.pins.length) return result
+			if (props.data.some(function (e) { return e && e.__pinHeader })) return result
+			var sample = props.data.slice(0, 8).map(idOf).filter(Boolean)
+			if (!sample.length || !sample.every(isDm)) return result
+			var data = withHeaders(props.data)
+			if (data === props.data) return result
+			var original = props.renderItem
+			var next = {
+				data: data,
+				renderItem: function (info) {
+					var item = info && info.item
+					if (item && item.__pinHeader) return h(SectionHeader, { section: item.section })
+					return original.apply(this, arguments)
+				},
+				extraData: { original: props.extraData, sections: JSON.stringify(state.sections) },
+			}
+			if (typeof props.keyExtractor === 'function') {
+				var keyOf = props.keyExtractor
+				next.keyExtractor = function (item) { return item && item.__pinHeader ? item.id : keyOf.apply(this, arguments) }
+			}
+			if (typeof props.getItemType === 'function') {
+				var typeOf = props.getItemType
+				next.getItemType = function (item) { return item && item.__pinHeader ? 'pin-section-header' : typeOf.apply(this, arguments) }
+			}
+			if (!status.headers) { status.headers = true; status.list = 'found, headers added'; changed() }
+			return valenced.react.React.cloneElement(result, next)
+		} catch (e) {
+			return result
+		}
+	}
+
+	// ---- The hold-down menu ------------------------------------------------------------------------
 	function dmOf(props) {
 		var keys = Object.keys(props)
 		for (var i = 0; i < keys.length; i++) {
 			var v = props[keys[i]]
-			if (keys[i] === 'message') return undefined // a message menu, not a DM menu
+			if (keys[i] === 'message') return undefined
 			if (v && typeof v === 'object' && typeof v.id === 'string' && (v.type === DM || v.type === GROUP_DM)) return v.id
 			if (typeof v === 'string' && /channel/i.test(keys[i]) && /^\d{15,}$/.test(v) && isDm(v)) return v
 		}
@@ -182,11 +415,17 @@
 			if (props.items.some(function (item) { return item && item.__pinDms })) return result
 			var template = props.items.find(function (item) { return item && typeof item.label === 'string' })
 			if (!template) return result
-			var item = Object.assign({}, template, { label: isPinned(id) ? 'Unpin DM' : 'Pin DM', __pinDms: true })
+			var state = read()
+			var pinned = state.pins.indexOf(id) >= 0
+			var item = Object.assign({}, template, { label: pinned ? 'Unpin DM' : state.sections.length ? 'Pin DM…' : 'Pin DM', __pinDms: true })
 			;['id', 'key', 'testID', 'nativeID', 'index', 'state'].forEach(function (n) { delete item[n] })
 			var run = function () {
-				try { valenced.discord.actions.ActionSheetActionCreators.hideAllActionSheets() } catch (e) {}
-				setTimeout(function () { toggle(id) }, 0)
+				try { sheets().hideAllActionSheets() } catch (e) {}
+				setTimeout(function () {
+					if (pinned) { unpin(id); toast('Unpinned') }
+					else if (state.sections.length) openChatMenu(id)
+					else { pin(id, ''); toast('Pinned to the top') }
+				}, 0)
 			}
 			;['action', 'onPress', 'onSelect', 'onClick', 'callback', 'handler'].forEach(function (n) { if (n in template) item[n] = run })
 			var icon = valenced.assets.getAssetIdByName('PinIcon')
@@ -200,11 +439,12 @@
 		}
 	}
 
-	function installMenuHook(cleanup) {
+	function installElementHooks(cleanup) {
 		var f = finders()
 		var runtime = f.lookupModule(f.filters.withProps('jsx', 'jsxs'))[0] || valenced.react.ReactJSXRuntime
+		function both(el) { return decorateList(decorateMenu(el)) }
 		;['jsx', 'jsxs'].forEach(function (name) {
-			if (runtime && typeof runtime[name] === 'function') cleanup(valenced.patcher.after(runtime, name, decorateMenu))
+			if (runtime && typeof runtime[name] === 'function') cleanup(valenced.patcher.after(runtime, name, both))
 		})
 	}
 
@@ -214,37 +454,52 @@
 		var Design = valenced.discord.design.Design
 		var RN = valenced.react.ReactNative
 		storage = props.api.jsonStorage
-		var data = Object.assign({}, defaults, storage.use())
+		storage.use()
 		var tick = React.useState(0)
+		var search = React.useState('')
 		React.useEffect(function () {
 			var update = function () { tick[1](function (n) { return n + 1 }) }
 			listeners.push(update)
 			return function () { listeners = listeners.filter(function (l) { return l !== update }) }
 		}, [])
-		var chosen = Array.isArray(data.pins) ? data.pins : []
+		var state = read()
 		var all = allDmIds()
-		var search = React.useState('')
 		var q = String(search[0]).toLowerCase().trim()
-		function row(label, subLabel, extra) {
-			return h(Design.TableRow, Object.assign({ key: String(label) + (extra && extra.key || ''), label: label, subLabel: subLabel }, extra || {}))
-		}
-		var pinnedRows = chosen.map(function (id, i) {
-			return h(
-				Design.TableRow,
-				{ key: 'p' + id, label: channelLabel(id), subLabel: 'Pinned #' + (i + 1) + ' · tap to unpin', onPress: function () { unpin(id) } },
-			)
+		function dot(color) { return h(RN.View, { style: { width: 14, height: 14, borderRadius: 7, backgroundColor: color } }) }
+
+		var sectionRows = state.sections.map(function (s, i) {
+			var count = state.pins.filter(function (id) { return state.assign[id] === s.id }).length
+			return h(Design.TableRow, {
+				key: 'sec' + s.id,
+				label: s.name,
+				subLabel: count + ' chat' + (count === 1 ? '' : 's') + (s.collapsed ? ' · folded' : '') + ' · tap to edit',
+				icon: dot(s.color),
+				onPress: function () { openEditSection(s) },
+			})
 		})
-		var moves = chosen.length > 1
-			? chosen.map(function (id, i) {
+		var sectionMoves = state.sections.length > 1
+			? state.sections.map(function (s) {
 					return h(
 						RN.View,
-						{ key: 'm' + id, style: { flexDirection: 'row', gap: 8, paddingVertical: 4 } },
-						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: '↑ ' + channelLabel(id).slice(0, 18), size: 'sm', variant: 'secondary', onPress: function () { move(id, -1) } })),
-						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: '↓ ' + channelLabel(id).slice(0, 18), size: 'sm', variant: 'secondary', onPress: function () { move(id, 1) } })),
+						{ key: 'sm' + s.id, style: { flexDirection: 'row', gap: 8, paddingVertical: 3 } },
+						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: '↑ ' + s.name, size: 'sm', variant: 'secondary', onPress: function () { moveSection(s.id, -1) } })),
+						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: '↓ ' + s.name, size: 'sm', variant: 'secondary', onPress: function () { moveSection(s.id, 1) } })),
 					)
 			  })
 			: []
-		var others = all.filter(function (id) { return chosen.indexOf(id) < 0 && (!q || channelLabel(id).toLowerCase().indexOf(q) >= 0) }).slice(0, 60)
+
+		var pinnedRows = state.pins.map(function (id) {
+			var s = sectionOf(state, id)
+			return h(Design.TableRow, {
+				key: 'pin' + id,
+				label: channelLabel(id),
+				subLabel: (s ? s.name : 'No section') + ' · tap for options',
+				icon: s ? dot(s.color) : undefined,
+				onPress: function () { openChatMenu(id) },
+			})
+		})
+		var others = all.filter(function (id) { return state.pins.indexOf(id) < 0 && (!q || channelLabel(id).toLowerCase().indexOf(q) >= 0) }).slice(0, 60)
+
 		return h(
 			RN.ScrollView,
 			{ style: { flex: 1 }, contentContainerStyle: { paddingBottom: 38 }, keyboardShouldPersistTaps: 'handled' },
@@ -253,24 +508,30 @@
 				{ style: { paddingVertical: 24, paddingHorizontal: 12 }, spacing: 24 },
 				h(
 					Design.TableRowGroup,
-					{ title: 'Pinned (' + chosen.length + ')' },
+					{ title: 'Sections (' + state.sections.length + ')' },
+					sectionRows.concat([h(Design.TableRow, { key: 'newSection', label: 'New section', subLabel: 'A coloured heading you can fold, like Girls or Boys', onPress: function () { openEditSection(null) } })]),
+				),
+				sectionMoves.length ? h(Design.Stack, { spacing: 4 }, h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'Move a section up or down'), sectionMoves) : null,
+				h(
+					Design.TableRowGroup,
+					{ title: 'Pinned (' + state.pins.length + ')' },
 					pinnedRows.length ? pinnedRows : [h(Design.TableRow, { key: 'none', label: 'Nothing pinned yet', subLabel: 'Hold a DM and choose Pin DM, or pick one below.' })],
 				),
-				moves.length ? h(Design.Stack, { spacing: 4 }, h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'Move a pinned chat up or down'), moves) : null,
 				h(Design.TextInput, { label: 'Search your DMs', placeholder: 'Search', size: 'md', value: search[0], onChange: function (v) { search[1](v) } }),
 				h(
 					Design.TableRowGroup,
 					{ title: 'Your DMs' },
 					others.length
-						? others.map(function (id) { return h(Design.TableRow, { key: 'o' + id, label: channelLabel(id), subLabel: 'Tap to pin', onPress: function () { pin(id) } }) })
+						? others.map(function (id) { return h(Design.TableRow, { key: 'o' + id, label: channelLabel(id), subLabel: 'Tap to pin', onPress: function () { state.sections.length ? openChatMenu(id) : pin(id, '') } }) })
 						: [h(Design.TableRow, { key: 'empty', label: all.length ? 'No match' : 'No DMs found', subLabel: all.length ? 'Try another search.' : 'Open the DMs tab once so Discord loads the list, then come back.' })],
 				),
 				h(
 					Design.TableRowGroup,
 					{ title: 'Status' },
-					row('DM list', status.store + (status.hooks.length ? ' · hooked: ' + status.hooks.join(', ') : ' · not hooked'), { key: 'store' }),
-					row('Hold-down menu', status.menus ? 'Pin DM was added ' + status.menus + ' time(s)' : 'Not seen yet. Hold a DM in the list.', { key: 'menu' }),
-					status.error ? row('Problem', status.error, { key: 'error' }) : null,
+					h(Design.TableRow, { key: 'store', label: 'DM list order', subLabel: status.store + (status.hooks.length ? ' · hooked: ' + status.hooks.join(', ') : ' · not hooked') }),
+					h(Design.TableRow, { key: 'list', label: 'Section headers in the list', subLabel: status.headers ? 'Working' : 'Not seen yet. Pin a chat into a section, then open the DM tab. If no headers appear, they cannot be drawn on this version, but the order still works.' }),
+					h(Design.TableRow, { key: 'menu', label: 'Hold-down menu', subLabel: status.menus ? 'Added ' + status.menus + ' time(s)' : 'Not seen yet. Hold a DM in the list.' }),
+					status.error ? h(Design.TableRow, { key: 'error', label: 'Problem', subLabel: status.error }) : null,
 				),
 			),
 		)
@@ -284,8 +545,14 @@
 			storage = api.jsonStorage
 			function attempt(label, step) { try { step() } catch (e) { status.error = label + ': ' + String((e && e.message) || e).slice(0, 70) } }
 			attempt('store', function () { installStoreHooks(api.cleanup) })
-			attempt('menu', function () { installMenuHook(api.cleanup) })
-			api.cleanup(function () { memo = {}; listeners = []; setTimeout(function () { try { var s = sortStore(); if (s && s.emitChange) s.emitChange() } catch (e) {} }, 0) })
+			attempt('elements', function () { installElementHooks(api.cleanup) })
+			api.cleanup(function () {
+				memo = {}
+				listeners = []
+				try { sheets().hideActionSheet(EDIT_KEY) } catch (e) {}
+				try { sheets().hideActionSheet(MENU_KEY) } catch (e) {}
+				setTimeout(function () { try { var s = sortStore(); if (s && s.emitChange) s.emitChange() } catch (e) {} }, 0)
+			})
 			setTimeout(refreshList, 1500)
 		},
 	})
