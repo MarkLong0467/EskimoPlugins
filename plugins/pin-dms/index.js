@@ -298,11 +298,17 @@
 	var SHADES = [[85, 100], [72, 100], [60, 90], [50, 100], [42, 85], [34, 70], [26, 60], [18, 50]] // [lightness, saturation]
 
 	// ---- Sheets ------------------------------------------------------------------------------------------
+	/** A sheet whose buttons stay at the bottom: `footer` is not part of the scrolling part. */
 	function SheetBody(props) {
 		var Design = valenced.discord.design.Design
 		var RN = valenced.react.ReactNative
 		var size = RN.useWindowDimensions ? RN.useWindowDimensions() : { height: 800 }
-		return h(Design.ActionSheet, null, h(RN.ScrollView, { style: { maxHeight: Math.round(size.height * 0.8) }, keyboardShouldPersistTaps: 'handled' }, h(Design.Stack, { spacing: 16, style: { padding: 16 } }, props.children)))
+		return h(
+			Design.ActionSheet,
+			null,
+			h(RN.ScrollView, { style: { maxHeight: Math.round(size.height * (props.footer ? 0.62 : 0.8)) }, keyboardShouldPersistTaps: 'handled' }, h(Design.Stack, { spacing: 16, style: { padding: 16 } }, props.children)),
+			props.footer ? h(RN.View, { style: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 18, gap: 8 } }, props.footer) : null,
+		)
 	}
 	function openSheet(key, Component, props) {
 		sheets().openLazy(Promise.resolve({ default: function () { return h(Component, props) } }), key, {})
@@ -321,9 +327,24 @@
 		var color = colorState[0]
 		function pick(hex) { colorState[1](hex); hexState[1](hex); hueState[1](hexToHue(hex)) }
 		var hue = hueState[0]
+		var footer = [
+			h(
+				RN.View,
+				{ key: 'row', style: { flexDirection: 'row', gap: 10 } },
+				h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Cancel', variant: 'secondary', onPress: function () { sheets().hideActionSheet(EDIT_KEY) } })),
+				h(RN.View, { style: { flex: 1 } }, h(Design.Button, {
+					text: 'Save',
+					variant: 'primary',
+					onPress: function () {
+						if (saveSection(section && section.id, nameState[0], cleanColor(hexState[0]) || color)) sheets().hideActionSheet(EDIT_KEY)
+					},
+				})),
+			),
+			section ? h(Design.Button, { key: 'del', text: 'Delete section', variant: 'destructive', onPress: function () { deleteSection(section.id); sheets().hideActionSheet(EDIT_KEY) } }) : null,
+		]
 		return h(
 			SheetBody,
-			null,
+			{ footer: footer },
 			h(Design.Text, { variant: 'heading-lg/bold' }, section ? 'Edit Category' : 'New Category'),
 			h(Design.TextInput, { label: 'Name', placeholder: 'Boys', size: 'md', maxLength: 30, value: nameState[0], onChange: function (v) { nameState[1](v) } }),
 			h(Design.Text, { variant: 'text-md/semibold' }, 'Color'),
@@ -372,16 +393,6 @@
 				h(RN.View, { style: { width: 44, height: 44, borderRadius: 8, backgroundColor: cleanColor(hexState[0]) || '#000000' } }),
 				h(RN.View, { style: { flex: 1 } }, h(Design.TextInput, { label: 'Or type a color code', placeholder: '#00d4ff', size: 'md', value: hexState[0], onChange: function (v) { hexState[1](v); var c = cleanColor(v); if (c) { colorState[1](c); hueState[1](hexToHue(c)) } } })),
 			),
-			h(Design.Button, {
-				text: 'Save',
-				variant: 'primary',
-				onPress: function () {
-					if (saveSection(section && section.id, nameState[0], cleanColor(hexState[0]) || color)) sheets().hideActionSheet(EDIT_KEY)
-				},
-			}),
-			section
-				? h(Design.Button, { text: 'Delete section', variant: 'destructive', onPress: function () { deleteSection(section.id); sheets().hideActionSheet(EDIT_KEY) } })
-				: null,
 		)
 	}
 	function openEditSection(section) { openSheet(EDIT_KEY, EditSection, { section: section }) }

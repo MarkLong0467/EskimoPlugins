@@ -855,9 +855,16 @@
 			props.go({ name: 'detail', id: s.id })
 		}
 		var t = test[0]
+		var footer = [
+			h(Row2, { key: 'buttons' }, [
+				h(Button, { key: 'cancel', text: 'Cancel', onPress: function () { props.go(existing ? { name: 'detail', id: existing.id } : { name: 'list' }) } }),
+				h(Button, { key: 'save', text: existing ? 'Save changes' : 'Save server', variant: 'primary', onPress: doSave }),
+			]),
+		]
 		return h(
-			RN.View,
-			{ style: { gap: 14 } },
+			SheetBody,
+			{ footer: footer },
+			h(RN.View, { style: { gap: 14 } },
 			h(Button, { text: '‹ Back', onPress: function () { props.go(existing ? { name: 'detail', id: existing.id } : { name: 'list' }) } }),
 			T({ variant: 'heading-lg/bold' }, existing ? 'Edit server' : 'Add a server'),
 			!existing && copied[0] && !f.address ? h(Button, { text: 'Use the copied address: ' + copied[0].slice(0, 40), onPress: function () { put({ address: copied[0] }) } }) : null,
@@ -885,7 +892,7 @@
 							: [h(Chip, { key: 'c', text: 'Offline', color: RED, dot: true }), T({ key: 'm', variant: 'text-sm/medium', color: 'text-muted' }, 'The server answered that it is not online, or it is not reachable.')],
 				  )
 				: null,
-			h(Button, { text: existing ? 'Save changes' : 'Save server', variant: 'primary', onPress: doSave }),
+			),
 		)
 	}
 
@@ -910,9 +917,10 @@
 		var v = view[0]
 		function go(next) { view[1](next) }
 		var body = v.name === 'detail' ? h(DetailView, { id: v.id, go: go }) : v.name === 'edit' ? h(EditView, { id: v.id, go: go }) : v.name === 'menu' ? h(MenuView, { id: v.id, go: go }) : h(ListView, { go: go })
-		return h(SheetBody, null, body)
+		return v.name === 'edit' ? body : h(SheetBody, null, body)
 	}
 
+	/** A sheet whose buttons can stay at the bottom: `footer` is not part of the scrolling part. */
 	function SheetBody(props) {
 		var Design = valenced.discord.design.Design
 		var RN = valenced.react.ReactNative
@@ -920,7 +928,8 @@
 		return h(
 			Design.ActionSheet,
 			null,
-			h(RN.ScrollView, { style: { maxHeight: Math.round(size.height * 0.88) }, contentContainerStyle: { padding: 16, paddingBottom: 28 }, keyboardShouldPersistTaps: 'handled' }, props.children),
+			h(RN.ScrollView, { style: { maxHeight: Math.round(size.height * (props.footer ? 0.7 : 0.88)) }, contentContainerStyle: { padding: 16, paddingBottom: props.footer ? 12 : 28 }, keyboardShouldPersistTaps: 'handled' }, props.children),
+			props.footer ? h(RN.View, { style: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 18, gap: 8 } }, props.footer) : null,
 		)
 	}
 
