@@ -18,7 +18,7 @@
 
 	var storage
 	var listeners = []
-	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '' }
+	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [] }
 	var memo = {}
 
 	function finders() { return valenced.modules.finders }
@@ -82,9 +82,28 @@
 	}
 
 	// ---- Putting pinned chats first, section by section ---------------------------------------------
-	function idOf(entry) {
-		if (typeof entry === 'string') return entry
-		if (entry && typeof entry === 'object') return entry.id || entry.channel_id || entry.channelId
+	/** The chat an entry stands for. Rows of the DM list can carry the chat in a few places. */
+	function idOf(entry, depth) {
+		depth = depth || 0
+		if (typeof entry === 'string') return looksLikeChat(entry) ? entry : undefined
+		if (!entry || typeof entry !== 'object' || depth > 2) return undefined
+		var keys = ['id', 'channel_id', 'channelId']
+		for (var i = 0; i < keys.length; i++) {
+			var v = entry[keys[i]]
+			if (typeof v === 'string' && looksLikeChat(v)) return v
+		}
+		var inner = ['channel', 'item', 'data', 'row', 'dm']
+		for (var j = 0; j < inner.length; j++) {
+			if (entry[inner[j]] && typeof entry[inner[j]] === 'object') {
+				var found = idOf(entry[inner[j]], depth + 1)
+				if (found) return found
+			}
+		}
+		return undefined
+	}
+	function chatId(entry) { return idOf(entry, 0) }
+	function looksLikeChat(id) {
+		return /^\d{15,}$/.test(id) || isDm(id)
 	}
 
 	/** Pinned chats with no section first, then each section's chats in order, then everything else. */
@@ -102,7 +121,7 @@
 	function pinnedFirst(list, method) {
 		var state = read()
 		if (!Array.isArray(list) || !state.pins.length) return list
-		var ids = list.map(idOf)
+		var ids = list.map(chatId)
 		var key = method + '|' + JSON.stringify(state) + '|' + ids.join(',')
 		if (memo[method] && memo[method].key === key) return memo[method].result
 		var byId = {}
@@ -113,22 +132,43 @@
 		pinnedOrder(ids).forEach(function (id) { chosen[id] = 1 })
 		var result = top.concat(list.filter(function (entry) { return !chosen[idOf(entry)] }))
 		memo[method] = { key: key, result: result }
+		status.reordered++
 		return result
 	}
 
-	function installStoreHooks(cleanup) {
-		var store = sortStore()
+	function methodNames(obj) {
+		var names = {}
+		var o = obj
+		var guard = 0
+		while (o && o !== Object.prototype && guard++ < 6) {
+			Object.getOwnPropertyNames(o).forEach(function (n) { names[n] = true })
+			o = Object.getPrototypeOf(o)
+		}
+		return Object.keys(names)
+	}
+
+	/** Methods of the stores that give out the list of DMs, in whatever form. */
+	var LIST_METHOD = /^(get)?(Mutable)?(Sorted)?(Private)?(DM)?Channels?(Ids)?$|^getSortedPrivateChannels$|^getPrivateChannelIds$|^getDMs?$/i
+
+	function hookStore(store, label, cleanup) {
 		if (!store) return
-		status.store = 'found'
-		METHODS.forEach(function (method) {
-			if (typeof store[method] !== 'function') return
+		methodNames(store).forEach(function (method) {
+			if (!LIST_METHOD.test(method.replace(/^get/, 'get')) || typeof store[method] !== 'function') return
+			if (!/private|sorted|dm/i.test(method)) return
 			try {
-				cleanup(valenced.patcher.after(store, method, function (result) { try { return pinnedFirst(result, method) } catch (e) { return result } }))
-				status.hooks.push(method)
+				cleanup(valenced.patcher.after(store, method, function (result) { try { return pinnedFirst(result, label + '.' + method) } catch (e) { return result } }))
+				status.hooks.push(label + '.' + method)
 			} catch (e) {
 				status.error = String((e && e.message) || e).slice(0, 80)
 			}
 		})
+	}
+
+	function installStoreHooks(cleanup) {
+		var store = sortStore()
+		if (store) status.store = 'found'
+		hookStore(store, 'SortStore', cleanup)
+		try { hookStore(stores().ChannelStore, 'ChannelStore', cleanup) } catch (e) {}
 	}
 
 	function refreshList() {
@@ -218,7 +258,7 @@
 		var store = sortStore()
 		try {
 			var ids = store && typeof store.getPrivateChannelIds === 'function' ? store.getPrivateChannelIds() : []
-			return (ids || []).map(idOf).filter(Boolean)
+			return (ids || []).map(chatId).filter(Boolean)
 		} catch (e) { return [] }
 	}
 	function isDm(id) {
@@ -227,6 +267,35 @@
 			return !!ch && (ch.type === DM || ch.type === GROUP_DM)
 		} catch (e) { return false }
 	}
+
+	// ---- Colours ----------------------------------------------------------------------------------------
+	function hslToHex(hue, sat, light) {
+		var s = sat / 100
+		var l = light / 100
+		var a = s * Math.min(l, 1 - l)
+		function f(n) {
+			var k = (n + hue / 30) % 12
+			var c = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1)
+			var hex = Math.round(255 * c).toString(16)
+			return hex.length < 2 ? '0' + hex : hex
+		}
+		return '#' + f(0) + f(8) + f(4)
+	}
+	function hexToHue(hex) {
+		var n = parseInt(String(hex).replace('#', ''), 16)
+		var r = ((n >> 16) & 255) / 255
+		var g = ((n >> 8) & 255) / 255
+		var b = (n & 255) / 255
+		var max = Math.max(r, g, b)
+		var min = Math.min(r, g, b)
+		if (max === min) return 0
+		var d = max - min
+		var hue = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4
+		return Math.round(hue * 60) % 360
+	}
+	var HUES = []
+	for (var hh = 0; hh < 360; hh += 15) HUES.push(hh)
+	var SHADES = [[85, 100], [72, 100], [60, 90], [50, 100], [42, 85], [34, 70], [26, 60], [18, 50]] // [lightness, saturation]
 
 	// ---- Sheets ------------------------------------------------------------------------------------------
 	function SheetBody(props) {
@@ -248,8 +317,10 @@
 		var nameState = React.useState(section ? section.name : '')
 		var colorState = React.useState(section ? section.color : PRESETS[2])
 		var hexState = React.useState(section ? section.color : PRESETS[2])
+		var hueState = React.useState(hexToHue(section ? section.color : PRESETS[2]))
 		var color = colorState[0]
-		function pick(hex) { colorState[1](hex); hexState[1](hex) }
+		function pick(hex) { colorState[1](hex); hexState[1](hex); hueState[1](hexToHue(hex)) }
+		var hue = hueState[0]
 		return h(
 			SheetBody,
 			null,
@@ -267,11 +338,39 @@
 					)
 				}),
 			),
+			h(Design.Text, { variant: 'text-md/semibold' }, 'Pick any color'),
+			h(
+				RN.View,
+				{ style: { gap: 8 } },
+				h(
+					RN.View,
+					{ style: { flexDirection: 'row', height: 34, borderRadius: 10, overflow: 'hidden' } },
+					HUES.map(function (hv) {
+						var on = Math.abs(hv - hue) < 8 || Math.abs(hv - hue) > 352
+						return h(RN.Pressable, { key: 'hue' + hv, style: { flex: 1 }, onPress: function () { hueState[1](hv) } }, h(RN.View, { style: { flex: 1, backgroundColor: hslToHex(hv, 100, 50), borderBottomWidth: on ? 6 : 0, borderBottomColor: '#ffffff' } }))
+					}),
+				),
+				h(
+					RN.View,
+					{ style: { borderRadius: 10, overflow: 'hidden' } },
+					SHADES.map(function (sh) {
+						return h(
+							RN.View,
+							{ key: 'row' + sh[0], style: { flexDirection: 'row', height: 30 } },
+							[100, 80, 60, 40, 20, 0].map(function (sat) {
+								var hex = hslToHex(hue, Math.round(sh[1] * sat / 100), sh[0])
+								var on = hex === color
+								return h(RN.Pressable, { key: 'c' + sat, style: { flex: 1 }, onPress: function () { colorState[1](hex); hexState[1](hex) } }, h(RN.View, { style: { flex: 1, backgroundColor: hex, borderWidth: on ? 3 : 0, borderColor: '#ffffff' } }))
+							}),
+						)
+					}),
+				),
+			),
 			h(
 				RN.View,
 				{ style: { flexDirection: 'row', alignItems: 'center', gap: 12 } },
 				h(RN.View, { style: { width: 44, height: 44, borderRadius: 8, backgroundColor: cleanColor(hexState[0]) || '#000000' } }),
-				h(RN.View, { style: { flex: 1 } }, h(Design.TextInput, { label: 'Custom colour', placeholder: '#00d4ff', size: 'md', value: hexState[0], onChange: function (v) { hexState[1](v); var c = cleanColor(v); if (c) colorState[1](c) } })),
+				h(RN.View, { style: { flex: 1 } }, h(Design.TextInput, { label: 'Or type a color code', placeholder: '#00d4ff', size: 'md', value: hexState[0], onChange: function (v) { hexState[1](v); var c = cleanColor(v); if (c) { colorState[1](c); hueState[1](hexToHue(c)) } } })),
 			),
 			h(Design.Button, {
 				text: 'Save',
@@ -329,6 +428,33 @@
 		)
 	}
 
+	/** Puts the pinned chats first among the chats of a list, leaving every other row where it was. */
+	function reorderRows(data) {
+		var state = read()
+		if (!state.pins.length) return data
+		var slots = []
+		var entries = []
+		data.forEach(function (entry, i) {
+			var id = chatId(entry)
+			if (id) { slots.push(i); entries.push(entry) }
+		})
+		if (entries.length < 2) return data
+		var ids = entries.map(chatId)
+		var first = pinnedOrder(ids)
+		if (!first.length) return data
+		var byId = {}
+		entries.forEach(function (entry) { byId[chatId(entry)] = entry })
+		var chosen = {}
+		first.forEach(function (id) { chosen[id] = 1 })
+		var ordered = first.map(function (id) { return byId[id] }).concat(entries.filter(function (entry) { return !chosen[chatId(entry)] }))
+		var same = ordered.every(function (entry, i) { return entry === entries[i] })
+		if (same) return data
+		var out = data.slice()
+		slots.forEach(function (slot, i) { out[slot] = ordered[i] })
+		status.reordered++
+		return out
+	}
+
 	/** The same list with a header in front of each section, and a folded section's chats left out. */
 	function withHeaders(data) {
 		var state = read()
@@ -338,11 +464,11 @@
 		var restShown = false
 		var anyPinned = false
 		data.forEach(function (entry) {
-			var id = idOf(entry)
+			var id = chatId(entry)
 			var pinnedHere = !!id && state.pins.indexOf(id) >= 0
 			var section = pinnedHere ? sectionOf(state, id) : undefined
 			if (pinnedHere) anyPinned = true
-			if (!pinnedHere && anyPinned && !restShown) {
+			if (id && !pinnedHere && anyPinned && !restShown) {
 				restShown = true
 				out.push({ __pinHeader: true, id: 'pin-section-rest', section: { id: 'rest', name: 'Direct messages', color: '#80848e', rest: true } })
 			}
@@ -358,37 +484,57 @@
 		return out
 	}
 
-	/** Recognises the list the DM tab draws, and gives it the headers. */
+	/** Lists of rows whose entries hold a chat in a place this plugin does not know yet. Shown in the settings. */
+	function noteUnmatched(props) {
+		try {
+			if (status.unmatched.length >= 3) return
+			var state = read()
+			var first = props.data[0]
+			if (!first || typeof first !== 'object') return
+			var text = JSON.stringify(first, function (k, v) { return typeof v === 'function' ? undefined : v }).slice(0, 2000)
+			var hit = state.pins.some(function (id) { return text.indexOf(id) >= 0 })
+			if (!hit) return
+			var shape = Object.keys(first).slice(0, 8).join(', ')
+			if (status.unmatched.indexOf(shape) < 0) { status.unmatched.push(shape); changed() }
+		} catch (e) {}
+	}
+
+	/** Recognises the list the DM tab draws: it gets the pinned chats first, and the section headers. */
 	function decorateList(result) {
 		try {
 			var props = result && result.props
 			if (!props || !Array.isArray(props.data) || typeof props.renderItem !== 'function' || props.data.length < 1) return result
 			var state = read()
-			if (!state.sections.length || !state.pins.length) return result
+			if (!state.pins.length) return result
 			if (props.data.some(function (e) { return e && e.__pinHeader })) return result
-			var sample = props.data.slice(0, 8).map(idOf).filter(Boolean)
-			if (!sample.length || !sample.every(isDm)) return result
-			var data = withHeaders(props.data)
+			if (!props.data.slice(0, 10).map(chatId).some(Boolean)) { noteUnmatched(props); return result }
+			var ids = props.data.map(chatId).filter(Boolean)
+			if (ids.length < 2) return result
+			if (ids.length < props.data.length * 0.5) return result
+			status.lists++
+			var ordered = reorderRows(props.data)
+			var data = state.sections.length ? withHeaders(ordered) : ordered
 			if (data === props.data) return result
-			var original = props.renderItem
-			var next = {
-				data: data,
-				renderItem: function (info) {
+			var next = { data: data }
+			if (data.some(function (e) { return e && e.__pinHeader })) {
+				var original = props.renderItem
+				next.renderItem = function (info) {
 					var item = info && info.item
 					if (item && item.__pinHeader) return h(SectionHeader, { section: item.section })
 					return original.apply(this, arguments)
-				},
-				extraData: { original: props.extraData, sections: JSON.stringify(state.sections) },
+				}
+				next.extraData = { original: props.extraData, sections: JSON.stringify(state.sections) }
+				if (typeof props.keyExtractor === 'function') {
+					var keyOf = props.keyExtractor
+					next.keyExtractor = function (item) { return item && item.__pinHeader ? item.id : keyOf.apply(this, arguments) }
+				}
+				if (typeof props.getItemType === 'function') {
+					var typeOf = props.getItemType
+					next.getItemType = function (item) { return item && item.__pinHeader ? 'pin-section-header' : typeOf.apply(this, arguments) }
+				}
+				if (!status.headers) { status.headers = true; status.list = 'found, headers added'; changed() }
+				status.headerLists++
 			}
-			if (typeof props.keyExtractor === 'function') {
-				var keyOf = props.keyExtractor
-				next.keyExtractor = function (item) { return item && item.__pinHeader ? item.id : keyOf.apply(this, arguments) }
-			}
-			if (typeof props.getItemType === 'function') {
-				var typeOf = props.getItemType
-				next.getItemType = function (item) { return item && item.__pinHeader ? 'pin-section-header' : typeOf.apply(this, arguments) }
-			}
-			if (!status.headers) { status.headers = true; status.list = 'found, headers added'; changed() }
 			return valenced.react.React.cloneElement(result, next)
 		} catch (e) {
 			return result
@@ -528,8 +674,9 @@
 				h(
 					Design.TableRowGroup,
 					{ title: 'Status' },
-					h(Design.TableRow, { key: 'store', label: 'DM list order', subLabel: status.store + (status.hooks.length ? ' · hooked: ' + status.hooks.join(', ') : ' · not hooked') }),
-					h(Design.TableRow, { key: 'list', label: 'Section headers in the list', subLabel: status.headers ? 'Working' : 'Not seen yet. Pin a chat into a section, then open the DM tab. If no headers appear, they cannot be drawn on this version, but the order still works.' }),
+					h(Design.TableRow, { key: 'store', label: 'DM list order', subLabel: status.store + (status.hooks.length ? ' · hooked: ' + status.hooks.join(', ') : ' · not hooked') + ' · reordered ' + status.reordered + ' time(s)' }),
+					h(Design.TableRow, { key: 'list', label: 'Section headers in the list', subLabel: status.headers ? 'Working (' + status.headerLists + ' time(s))' : 'Not seen yet. Pin a chat into a section, then open the DM tab. Lists with chats seen: ' + status.lists }),
+					status.unmatched.length ? h(Design.TableRow, { key: 'unmatched', label: 'A list holds your pinned chats in a place I do not know', subLabel: 'Row fields: ' + status.unmatched.join(' | ') + '. Send this to the developer.' }) : null,
 					h(Design.TableRow, { key: 'menu', label: 'Hold-down menu', subLabel: status.menus ? 'Added ' + status.menus + ' time(s)' : 'Not seen yet. Hold a DM in the list.' }),
 					status.error ? h(Design.TableRow, { key: 'error', label: 'Problem', subLabel: status.error }) : null,
 				),
