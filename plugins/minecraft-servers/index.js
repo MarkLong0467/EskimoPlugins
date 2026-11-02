@@ -18,7 +18,7 @@
 		motd: true,
 		icons: true,
 		sort: 'manual',
-		button: 'left',
+		placement: 'menu',
 		alerts: false,
 		alertSeconds: 120,
 		historyLength: 40,
@@ -37,7 +37,7 @@
 	var inflight = {}
 	var lastOnline = {} // for the alerts
 	var timers = []
-	var status = { button: 'not added yet', alerts: 'off', error: '' }
+	var status = { button: 'not seen yet. Tap + next to the message box.', alerts: 'off', error: '' }
 
 	function finders() { return valenced.modules.finders }
 	function setting(key) {
@@ -863,6 +863,109 @@
 	}
 
 	// ======================================================================================
+	// The + menu: a "Minecraft servers" row, shown when + is tapped (not in the hold-down menus)
+	// ======================================================================================
+	var PLUS_LABELS = { Camera: 1, Photos: 1, Poll: 1, Files: 1, Apps: 1 }
+	var PLUS_ICONS = [/camera/i, /image|photo|picture|gallery/i, /poll/i, /paperclip|attach|file|document/i, /\bapps?\b|sparkle|robot|bot/i]
+	var assetNames = new Map()
+
+	/** The name of an icon, from its asset ID or its icon component. The same in every language. */
+	function iconName(item) {
+		if (!item || typeof item !== 'object') return ''
+		var src = item.iconSource
+		if (typeof src === 'number') {
+			if (assetNames.has(src)) return assetNames.get(src)
+			var name = ''
+			try {
+				var a = valenced.assets.AssetsRegistry.getAssetByID(src)
+				name = (a && a.name) || ''
+			} catch (e) {}
+			assetNames.set(src, name)
+			return name
+		}
+		var Component = item.IconComponent
+		return (Component && (Component.displayName || Component.name)) || ''
+	}
+	function plusScore(items) {
+		var found = {}
+		var strong = false
+		items.forEach(function (item) {
+			var name = iconName(item)
+			if (!name) return
+			PLUS_ICONS.forEach(function (re, i) {
+				if (re.test(name)) {
+					found[i] = true
+					if (i === 0 || i === 2) strong = true
+				}
+			})
+		})
+		return strong ? Object.keys(found).length : 0
+	}
+	function countLabels(list, labels) {
+		var hits = 0
+		for (var i = 0; i < list.length; i++) {
+			var label = list[i] && typeof list[i] === 'object' && list[i].label
+			if (typeof label === 'string' && labels[label] === 1) hits++
+		}
+		return hits
+	}
+	function findIconComponent(names) {
+		for (var i = 0; i < names.length; i++) {
+			var icon = valenced.utils.discord.lookupGeneratedIconComponent(names[i])
+			if (icon) return icon
+		}
+	}
+
+	/** Discord's menus are data driven, so the row goes into the list of items before the menu draws anything. */
+	function decoratePlusItems(result, items) {
+		if (setting('placement') !== 'menu') return result
+		if (countLabels(items, PLUS_LABELS) < 2 && plusScore(items) < 3) return result
+		for (var i = 0; i < items.length; i++) if (items[i] && items[i].__mcServers) return result
+		var template = items.find(function (item) { return item && typeof item.label === 'string' })
+		if (!template) return result
+		var item = Object.assign({}, template, { label: 'Minecraft servers', __mcServers: true })
+		;['id', 'key', 'testID', 'nativeID', 'index', 'state'].forEach(function (n) { delete item[n] })
+		var lastPress = 0
+		var press = function () {
+			if (Date.now() - lastPress < 1500) return
+			lastPress = Date.now()
+			try { valenced.discord.actions.ActionSheetActionCreators.hideAllActionSheets() } catch (e) {}
+			setTimeout(function () { openPanel({ name: 'list' }) }, 250)
+		}
+		;['action', 'onPress', 'onSelect', 'onClick', 'callback', 'handler'].forEach(function (n) { if (n in template || n === 'action') item[n] = press })
+		var asset
+		;['GlobeEarthIcon', 'ic_globe_24px', 'ServerIcon', 'GameControllerIcon'].forEach(function (name) { if (asset === undefined) { var id = valenced.assets.getAssetIdByName(name); if (id != null) asset = id } })
+		var Icon = findIconComponent(['GlobeEarthIcon', 'ServerIcon', 'GameControllerIcon'])
+		if (asset !== undefined) item.iconSource = asset
+		else delete item.iconSource
+		if ('IconComponent' in template || Icon) {
+			if (Icon) item.IconComponent = Icon
+			else delete item.IconComponent
+		}
+		status.button = 'added to the + menu'
+		changed()
+		return valenced.react.React.cloneElement(result, { items: items.concat([item]) })
+	}
+
+	function decoratePlusMenu(result) {
+		try {
+			var props = result && result.props
+			if (props && Array.isArray(props.items) && props.items.length >= 2 && props.items.length <= 24) return decoratePlusItems(result, props.items)
+			return result
+		} catch (e) {
+			return result
+		}
+	}
+
+	function installPlusHook(cleanup) {
+		var f = finders()
+		var runtime = f.lookupModule(f.filters.withProps('jsx', 'jsxs'))[0] || valenced.react.ReactJSXRuntime
+		;['jsx', 'jsxs'].forEach(function (name) {
+			if (runtime && typeof runtime[name] === 'function') cleanup(valenced.patcher.after(runtime, name, decoratePlusMenu))
+		})
+	}
+
+	// ======================================================================================
 	// The button by the message box
 	// ======================================================================================
 	var styles
@@ -897,8 +1000,8 @@
 			listeners.push(update)
 			return function () { listeners = listeners.filter(function (l) { return l !== update }) }
 		}, [])
-		var side = setting('button')
-		if (side === 'off') return null
+		var side = setting('placement')
+		if (side !== 'left' && side !== 'right') return null
 		var sum = summary()
 		var Icon = findIcon(['GlobeEarthIcon', 'ServerIcon', 'GameControllerIcon'])
 		var Tap = RN.Pressable || RN.TouchableOpacity
@@ -916,7 +1019,8 @@
 	}
 
 	function decorateInput(ret) {
-		if (setting('button') === 'off' || !ret || !ret.props) return ret
+		var place = setting('placement')
+		if ((place !== 'left' && place !== 'right') || !ret || !ret.props) return ret
 		var row = findInTree(ret.props.children, function (x) {
 			return x && x.type && (x.type.displayName === 'View' || x.type === valenced.react.ReactNative.View) && Array.isArray(x.props && x.props.children)
 		})
@@ -924,7 +1028,7 @@
 		var kids = row.props.children
 		if (kids.some(function (k) { return k && k.key === 'minecraft-servers-button' })) return ret
 		kids.unshift(h(ServersButton, { key: 'minecraft-servers-button' }))
-		status.button = 'added to the message box'
+		status.button = 'floating button added above the message box'
 		return ret
 	}
 
@@ -985,7 +1089,7 @@
 		var sum = summary()
 		var current = {
 			provider: setting('provider'), timeout: String(setting('timeout')), cacheSeconds: String(setting('cacheSeconds')), refreshSeconds: String(setting('refreshSeconds')),
-			sort: setting('sort'), button: setting('button'), alertSeconds: String(setting('alertSeconds')), historyLength: String(setting('historyLength')),
+			sort: setting('sort'), placement: setting('placement'), alertSeconds: String(setting('alertSeconds')), historyLength: String(setting('historyLength')),
 		}
 		function put(key, value) {
 			var patch = {}
@@ -1052,7 +1156,7 @@
 					toggle('heads', 'Player heads', 'Shows each player\'s Minecraft head next to their name'),
 				),
 				radio('Order of the list', 'sort', [{ value: 'manual', label: 'The order I added them' }, { value: 'status', label: 'Online first' }, { value: 'players', label: 'Most players first' }, { value: 'name', label: 'A to Z' }, { value: 'favorites', label: 'Favorites first' }]),
-				radio('Button by the message box', 'button', [{ value: 'left', label: 'Left', subLabel: 'Above the message box, on the left' }, { value: 'right', label: 'Right', subLabel: 'Above the message box, on the right' }, { value: 'off', label: 'Hidden', subLabel: 'Open the list from this page instead' }]),
+				radio('Where to open the list', 'placement', [{ value: 'menu', label: 'In the + menu', subLabel: 'A Minecraft servers row appears when you tap + next to the message box. Nothing else is added to the chat' }, { value: 'left', label: 'Button, left', subLabel: 'A small button above the message box, always visible' }, { value: 'right', label: 'Button, right', subLabel: 'The same button on the right' }, { value: 'off', label: 'Only from this page', subLabel: 'Open the list from the settings' }]),
 				h(
 					Design.TableRowGroup,
 					{ title: 'Alerts' },
@@ -1089,7 +1193,7 @@
 					h(Design.TableRow, { key: 'privacy', label: 'Where the addresses go', subLabel: 'A phone cannot talk to a Minecraft server directly, so the addresses you save are sent to the status site you chose above, which asks the server for you.' }),
 					h(Design.TableRow, { key: 'ping', label: 'About the ping', subLabel: 'The ping comes from minetools.eu, measured from its computer to the server, not from your phone. Other sites do not give a ping.' }),
 					h(Design.TableRow, { key: 'names', label: 'About player names', subLabel: 'Many servers only share a few names, or none. The count is always right.' }),
-					h(Design.TableRow, { key: 'status', label: 'Button by the message box', subLabel: status.button }),
+					h(Design.TableRow, { key: 'status', label: 'Where it opens from', subLabel: status.button }),
 					h(Design.TableRow, { key: 'alerts', label: 'Alerts', subLabel: status.alerts }),
 					status.error ? h(Design.TableRow, { key: 'error', label: 'Problem', subLabel: status.error }) : null,
 				),
@@ -1124,6 +1228,7 @@
 					{ returnNamespace: true },
 				),
 			)
+			try { installPlusHook(cleanup) } catch (e) { status.error = errorText(e).slice(0, 80) }
 			try { applyTimers() } catch (e) { status.error = errorText(e).slice(0, 80) }
 			// Servers that were saved get a first check in the background, so the button already shows how many are online.
 			setTimeout(function () { try { checkAll(false) } catch (e) {} }, 4000)
