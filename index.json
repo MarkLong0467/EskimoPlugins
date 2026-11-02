@@ -361,6 +361,32 @@
         }
       }
     },
+    "marklong.minecraft-servers": {
+      "name": "Minecraft Servers",
+      "description": "Save your Minecraft servers and see if they are online, how many players are on, who is playing, the ping, the software and the address. A list opens from a button by the message box.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "contributors": [
+        "Server data from mcstatus.io, mcsrvstat.us and minetools.eu (public status websites)"
+      ],
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.minecraft-servers@1.0.0.zip",
+          "sha256": "ab78cef44df3670c8860b21eb8dfd622f4edd5ca9ccadf3c36f515d7fb9c853c",
+          "size": 16342,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
+    },
     "marklong.nef-viewer": {
       "name": "NEF Viewer",
       "description": "Shows Nikon RAW (.nef, .nrw) attachments as photos in chat instead of files.",
