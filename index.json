@@ -384,6 +384,32 @@
         }
       }
     },
+    "marklong.pin-dms": {
+      "name": "Pin DMs",
+      "description": "Pin direct messages and group chats to the top of your DM list. Hold a DM and choose Pin DM, or pick them in the plugin settings.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "contributors": [
+        "PinDMs for Vencord and BetterDiscord (the idea; code written from scratch for Valenced)"
+      ],
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.pin-dms@1.0.0.zip",
+          "sha256": "4875c1d3d7e4e85a41aeb98a1558861e64a0079107c9f9471ae10b70fece39f9",
+          "size": 4736,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
+    },
     "marklong.rich-presence": {
       "name": "Rich Presence",
       "description": "Fully customizable rich presence: profiles, every activity field, images, timer, party size, buttons and live text variables. Shows nothing until you set it up.",
