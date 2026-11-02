@@ -369,7 +369,7 @@
         "Server data from mcstatus.io, mcsrvstat.us and minetools.eu (public status websites)"
       ],
       "channels": {
-        "latest": "1.1.0"
+        "latest": "1.2.0"
       },
       "versions": {
         "1.0.0": {
@@ -389,6 +389,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.minecraft-servers@1.1.0.zip",
           "sha256": "9cbf68f324b749b594a2d72718c26c4763591f67d602e1e9cc4a5c0ad11b2f32",
           "size": 17753,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.2.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.minecraft-servers@1.2.0.zip",
+          "sha256": "ed15c8ad5552bdfe45be946c27d9b2fa176c7366657f5999b5d0e75645c5e91f",
+          "size": 18678,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
