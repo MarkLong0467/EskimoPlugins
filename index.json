@@ -511,6 +511,32 @@
         }
       }
     },
+    "marklong.slowmode-extended": {
+      "name": "Slowmode Extended",
+      "description": "Adds every second up to a minute, every minute up to an hour, and every hour up to 6 hours to the slowmode picker.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "contributors": [
+        "sapphire (https://github.com/aeongdesu/vdplugins \"Original SlowmodeExtended for Vendetta\")"
+      ],
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.slowmode-extended@1.0.0.zip",
+          "sha256": "540f2006228b1c4af2f6972d0f7f06ac2c0682752e4f69c9e5d58cf31bcaeb36",
+          "size": 2328,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
+    },
     "marklong.split-large-messages": {
       "name": "Split Large Messages",
       "description": "Automatically splits messages longer than 2000 (4000 with Nitro) characters into several messages.",
