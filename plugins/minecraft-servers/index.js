@@ -157,7 +157,7 @@
 	}
 
 	function base(server, extra) {
-		return Object.assign({ online: false, host: server.address, ip: '', port: server.port || (server.edition === 'bedrock' ? 19132 : 25565), version: '', protocol: null, software: '', gamemode: '', players: { online: 0, max: 0, list: [] }, motd: '', icon: '', ping: null, plugins: [], mods: [], via: [], error: '' }, extra || {})
+		return Object.assign({ online: false, host: server.address, ip: '', port: server.port || (server.edition === 'bedrock' ? 19132 : 25565), version: '', protocol: null, software: '', gamemode: '', srv: '', eula: false, players: { online: 0, max: 0, list: [] }, motd: '', icon: '', ping: null, plugins: [], mods: [], via: [], error: '' }, extra || {})
 	}
 
 	function fromMcstatus(server, j) {
@@ -166,6 +166,7 @@
 		var s = splitVersion(name, j && j.software)
 		return base(server, {
 			online: !!(j && j.online), ip: (j && j.ip_address) || '', port: (j && j.port) || undefined, version: s.version, software: s.software,
+			srv: j && j.srv_record && j.srv_record.host ? j.srv_record.host + ':' + j.srv_record.port : '', eula: !!(j && j.eula_blocked),
 			protocol: v && v.protocol !== undefined ? v.protocol : null, gamemode: (j && j.gamemode) || '',
 			players: { online: j && j.players ? j.players.online || 0 : 0, max: j && j.players ? j.players.max || 0 : 0, list: ((j && j.players && j.players.list) || []).map(function (p) { return { name: p.name_clean || p.name_raw || p.name, id: p.uuid || p.id } }).filter(function (p) { return p.name }) },
 			motd: cleanMotd(j && j.motd), icon: (j && j.icon) || '',
@@ -177,7 +178,7 @@
 		var name = j && j.version ? String(j.version) : ''
 		var s = splitVersion(name, j && j.software)
 		return base(server, {
-			online: !!(j && j.online), ip: (j && j.ip) || '', port: (j && j.port) || undefined, version: s.version, software: s.software,
+			online: !!(j && j.online), ip: (j && j.ip) || '', port: (j && j.port) || undefined, version: s.version, software: s.software, eula: !!(j && j.eula_blocked),
 			protocol: j && j.protocol ? j.protocol.version : null, gamemode: (j && j.gamemode) || '',
 			players: { online: j && j.players ? j.players.online || 0 : 0, max: j && j.players ? j.players.max || 0 : 0, list: ((j && j.players && j.players.list) || []).map(function (p) { return typeof p === 'string' ? { name: p } : { name: p.name, id: p.uuid } }).filter(function (p) { return p.name }) },
 			motd: cleanMotd(j && j.motd), icon: (j && j.icon) || '',
@@ -234,6 +235,8 @@
 			if (!out.icon && o.icon) out.icon = o.icon
 			if (!out.motd && o.motd) out.motd = o.motd
 			if (!out.gamemode && o.gamemode) out.gamemode = o.gamemode
+			if (!out.srv && o.srv) out.srv = o.srv
+			if (o.eula) out.eula = true
 			if (!out.players.list.length && o.players.list.length) out.players = Object.assign({}, out.players, { list: o.players.list })
 			if (!out.plugins.length && o.plugins.length) out.plugins = o.plugins
 			if (!out.mods.length && o.mods.length) out.mods = o.mods
@@ -253,17 +256,33 @@
 			return PROVIDERS[choice].get(server, seconds).catch(function (e) { return { error: errorText(e), online: false } })
 		}
 		var java = server.edition !== 'bedrock'
-		var wanted = java ? ['mcstatus', 'minetools'] : ['mcstatus']
-		return settle(wanted.map(function (k) { return PROVIDERS[k].get(server, seconds) })).then(function (got) {
-			var good = got.filter(function (g) { return g.ok }).map(function (g) { return g.v })
-			if (good.length) {
-				var main = good.filter(function (g) { return g.online })[0] || good[0]
-				return merge(main, good.filter(function (g) { return g !== main }))
-			}
-			return PROVIDERS.mcsrvstat.get(server, seconds).catch(function (e) {
-				return { error: errorText(got[0] && got[0].e ? got[0].e : e), online: false }
-			})
-		})
+		if (!java) {
+			return PROVIDERS.mcstatus.get(server, seconds).catch(function () { return PROVIDERS.mcsrvstat.get(server, seconds) }).catch(function (e) { return { error: errorText(e), online: false } })
+		}
+		// Java: mcstatus.io first. Its answer says where the server really is (an address can point somewhere else), and the
+		// ping is asked from there.
+		return PROVIDERS.mcstatus.get(server, seconds).then(
+			function (good) {
+				var host = server.address
+				var port = good.port || server.port || 25565
+				var m = /^(.*):(\d+)$/.exec(good.srv || '')
+				if (m) { host = m[1]; port = Number(m[2]) }
+				return PROVIDERS.minetools.get({ address: host, port: port, edition: 'java' }, seconds).then(
+					function (ping) { return merge(good, [ping]) },
+					function () { return good },
+				)
+			},
+			function (first) {
+				return settle([PROVIDERS.minetools.get(server, seconds), PROVIDERS.mcsrvstat.get(server, seconds)]).then(function (got) {
+					var ok = got.filter(function (g) { return g.ok }).map(function (g) { return g.v })
+					if (ok.length) {
+						var main = ok.filter(function (g) { return g.online })[0] || ok[0]
+						return merge(main, ok.filter(function (g) { return g !== main }))
+					}
+					return { error: errorText(first), online: false }
+				})
+			},
+		)
 	}
 
 	// ======================================================================================
@@ -548,6 +567,25 @@
 		)
 	}
 
+	/** Adds the server whose address is on the clipboard, so a copied address is one tap away. */
+	function addFromClipboard(go) {
+		Promise.resolve(valenced.externals.ReactNativeClipboard.Clipboard.getString()).then(
+			function (text) {
+				var first = String(text || '').trim().split(/\s+/)[0]
+				var parsed = parseAddress(first)
+				if (parsed.error) return toast('The clipboard does not hold a server address')
+				var list = servers()
+				var dup = list.filter(function (x) { return x.address === parsed.host && (x.port || 0) === parsed.port && x.edition === 'java' })[0]
+				if (dup) { toast('Already saved as ' + dup.name); return go({ name: 'detail', id: dup.id }) }
+				var s = { id: newId(), name: parsed.host, address: parsed.host, port: parsed.port || 0, edition: 'java', note: '', favorite: false, watch: false, addedAt: Date.now() }
+				saveServers(list.concat([s]))
+				check(s, true)
+				go({ name: 'detail', id: s.id })
+			},
+			function () { toast('Could not read the clipboard') },
+		)
+	}
+
 	function ListView(props) {
 		var RN = valenced.react.ReactNative
 		var list = sorted(servers())
@@ -566,6 +604,7 @@
 				h(Button, { key: 'r', text: busy ? 'Checking…' : 'Refresh all', loading: busy, onPress: function () { checkAll(true) } }),
 				h(Button, { key: 'a', text: '+ Add server', variant: 'primary', onPress: function () { props.go({ name: 'edit', id: null }) } }),
 			]),
+			h(Button, { text: 'Add the address I copied', onPress: function () { addFromClipboard(props.go) } }),
 			list.length > 1
 				? h(Segmented, { items: [{ value: 'manual', label: 'My order' }, { value: 'status', label: 'Online first' }, { value: 'players', label: 'Most players' }, { value: 'name', label: 'A to Z' }, { value: 'favorites', label: '★ Favorites' }], value: setting('sort'), onChange: function (v) { save({ sort: v }); changed() } })
 				: null,
@@ -618,6 +657,27 @@
 		delete results[id]
 		delete lastOnline[id]
 		changed()
+	}
+
+	/** A long list of names (the mods of a modpack can be hundreds): searchable, and folded until asked for. */
+	function NameList(props) {
+		var React = valenced.react.React
+		var RN = valenced.react.ReactNative
+		var Design = valenced.discord.design.Design
+		var query = React.useState('')
+		var open = React.useState(false)
+		var q = String(query[0]).toLowerCase().trim()
+		var all = props.list
+		var shown = all.filter(function (n) { return !q || n.toLowerCase().indexOf(q) >= 0 })
+		var limit = open[0] || q ? 400 : 12
+		return h(
+			RN.View,
+			{ style: { gap: 10 } },
+			all.length > 12 ? h(Design.TextInput, { placeholder: 'Search ' + props.what, size: 'md', value: query[0], onChange: function (v) { query[1](v) } }) : null,
+			h(RN.View, { style: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 } }, shown.slice(0, limit).map(function (n, i) { return h(RN.View, { key: n + i, style: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: raised() } }, T({ variant: 'text-xs/semibold' }, n)) })),
+			shown.length > limit ? h(Button, { text: 'Show all ' + shown.length, size: 'sm', onPress: function () { open[1](true) } }) : null,
+			shown.length ? null : T({ variant: 'text-sm/medium', color: 'text-muted' }, 'Nothing matches that.'),
+		)
 	}
 
 	function PlayerChips(props) {
@@ -697,7 +757,7 @@
 				h(Stat, { key: 'ping', label: 'Ping', value: online && d.ping !== null ? d.ping + ' ms' : '–', color: online ? pingColor(d.ping) : GRAY, sub: online && d.ping === null ? 'This site did not measure it' : undefined }),
 				h(Stat, { key: 'version', label: 'Version', value: online && d.version ? d.version : '–', sub: online && d.protocol !== null && d.protocol !== undefined ? 'Protocol ' + d.protocol : undefined }),
 				h(Stat, { key: 'software', label: 'Software', value: online && d.software ? d.software : online ? 'Not shared' : '–', sub: online ? (s.edition === 'bedrock' ? 'Bedrock' : 'Java') + (d.gamemode ? ' · ' + d.gamemode : '') : undefined }),
-				h(Stat, { key: 'ip', label: 'IP address', value: d && d.ip ? d.ip : s.address, sub: d && d.ip ? 'Tap to copy' : 'Address you saved' }),
+				h(Stat, { key: 'ip', label: 'IP address', value: d && d.ip ? d.ip : s.address, sub: d && d.srv ? 'Real address ' + d.srv : d && d.ip ? 'Behind ' + s.address : 'Address you saved' }),
 				h(Stat, { key: 'port', label: 'Port', value: String(port), sub: s.port ? 'Set by you' : 'Default' }),
 			),
 			online
@@ -712,8 +772,9 @@
 				  )
 				: null,
 			online && (d.plugins.length || d.mods.length)
-				? h(Card, null, T({ variant: 'text-md/bold' }, d.mods.length ? 'Mods (' + d.mods.length + ')' : 'Plugins (' + d.plugins.length + ')'), T({ variant: 'text-sm/medium', color: 'text-muted' }, (d.mods.length ? d.mods : d.plugins).slice(0, 24).join(', ') + ((d.mods.length ? d.mods : d.plugins).length > 24 ? ' …' : '')))
+				? h(Card, null, T({ variant: 'text-md/bold' }, d.mods.length ? 'Mods (' + d.mods.length + ')' : 'Plugins (' + d.plugins.length + ')'), h(NameList, { list: d.mods.length ? d.mods : d.plugins, what: d.mods.length ? 'mods' : 'plugins' }))
 				: null,
+			d && !d.error && d.eula ? h(Card, { style: { backgroundColor: tint(RED, 0.14) } }, T({ variant: 'text-md/semibold', style: { color: RED } }, 'Blocked by Mojang'), T({ variant: 'text-sm/medium' }, 'Mojang blocks this server for breaking the Minecraft EULA, so players cannot join it from the normal launcher.')) : null,
 			h(
 				Card,
 				null,
@@ -762,6 +823,14 @@
 			watch: existing ? !!existing.watch : false,
 		})
 		var test = React.useState(null)
+		var copied = React.useState('')
+		React.useEffect(function () {
+			if (existing) return
+			Promise.resolve(valenced.externals.ReactNativeClipboard.Clipboard.getString()).then(function (text) {
+				var first = String(text || '').trim().split(/\s+/)[0]
+				if (first && !parseAddress(first).error) copied[1](first)
+			}, function () {})
+		}, [])
 		var f = form[0]
 		function put(patch) { form[1](function (prev) { return Object.assign({}, prev, patch) }) }
 		function build() {
@@ -791,6 +860,7 @@
 			{ style: { gap: 14 } },
 			h(Button, { text: '‹ Back', onPress: function () { props.go(existing ? { name: 'detail', id: existing.id } : { name: 'list' }) } }),
 			T({ variant: 'heading-lg/bold' }, existing ? 'Edit server' : 'Add a server'),
+			!existing && copied[0] && !f.address ? h(Button, { text: 'Use the copied address: ' + copied[0].slice(0, 40), onPress: function () { put({ address: copied[0] }) } }) : null,
 			h(Design.TextInput, { label: 'Server address', description: 'Like play.example.com or play.example.com:25566', placeholder: 'play.example.com', size: 'md', value: f.address, onChange: function (v) { put({ address: v }) }, autoCapitalize: 'none', autoCorrect: false }),
 			h(Design.TextInput, { label: 'Name (optional)', placeholder: 'My survival server', size: 'md', maxLength: 40, value: f.name, onChange: function (v) { put({ name: v }) } }),
 			h(RN.View, { style: { gap: 8 } }, T({ variant: 'text-sm/semibold' }, 'Edition'), h(Segmented, { items: [{ value: 'java', label: 'Java' }, { value: 'bedrock', label: 'Bedrock' }], value: f.edition, onChange: function (v) { put({ edition: v }) } })),
