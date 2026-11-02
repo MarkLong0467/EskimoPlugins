@@ -560,7 +560,7 @@
 				h(
 					RN.View,
 					{ style: { alignItems: 'flex-end', gap: 4 } },
-					T({ variant: 'text-md/bold', style: { color: online ? undefined : GRAY } }, playersText(d)),
+					T(online ? { variant: 'text-md/bold' } : { variant: 'text-md/bold', style: { color: GRAY } }, playersText(d)),
 					online && d.ping !== null ? h(Chip, { text: d.ping + ' ms', color: pingColor(d.ping) }) : h(Chip, { text: st.label, color: st.color }),
 				),
 			),
