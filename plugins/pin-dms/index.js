@@ -18,7 +18,7 @@
 
 	var storage
 	var listeners = []
-	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [] }
+	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [] }
 	var memo = {}
 
 	function finders() { return valenced.modules.finders }
@@ -510,24 +510,63 @@
 		} catch (e) {}
 	}
 
+	var LIST_PROPS = ['data', 'items', 'rows', 'listData', 'channels', 'channelIds', 'privateChannelIds', 'dms']
+	var scanned = typeof WeakSet === 'function' ? new WeakSet() : null
+
+	function listProp(props) {
+		for (var i = 0; i < LIST_PROPS.length; i++) {
+			var list = props[LIST_PROPS[i]]
+			if (Array.isArray(list) && list.length >= 2 && list.slice(0, 10).map(chatId).some(Boolean)) return LIST_PROPS[i]
+		}
+		return null
+	}
+
+	/** Diagnostics: remember where an array holding a pinned chat shows up, in case it is not a list I know. */
+	function scanShapes(el, props) {
+		try {
+			if (status.shapes.length >= 4 || !scanned) return
+			var state = read()
+			if (!state.pins.length) return
+			var keys = Object.keys(props)
+			if (keys.length > 40) return
+			for (var i = 0; i < keys.length; i++) {
+				var v = props[keys[i]]
+				if (!Array.isArray(v) || v.length < 4 || scanned.has(v)) continue
+				scanned.add(v)
+				var first = v[0]
+				var text = typeof first === 'string' ? first : (first && typeof first === 'object') ? JSON.stringify(first, function (k, x) { return typeof x === 'function' ? undefined : x }).slice(0, 1500) : ''
+				var found = state.pins.some(function (id) { return text.indexOf(id) >= 0 }) || v.slice(0, 20).some(function (e) { var t = typeof e === 'string' ? e : (e && typeof e === 'object') ? JSON.stringify(e, function (k, x) { return typeof x === 'function' ? undefined : x }).slice(0, 600) : ''; return state.pins.some(function (id) { return t.indexOf(id) >= 0 }) })
+				if (!found) continue
+				var tname = el && el.type && (el.type.displayName || el.type.name || (el.type.type && el.type.type.name) || (typeof el.type === 'string' ? el.type : '?'))
+				var line = String(tname) + '.' + keys[i] + ' (' + (typeof first === 'object' && first ? Object.keys(first).slice(0, 6).join('/') : typeof first) + '; also: ' + keys.filter(function (k) { return k !== keys[i] }).slice(0, 8).join(',') + ')'
+				if (status.shapes.indexOf(line) < 0) { status.shapes.push(line); changed() }
+			}
+		} catch (e) {}
+	}
+
 	/** Recognises the list the DM tab draws: it gets the pinned chats first, and the section headers. */
 	function decorateList(result) {
 		try {
 			var props = result && result.props
-			if (!props || !Array.isArray(props.data) || typeof props.renderItem !== 'function' || props.data.length < 1) return result
+			if (!props || typeof props !== 'object') return result
 			var state = read()
 			if (!state.pins.length) return result
-			if (props.data.some(function (e) { return e && e.__pinHeader })) return result
-			if (!props.data.slice(0, 10).map(chatId).some(Boolean)) { noteUnmatched(props); return result }
-			var ids = props.data.map(chatId).filter(Boolean)
+			var key = listProp(props)
+			if (!key) { scanShapes(result, props); return result }
+			var list = props[key]
+			if (list.some(function (e) { return e && e.__pinHeader })) return result
+			var ids = list.map(chatId).filter(Boolean)
 			if (ids.length < 2) return result
-			if (ids.length < props.data.length * 0.5) return result
+			if (ids.length < list.length * 0.5) return result
 			status.lists++
-			var ordered = reorderRows(props.data)
-			var data = state.sections.length ? withHeaders(ordered) : ordered
-			if (data === props.data) return result
-			var next = { data: data }
-			if (data.some(function (e) { return e && e.__pinHeader })) {
+			if (status.listKey.indexOf(key) < 0) { status.listKey.push(key); changed() }
+			var ordered = reorderRows(list)
+			var canHead = typeof props.renderItem === 'function' && key === 'data' && state.sections.length
+			var data = canHead ? withHeaders(ordered) : ordered
+			if (data === list) return result
+			var next = {}
+			next[key] = data
+			if (canHead && data.some(function (e) { return e && e.__pinHeader })) {
 				var original = props.renderItem
 				next.renderItem = function (info) {
 					var item = info && info.item
@@ -687,6 +726,8 @@
 					{ title: 'Status' },
 					h(Design.TableRow, { key: 'store', label: 'DM list order', subLabel: status.store + (status.hooks.length ? ' · hooked: ' + status.hooks.join(', ') : ' · not hooked') + ' · reordered ' + status.reordered + ' time(s)' }),
 					h(Design.TableRow, { key: 'list', label: 'Section headers in the list', subLabel: status.headers ? 'Working (' + status.headerLists + ' time(s))' : 'Not seen yet. Pin a chat into a section, then open the DM tab. Lists with chats seen: ' + status.lists }),
+					h(Design.TableRow, { key: 'lk', label: 'List props I reordered', subLabel: status.listKey.length ? status.listKey.join(', ') : 'none yet' }),
+					status.shapes.length ? h(Design.TableRow, { key: 'shapes', label: 'Lists that hold your pinned chats', subLabel: status.shapes.join(' | ') + '. Send this to the developer.' }) : null,
 					status.unmatched.length ? h(Design.TableRow, { key: 'unmatched', label: 'A list holds your pinned chats in a place I do not know', subLabel: 'Row fields: ' + status.unmatched.join(' | ') + '. Send this to the developer.' }) : null,
 					h(Design.TableRow, { key: 'menu', label: 'Hold-down menu', subLabel: status.menus ? 'Added ' + status.menus + ' time(s)' : 'Not seen yet. Hold a DM in the list.' }),
 					status.error ? h(Design.TableRow, { key: 'error', label: 'Problem', subLabel: status.error }) : null,
