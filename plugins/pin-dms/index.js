@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.13.1'
+	var VERSION = '1.13.2'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -684,7 +684,7 @@
 			return typeof v
 		} catch (e) { return '?' }
 	}
-	var WATCH = { Messages: 1, MessagesHeader: 1, MessagesFastestList: 1, MessagesItemChannelFast: 1 }
+	var WATCH = { Messages: 1, MessagesHeader: 1, MessagesFastestList: 1, MessagesItemChannelFast: 1, FastestList: 1, FastestListChildren: 1, _FastListItemRenderer: 1, _FastListSectionRenderer: 1, _FastListSpacer: 1, MessagesItemHappeningNow: 1 }
 	var collecting = false
 	/** Remember what the pieces of the DM tab are given, and in what order they are made. */
 	function noteElements(el) {
@@ -694,7 +694,7 @@
 			if (name === 'Messages') collecting = true
 			if (WATCH[name] && !status.detail[name]) {
 				var props = el.props || {}
-				status.detail[name] = Object.keys(props).slice(0, 30).map(function (k) { return k + ':' + describe(props[k], 0) }).join('; ')
+				status.detail[name] = Object.keys(props).slice(0, 40).map(function (k) { return k + ':' + describe(props[k], 0) }).join('; ')
 				changed()
 			}
 			if (collecting && status.order.length < 160 && status.order.indexOf(name) < 0) status.order.push(name)
