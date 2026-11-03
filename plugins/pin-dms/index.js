@@ -5,7 +5,8 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.11.0'
+	var VERSION = '1.11.1'
+	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
 	var GROUP_DM = 3
@@ -78,6 +79,16 @@
 		if (!m) return 'rgba(128,132,142,' + alpha + ')'
 		var n = parseInt(m[1], 16)
 		return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + alpha + ')'
+	}
+	/** A solid colour: the section colour mixed into a dark base, so a tag hides what is under it cleanly. */
+	function solid(hex, alpha, base) {
+		var m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ''))
+		var b = /^#?([0-9a-f]{6})$/i.exec(String(base || '#1a1b1e'))
+		if (!m || !b) return '#26272b'
+		var n = parseInt(m[1], 16)
+		var k = parseInt(b[1], 16)
+		function mix(shift) { return Math.round(((n >> shift) & 255) * alpha + ((k >> shift) & 255) * (1 - alpha)) }
+		return 'rgb(' + mix(16) + ',' + mix(8) + ',' + mix(0) + ')'
 	}
 	function newId() { return 's' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36) }
 
@@ -1152,8 +1163,8 @@
 			var stripe = React.createElement(RN.View, { key: 'pin-stripe', pointerEvents: 'none', style: { position: 'absolute', left: 0, top: 8, bottom: 8, width: 4, borderRadius: 2, backgroundColor: section.color } })
 			var tag = React.createElement(
 				RN.View,
-				{ key: 'pin-tag', pointerEvents: 'none', style: { position: 'absolute', right: 14, bottom: 6, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, backgroundColor: tint(section.color, 0.22) } },
-				React.createElement(Design.Text, { variant: 'text-xs/bold', style: { color: section.color } }, String(section.name || '').toUpperCase()),
+				{ key: 'pin-tag', pointerEvents: 'none', style: { position: 'absolute', right: 10, bottom: 4, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999, backgroundColor: solid(section.color, 0.3) } },
+				React.createElement(Design.Text, { variant: 'text-xs/bold', style: { color: section.color, fontSize: 10, lineHeight: 14 } }, String(section.name || '').toUpperCase()),
 			)
 			if (!Array.isArray(props.children) && typeof props.children === 'function') return result
 			var kids = Array.isArray(props.children) ? props.children : [props.children]
@@ -1257,7 +1268,9 @@
 	function installElementHooks(cleanup) {
 		var f = finders()
 		var runtime = f.lookupModule(f.filters.withProps('jsx', 'jsxs'))[0] || valenced.react.ReactJSXRuntime
-		function both(el) { noteElements(el)
+		function both(el) {
+			if (globalThis.__pinDmsInstance !== INSTANCE) return el
+			noteElements(el)
 			return wrapMessages(wrapHeader(wrapVoiceCard(decorateFast(decorateRow(decorateList(decorateMenu(el))))))) }
 		;['jsx', 'jsxs'].forEach(function (name) {
 			if (runtime && typeof runtime[name] === 'function') cleanup(valenced.patcher.after(runtime, name, both))
@@ -1369,6 +1382,7 @@
 		jsonStorage: { load: true, default: defaults },
 		SettingsComponent: SettingsComponent,
 		start: function (api) {
+			globalThis.__pinDmsInstance = INSTANCE
 			storage = api.jsonStorage
 			function attempt(label, step) { try { step() } catch (e) { status.error = label + ': ' + String((e && e.message) || e).slice(0, 70) } }
 			attempt('store', function () { installStoreHooks(api.cleanup) })

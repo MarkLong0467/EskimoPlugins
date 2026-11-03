@@ -140,5 +140,16 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 	check('the report names the pieces and the list props', /Pin DMs report/.test(global.copied || '') && /MessagesFastestList/.test(global.copied) && /creation order/.test(global.copied), global.copied)
 }
 
+// 6. An old copy of the plugin that is still hooked in must not add a second strip
+{
+	const a = load({ stripOn2: true })
+	function Messages() {}
+	const first = a.runtime.jsx(Messages, {})
+	const b = load({ stripOn2: true }) // a newer copy starts; the first one is now stale
+	global.valenced.react.ReactJSXRuntime.jsx = b.runtime.jsx
+	const stale = a.runtime.jsx(Messages, {})
+	check('the newest copy wraps the screen', first.type === 'V')
+	check('a stale copy leaves the screen alone', stale.type === Messages)
+}
 console.log(failed ? '\n' + failed + ' check(s) failed' : '\nAll checks passed')
 process.exit(failed ? 1 : 0)
