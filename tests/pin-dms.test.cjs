@@ -38,7 +38,7 @@ function load(initial) {
 		react: { React, ReactNative: { View: 'V', ScrollView: 'S', Pressable: 'P', Image: 'I', Dimensions: { get: () => ({ height: 2000 }) }, Platform: { OS: 'android' }, StatusBar: { currentHeight: 30 }, Linking: { openURL: (u) => { global.opened = u } } }, ReactJSXRuntime: runtime },
 		assets: { getAssetIdByName: () => undefined },
 		externals: { ReactNativeClipboard: { Clipboard: { setString: (t) => { global.copied = t } } } },
-		discord: { flux: { Stores: { PrivateChannelSortStore: sort, ChannelStore: channelStore, UserStore: { getUser: (id) => users[id] } } }, actions: { ToastActionCreators: { open: () => {} }, ActionSheetActionCreators: { openLazy: () => {}, hideActionSheet: () => {} } }, design: { Design: new Proxy({}, { get: (_, k) => k }) } },
+		discord: { flux: { Stores: { PrivateChannelSortStore: sort, ChannelStore: channelStore, UserStore: { getUser: (id) => users[id] } } }, actions: { ToastActionCreators: { open: () => {} }, ActionSheetActionCreators: { openLazy: () => {}, hideActionSheet: () => {}, hideAllActionSheets: () => {} } }, design: { Design: new Proxy({}, { get: (_, k) => k }) } },
 		patcher: { after: (o, k, fn) => { const orig = o[k]; o[k] = function (...a) { const r = orig.apply(this, a); const x = fn.call(this, r); return x === undefined ? r : x }; return () => { o[k] = orig } } },
 		modules: { finders: { filters: { withProps: (...n) => n.join() }, lookupModule: (f) => (f === 'jsx,jsxs' ? [runtime] : []) } },
 	}
@@ -238,5 +238,46 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 	check('the newest copy wraps the screen', first.type === 'V')
 	check('a stale copy leaves the screen alone', stale.type === Messages)
 }
+// 7. Discord's own Pin button in the hold-down menu is replaced by one row per section
+const later = []
+{
+	const secs = '[{"id":"s1","name":"Boys","color":"#00d4ff"},{"id":"s2","name":"Girls","color":"#ff69b4"}]'
+	function DMChannelSheet() {}
+	function TableRowGroup() {}
+	function TableRow() {}
+	function PinIcon() {}
+	const mkGroup = (a, props) => {
+		a.runtime.jsx(DMChannelSheet, props || { channel: { id: LONG.c3, type: 1 } })
+		const icon = a.runtime.jsx(PinIcon, {})
+		const row = a.runtime.jsx(TableRow, { label: 'Pin', icon, onPress: () => {} })
+		return a.runtime.jsx(TableRowGroup, { children: [row] })
+	}
+	const labelsOf = (g) => (Array.isArray(g.props.children) ? g.props.children : [g.props.children]).map((r) => r.props.label)
+	const a = load({ sectionsJson: secs })
+	const g = mkGroup(a)
+	check('the hold-down menu shows Pin to each section instead of Discord\'s Pin', labelsOf(g).join('|') === 'Pin to Boys|Pin to Girls|Pin (no group)', labelsOf(g).join('|'))
+	const rowsOf = (gg) => (Array.isArray(gg.props.children) ? gg.props.children : [gg.props.children])
+	check('the rows copy the look of Discord\'s own row', rowsOf(g)[0].type === TableRow)
+	rowsOf(g)[0].props.onPress()
+	later.push(new Promise((res) => setTimeout(() => { check('choosing Pin to Boys pins the chat in that section', a.data.cache.pinsJson.indexOf(LONG.c3) >= 0 && JSON.parse(a.data.cache.assignJson)[LONG.c3] === 's1', a.data.cache.assignJson); res() }, 20)))
+	const pinned = load({ sectionsJson: secs, pinsJson: JSON.stringify([LONG.c3]), assignJson: JSON.stringify({ [LONG.c3]: 's2' }) })
+	const gp = mkGroup(pinned)
+	check('for a pinned chat the menu marks its section and offers Unpin', labelsOf(gp).join('|') === 'Pin to Boys|✓ Pin to Girls|Pin (no group)|Unpin', labelsOf(gp).join('|'))
+	const none = load({})
+	check('with no sections it is just Pin to the top', labelsOf(mkGroup(none)).join('|') === 'Pin to the top', labelsOf(mkGroup(none)).join('|'))
+	const msg = load({ sectionsJson: secs })
+	check('the menu of a message is left alone', mkGroup(msg, { channel: { id: LONG.c3, type: 1 }, message: { id: '1' } }).props.children[0].props.label === 'Pin')
+	const off = load({ sectionsJson: secs, pinHideOff: true })
+	check('Discord\'s Pin can be kept with the switch', mkGroup(off).props.children[0].props.label === 'Pin')
+	const noch = load({ sectionsJson: secs })
+	const icon2 = noch.runtime.jsx(PinIcon, {}); const row2 = noch.runtime.jsx(TableRow, { label: 'Pin', icon: icon2 })
+	check('without a DM sheet behind it nothing is replaced', noch.runtime.jsx(TableRowGroup, { children: [row2] }).props.children[0].props.label === 'Pin')
+	const big = load({ sectionsJson: secs }); big.runtime.jsx(DMChannelSheet, { channel: { id: LONG.c3, type: 1 } })
+	const many = big.runtime.jsx(TableRowGroup, { children: [1, 2, 3, 4].map(() => big.runtime.jsx(TableRow, { label: 'Pin', icon: big.runtime.jsx(PinIcon, {}) })) })
+	check('a long group of rows is not mistaken for the Pin group', many.props.children.length === 4)
+}
+
+Promise.all(later).then(() => {
 console.log(failed ? '\n' + failed + ' check(s) failed' : '\nAll checks passed')
 process.exit(failed ? 1 : 0)
+})

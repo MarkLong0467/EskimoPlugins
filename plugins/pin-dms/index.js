@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.14.2'
+	var VERSION = '1.15.0'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -20,7 +20,7 @@
 
 	var storage
 	var listeners = []
-	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [], sortShapes: [], screens: [], voiceAnchor: false, voiceCards: [], cards: [], detail: {}, order: [], fastList: '', hdRows: 0, labelRows: 0, strip: 0, lastOpen: '' }
+	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [], sortShapes: [], screens: [], voiceAnchor: false, voiceCards: [], cards: [], detail: {}, order: [], fastList: '', hdRows: 0, labelRows: 0, sheetKeys: [], pinRow: '', pinSheets: 0, strip: 0, lastOpen: '' }
 	var memo = {}
 
 	function finders() { return valenced.modules.finders }
@@ -708,6 +708,7 @@
 		lines.push('pins: ' + state.pins.length + ', sections: ' + state.sections.length)
 		lines.push('hooked: ' + status.hooks.join(', '))
 		lines.push('strip: shown ' + status.strip + ', slot ' + (status.voiceAnchor || 'top') + ', last tap ' + (status.lastOpen || '-'))
+		lines.push('hold menu: replaced ' + status.pinSheets + ' time(s); sheet keys: ' + status.sheetKeys.join(', ') + '; native pin row: ' + (status.pinRow || 'not seen'))
 		lines.push('label rows drawn: ' + status.labelRows + ', heading rows drawn: ' + status.hdRows + (status.error ? ', note: ' + status.error : ''))
 		lines.push('list props reordered: ' + (status.listKey.join(', ') || 'none'))
 		Object.keys(status.activity).forEach(function (m) {
@@ -1503,15 +1504,92 @@
 		}
 	}
 
+	// ---- Discord's own Pin button in the hold-down menu: replaced by "Pin to <group>" ----------------
+	var lastMenu = { id: '', at: 0, message: false }
+	function pinHideOn() {
+		try { return !storage || !storage.cache || storage.cache.pinHideOff !== true } catch (e) { return true }
+	}
+	function rememberMenu(props, key) {
+		try {
+			if (!props || typeof props !== 'object') return
+			var id = dmOf(props)
+			if (key && status.sheetKeys.length < 8 && status.sheetKeys.indexOf(String(key)) < 0) status.sheetKeys.push(String(key))
+			if (id) lastMenu = { id: id, at: Date.now(), message: !!props.message }
+		} catch (e) {}
+	}
+	function noteMenuElement(el) {
+		try {
+			var name = nameOf(el)
+			if (!name || !/sheet|menu|actions|context/i.test(name)) return
+			rememberMenu(el.props, null)
+		} catch (e) {}
+	}
+	function iconNameOf(row) {
+		try { var ic = row && row.props && row.props.icon; return ic && typeof ic === 'object' ? nameOf(ic) : '' } catch (e) { return '' }
+	}
+	function isPinRow(row) {
+		try {
+			if (!row || typeof row !== 'object' || !row.props) return false
+			if (/pin/i.test(iconNameOf(row))) return true
+			var l = row.props.label
+			return typeof l === 'string' && /^(un)?pin$/i.test(l.trim())
+		} catch (e) { return false }
+	}
+	function dotIcon(color) {
+		return valenced.react.React.createElement(valenced.react.ReactNative.View, { style: { width: 22, height: 22, borderRadius: 11, backgroundColor: color } })
+	}
+	/** The group of rows that holds Discord's "Pin": swap it for one row per section of yours. */
+	function decorateNativePin(result) {
+		try {
+			if (!pinHideOn()) return result
+			var props = result && result.props
+			if (!props || props.__pinGroup || !props.children) return result
+			var rows = (Array.isArray(props.children) ? props.children : [props.children]).filter(function (r) { return r && typeof r === 'object' })
+			if (!rows.length || rows.length > 3 || !rows.some(isPinRow)) return result
+			var nativeRow = rows.filter(isPinRow)[0]
+			if (!status.pinRow) { status.pinRow = nameOf(result) + ' > ' + nameOf(nativeRow) + ' ' + describe(nativeRow.props, 0); changed() }
+			if (!lastMenu.id || Date.now() - lastMenu.at > 5000 || lastMenu.message) return result
+			var id = lastMenu.id
+			var React = valenced.react.React
+			var state = read()
+			var pinned = state.pins.indexOf(id) >= 0
+			var current = state.assign[id] || ''
+			var pinIcon = nativeRow.props.icon
+			function close() { try { sheets().hideAllActionSheets() } catch (e) {} }
+			function row(key, label, icon, run) {
+				return React.createElement(nativeRow.type, Object.assign({}, nativeRow.props, { key: key, label: label, icon: icon, subLabel: undefined, onPress: function () { close(); setTimeout(run, 0) } }))
+			}
+			var list = []
+			state.sections.forEach(function (sec) {
+				list.push(row('pin-' + sec.id, (pinned && current === sec.id ? '✓ ' : '') + 'Pin to ' + sec.name, dotIcon(sec.color), function () { pin(id, sec.id); toast('Pinned in ' + sec.name) }))
+			})
+			list.push(row('pin-none', (pinned && !current ? '✓ ' : '') + (state.sections.length ? 'Pin (no group)' : 'Pin to the top'), pinIcon, function () { pin(id, ''); toast('Pinned') }))
+			if (pinned) list.push(row('pin-un', 'Unpin', pinIcon, function () { unpin(id); toast('Unpinned') }))
+			status.pinSheets++
+			changed()
+			return React.cloneElement(result, { __pinGroup: true }, list)
+		} catch (e) {
+			return result
+		}
+	}
+
 	function installElementHooks(cleanup) {
 		var f = finders()
 		var runtime = f.lookupModule(f.filters.withProps('jsx', 'jsxs'))[0] || valenced.react.ReactJSXRuntime
 		function both(el) {
 			if (globalThis.__pinDmsInstance !== INSTANCE) return el
 			noteElements(el)
+			noteMenuElement(el)
+			var pg = decorateNativePin(el)
+			if (pg !== el) return pg
 			var hd = decorateHeaderRow(el)
 			if (hd !== el) return hd
 			return wrapMessages(wrapHeader(wrapVoiceCard(decorateFast(decorateRow(decorateList(decorateMenu(el))))))) }
+		try {
+			if (valenced.patcher.before && sheets() && typeof sheets().openLazy === 'function') {
+				cleanup(valenced.patcher.before(sheets(), 'openLazy', function (args) { try { rememberMenu(args && args[2], args && args[1]) } catch (e) {} }))
+			}
+		} catch (e) {}
 		;['jsx', 'jsxs'].forEach(function (name) {
 			if (runtime && typeof runtime[name] === 'function') cleanup(valenced.patcher.after(runtime, name, both))
 		})
@@ -1682,6 +1760,7 @@
 				h(
 					Design.TableRowGroup,
 					{ title: 'Options' },
+					h(Design.TableSwitchRow, { key: 'pinhide', label: 'Replace Discord\'s Pin button', subLabel: 'The hold-down menu of a DM shows Pin to each of your sections instead of Discord\'s own Pin.', value: pinHideOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { pinHideOff: !v }); changed() } catch (e) {} } }),
 					h(Design.TableSwitchRow, { key: 'compact', label: 'Compact headings', subLabel: 'Small labels inside the chats, no extra rows. Turn off for full heading rows.', value: compactOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { hdStyle2: v ? 'compact' : 'rows' }); fastCache = null; refreshList(); changed() } catch (e) {} } }),
 					h(Design.TableSwitchRow, { key: 'headings', label: 'Section headings in the list', subLabel: 'A heading row with fold in front of each section. If the app ever fails to start with it, it turns itself off.', value: hdOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { hdOff: !v, hdTrial: false }); fastCache = null; refreshList() } catch (e) {} } }),
 				),
