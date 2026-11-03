@@ -1311,6 +1311,32 @@
           }
         }
       }
+    },
+    "marklong.bypass-status": {
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.bypass-status@1.0.0.zip",
+          "sha256": "3ebd4a4318d03eb13327c55fa290530a126d8c15baca92ac9202e0b64523e174",
+          "size": 7473,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "name": "Bypass Status",
+      "description": "Get notified by chosen people, chats and servers even when your status is Do Not Disturb. Hold a DM, channel or server and choose Bypass Do Not Disturb, or manage the list in the plugin settings.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "contributors": [
+        "Bypass Status for Equicord (the idea; code written from scratch for Valenced)"
+      ],
+      "channels": {
+        "latest": "1.0.0"
+      }
     }
   }
 }
