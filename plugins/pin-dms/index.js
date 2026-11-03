@@ -72,6 +72,12 @@
 		var m = /^#?([0-9a-f]{6})$/i.exec(String(text || '').trim())
 		return m ? '#' + m[1].toLowerCase() : null
 	}
+	function tint(hex, alpha) {
+		var m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ''))
+		if (!m) return 'rgba(128,132,142,' + alpha + ')'
+		var n = parseInt(m[1], 16)
+		return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + alpha + ')'
+	}
 	function newId() { return 's' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36) }
 
 	function sortStore() {
@@ -598,7 +604,7 @@
 		} catch (e) {}
 	}
 
-	/** Rows: put a section's heading above its first chat, and fold the chats of a closed section away. */
+	/** Rows: a coloured stripe and a small section tag on each pinned chat. The row keeps its height, because the list sizes its rows itself. */
 	function decorateRow(result) {
 		try {
 			var props = result && result.props
@@ -606,32 +612,23 @@
 			var tn = result.type.displayName || result.type.name || ''
 			if (!/Pressable/.test(tn)) return result
 			var state = read()
-			if (!state.pins.length || !state.sections.length || !lastIds.length) return result
+			if (!state.pins.length || !state.sections.length) return result
 			var id = deepId(props.children)
-			if (!id) return result
+			if (!id || state.pins.indexOf(id) < 0) return result
+			var section = sectionOf(state, id)
+			if (!section) return result
 			var React = valenced.react.React
 			var RN = valenced.react.ReactNative
-			var pinned = state.pins.indexOf(id) >= 0
-			var parts = []
-			var hide = false
-			var section = pinned ? sectionOf(state, id) : undefined
-			if (section) {
-				var firstOf
-				for (var i = 0; i < lastIds.length; i++) {
-					if (state.pins.indexOf(lastIds[i]) >= 0 && state.assign[lastIds[i]] === section.id) { firstOf = lastIds[i]; break }
-				}
-				if (firstOf === id) parts.push(React.createElement(SectionHeader, { key: 'pin-head', section: section }))
-				if (section.collapsed) hide = true
-			} else if (!pinned) {
-				var firstRest
-				for (var j = 0; j < lastIds.length; j++) { if (state.pins.indexOf(lastIds[j]) < 0) { firstRest = lastIds[j]; break } }
-				if (firstRest === id) parts.push(React.createElement(SectionHeader, { key: 'pin-rest', section: { id: 'rest', name: 'Direct messages', color: '#80848e', rest: true } }))
-			}
-			if (!parts.length && !hide) return result
+			var Design = valenced.discord.design.Design
 			status.rowHeaders++
-			if (!status.headers) { status.headers = true; status.list = 'found, headers added'; changed() }
-			if (!hide) parts.push(result)
-			return React.createElement(RN.View, { key: result.key }, parts)
+			if (!status.headers) { status.headers = true; status.list = 'found, tags added'; changed() }
+			var stripe = React.createElement(RN.View, { key: 'pin-stripe', pointerEvents: 'none', style: { position: 'absolute', left: 0, top: 8, bottom: 8, width: 4, borderRadius: 2, backgroundColor: section.color } })
+			var tag = React.createElement(
+				RN.View,
+				{ key: 'pin-tag', pointerEvents: 'none', style: { position: 'absolute', right: 14, bottom: 6, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, backgroundColor: tint(section.color, 0.22) } },
+				React.createElement(Design.Text, { variant: 'text-xs/bold', style: { color: section.color } }, String(section.name || '').toUpperCase()),
+			)
+			return React.createElement(RN.View, { key: result.key }, result, stripe, tag)
 		} catch (e) {
 			return result
 		}
