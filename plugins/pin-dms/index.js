@@ -348,10 +348,6 @@
 		if (store) status.store = 'found'
 		hookStore(store, 'SortStore', cleanup)
 		try { hookStore(stores().ChannelStore, 'ChannelStore', cleanup) } catch (e) {}
-		try {
-			cleanup(valenced.patcher.after(Array.prototype, 'sort', function (result) { return fixSorted(result) }))
-			status.hooks.push('Array.sort')
-		} catch (e) {}
 	}
 
 	function refreshList() {
@@ -955,11 +951,9 @@
 				h(
 					Design.TableRowGroup,
 					{ title: 'Status' },
-					h(Design.TableSwitchRow, { key: 'sortfix', label: 'Keep pinned chats on top', subLabel: 'The DM tab sorts by time after the plugin reorders it. This puts pinned chats back on top. Turn off if anything looks wrong.', value: sortFixEnabled(), onValueChange: function (v) { try { Object.assign(storage.cache, { sortFix: !!v }); refreshList() } catch (e) {} } }),
 					h(Design.TableRow, { key: 'store', label: 'DM list order', subLabel: status.store + (status.hooks.length ? ' · hooked: ' + status.hooks.join(', ') : ' · not hooked') + ' · reordered ' + status.reordered + ' time(s)' }),
 					h(Design.TableRow, { key: 'list', label: 'Section headers in the list', subLabel: status.headers ? 'Working (' + (status.headerLists + status.rowHeaders) + ' time(s))' : 'Not seen yet. Pin a chat into a section, then open the DM tab. Lists with chats seen: ' + status.lists }),
 					h(Design.TableRow, { key: 'lk', label: 'List props I reordered', subLabel: status.listKey.length ? status.listKey.join(', ') : 'none yet' }),
-					status.sortShapes.length ? h(Design.TableRow, { key: 'sortshapes', label: 'Sorted lists that hold chats', subLabel: status.sortShapes.join(' | ') }) : null,
 					h(Design.TableRow, { key: 'pinm', label: 'Discord pin methods found', subLabel: status.pinMethods.length ? status.pinMethods.join(', ') : 'none' }),
 					h(Design.TableRow, { key: 'activity', label: 'Hook activity', subLabel: Object.keys(status.activity).length ? Object.keys(status.activity).map(function (m) { var a = status.activity[m]; return m + ': ' + a.calls + ' calls, ' + a.len + ' entries, ' + a.pins + ' pinned, moved ' + a.moved + (a.after ? ', ' + a.before + ' -> ' + a.after : '') }).join(' | ') : 'Nothing called yet. Open the Messages tab.' }),
 					status.rowLists.length ? h(Design.TableRow, { key: 'rowlists', label: 'Long lists I saw', subLabel: status.rowLists.join(' | ') }) : null,
