@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn: true, stripBelow: true }
+	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn: true, stripBelow: true, hidePinned: true }
 	var DM = 1
 	var GROUP_DM = 3
 	var METHODS = ['getPrivateChannelIds', 'getSortedChannels']
@@ -18,7 +18,7 @@
 
 	var storage
 	var listeners = []
-	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [], sortShapes: [], screens: [], voiceAnchor: false, voiceCards: [], fastList: '', strip: 0, lastOpen: '' }
+	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [], sortShapes: [], screens: [], voiceAnchor: false, voiceCards: [], cards: [], fastList: '', strip: 0, lastOpen: '' }
 	var memo = {}
 
 	function finders() { return valenced.modules.finders }
@@ -180,7 +180,49 @@
 		} catch (e) {}
 		return typeof entry
 	}
+	function hideOn() {
+		try { return !storage || !storage.cache || storage.cache.hidePinned !== false } catch (e) { return true }
+	}
+	/** The pinned chats live in the strip, so they are left out of the normal list. */
+	function hidePinned(list, method) {
+		try {
+			var state = read()
+			if (!state.pins.length) return list
+			var isObj = list && typeof list === 'object' && !Array.isArray(list)
+			var out = list
+			if (isObj) {
+				if (list instanceof Map || list instanceof Set) return list
+				var keys = Object.keys(list)
+				if (keys.length < 2 || !keys.slice(0, 5).every(function (k) { return /^\d{15,}$/.test(k) })) return list
+				var rest = keys.filter(function (k) { return state.pins.indexOf(k) < 0 })
+				if (rest.length === keys.length) return list
+				var key = method + '|h|' + state.pins.join(',') + '|' + keys.join(',')
+				if (memo[method] && memo[method].key === key) return memo[method].result
+				out = {}
+				rest.forEach(function (k) { out[k] = list[k] })
+				memo[method] = { key: key, result: out }
+			} else if (Array.isArray(list)) {
+				var ids = list.map(function (e) { return idOf(e, 0) })
+				if (!ids.some(function (id) { return id && state.pins.indexOf(id) >= 0 })) return list
+				var key2 = method + '|h|' + state.pins.join(',') + '|' + ids.join(',')
+				if (memo[method] && memo[method].key === key2) return memo[method].result
+				out = list.filter(function (e, i) { return !(ids[i] && state.pins.indexOf(ids[i]) >= 0) })
+				memo[method] = { key: key2, result: out }
+			} else return list
+			var a = status.activity[method] || (status.activity[method] = { calls: 0, moved: 0, len: 0, pins: 0 })
+			a.calls++
+			a.moved++
+			a.len = isObj ? Object.keys(list).length : list.length
+			a.after = 'hid ' + (a.len - (isObj ? Object.keys(out).length : out.length))
+			status.reordered++
+			changed()
+			return out
+		} catch (e) {
+			return list
+		}
+	}
 	function pinnedFirst(list, method) {
+		if (hideOn() && list && typeof list === 'object') { var hidden = hidePinned(list, method); if (hidden !== list) { try { if (/getPrivateChannelIds/.test(method) && Array.isArray(hidden) && typeof hidden[0] === 'string') lastIds = hidden } catch (e) {} return hidden } }
 		if (list && typeof list === 'object' && !Array.isArray(list)) return pinnedObject(list, method)
 		var out = pinnedFirstInner(list, method)
 		try { if (/getPrivateChannelIds/.test(method) && Array.isArray(out) && typeof out[0] === 'string') lastIds = out } catch (e) {}
@@ -668,6 +710,9 @@
 			props.section ? h(RN.View, { style: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, backgroundColor: tint(color, 0.22) } }, h(Design.Text, { variant: 'text-xs/bold', style: { color: color } }, String(props.section.name).toUpperCase())) : null,
 		)
 	}
+	var SLOT_PRI = { top: 0, header: 1, voice: 2 }
+	var slotShown = { top: 0, header: 0, voice: 0 }
+	var slotOwner = {}
 	function PinnedStrip(props) {
 		var React = valenced.react.React
 		var RN = valenced.react.ReactNative
@@ -678,19 +723,28 @@
 			listeners.push(update)
 			return function () { listeners = listeners.filter(function (l) { return l !== update }) }
 		}, [])
+		var slot = (props && props.slot) || 'top'
+		var inst = React.useRef(null)
+		if (!inst.current) inst.current = {}
 		React.useEffect(function () {
-			if (props && props.anchored) return undefined
+			if (slot === 'voice') return undefined
 			var timer = setTimeout(function () { tick[1](function (n) { return n + 1 }) }, 4300)
 			return function () { clearTimeout(timer) }
 		}, [tick[0]])
 		if (!stripEnabled()) return null
-		var below = stripBelow()
-		if (props && props.anchored) {
-			if (!below) return null
-			var firstShow = !anchorSeenAt
-			anchorSeenAt = Date.now()
-			if (!status.voiceAnchor) { status.voiceAnchor = true; setTimeout(changed, 50) }
-		} else if (below && Date.now() - anchorSeenAt < 4000) return null
+		if (slot !== 'top' && !stripBelow()) return null
+		var now = Date.now()
+		var names = ['top', 'header', 'voice']
+		for (var q = 0; q < names.length; q++) {
+			if (SLOT_PRI[names[q]] > SLOT_PRI[slot] && now - slotShown[names[q]] < 4000) return null
+		}
+		var owner = slotOwner[slot]
+		if (owner && owner.ref !== inst.current && now - owner.at < 2500) return null
+		slotOwner[slot] = { ref: inst.current, at: now }
+		var firstShow = !slotShown[slot]
+		slotShown[slot] = now
+		if (slot !== 'top') status.voiceAnchor = slot
+		if (firstShow && slot !== 'top') setTimeout(changed, 50)
 		var state = read()
 		var ordered = pinnedOrder(state.pins.slice())
 		if (!ordered.length) return null
@@ -703,7 +757,7 @@
 			if (ids.length) groups.push({ section: sec, ids: ids })
 		})
 		var topInset = 0
-		try { if (!(props && props.anchored)) topInset = (RN.Platform.OS === 'android' && RN.StatusBar && RN.StatusBar.currentHeight) || 0 } catch (e) {}
+		try { if (slot === 'top') topInset = (RN.Platform.OS === 'android' && RN.StatusBar && RN.StatusBar.currentHeight) || 0 } catch (e) {}
 		var rows = []
 		groups.forEach(function (g) {
 			var folded = g.section && g.section.collapsed
@@ -722,7 +776,7 @@
 		var maxH = Math.round(RN.Dimensions.get('window').height * 0.36)
 		return h(
 			RN.View,
-			{ style: { paddingTop: props && props.anchored ? 4 : topInset, paddingBottom: 6 } },
+			{ style: { paddingTop: slot === 'top' ? topInset : 4, paddingBottom: 6 } },
 			h(RN.ScrollView, { style: { maxHeight: maxH }, nestedScrollEnabled: true, keyboardShouldPersistTaps: 'handled' }, rows),
 		)
 	}
@@ -776,8 +830,8 @@
 				if (!Array.isArray(v) || v.length < 2) return
 				var ids = v.map(chatId).filter(Boolean)
 				if (ids.length < 2 || ids.length < v.length * 0.5) return
-				var ordered = reorderRows(v)
-				if (ordered !== v) { next[k] = ordered; any = true; if (status.listKey.indexOf('fast.' + k) < 0) { status.listKey.push('fast.' + k); changed() } }
+				var ordered = hideOn() ? v.filter(function (e) { var id = chatId(e); return !(id && state.pins.indexOf(id) >= 0) }) : reorderRows(v)
+				if (ordered !== v && ordered.length !== undefined && (ordered.length !== v.length || !hideOn())) { next[k] = ordered; any = true; if (status.listKey.indexOf('fast.' + k) < 0) { status.listKey.push('fast.' + k); changed() } }
 			})
 			return any ? valenced.react.React.cloneElement(result, next) : result
 		} catch (e) {
@@ -792,12 +846,30 @@
 			if (result.props && result.props.__pinStrip) return result
 			var React = valenced.react.React
 			var RN = valenced.react.ReactNative
-			return React.createElement(RN.View, { key: result.key }, React.cloneElement(result, { __pinStrip: true }), React.createElement(PinnedStrip, { key: 'pin-strip-h', anchored: true }))
+			return React.createElement(RN.View, { key: result.key }, React.cloneElement(result, { __pinStrip: true }), React.createElement(PinnedStrip, { key: 'pin-strip-h', slot: 'header' }))
 		} catch (e) {
 			return result
 		}
 	}
 
+	var VOICE_BAD = /avatar|item|icon|text|button|participant|user|name|status|indicator|speaker|tile|pill|badge|image|stack|member|label|wave|state|controls?|channelname/i
+	/** The voice channel card itself, found by its name. The strip goes right under it. */
+	function wrapVoiceCard(result) {
+		try {
+			var name = nameOf(result)
+			if (!name) return result
+			if (/voice|stage|carousel|call/i.test(name) && status.cards.length < 14 && status.cards.indexOf(name) < 0) { status.cards.push(name); changed() }
+			if (!/voice/i.test(name) || VOICE_BAD.test(name)) return result
+			if (!/(card|cards|carousel|rail|section|banner|panel|list|row)$/i.test(name)) return result
+			if (!stripEnabled() || !stripBelow()) return result
+			if (result.props && result.props.__pinStrip) return result
+			var React = valenced.react.React
+			var RN = valenced.react.ReactNative
+			return React.createElement(RN.View, { key: result.key }, React.cloneElement(result, { __pinStrip: true }), React.createElement(PinnedStrip, { key: 'pin-strip-v', slot: 'voice' }))
+		} catch (e) {
+			return result
+		}
+	}
 	/** The row of voice channel cards: the strip goes right under it. */
 	function wrapVoice(result) {
 		try {
@@ -809,7 +881,7 @@
 			if (!stripEnabled() || !stripBelow()) return result
 			var React = valenced.react.React
 			var RN = valenced.react.ReactNative
-			return React.createElement(RN.View, { key: result.key }, React.cloneElement(result, { __pinStrip: true }), React.createElement(PinnedStrip, { key: 'pin-strip-v', anchored: true }))
+			return React.createElement(RN.View, { key: result.key }, React.cloneElement(result, { __pinStrip: true }), React.createElement(PinnedStrip, { key: 'pin-strip-v', slot: 'voice' }))
 		} catch (e) {
 			return result
 		}
@@ -1100,7 +1172,7 @@
 	function installElementHooks(cleanup) {
 		var f = finders()
 		var runtime = f.lookupModule(f.filters.withProps('jsx', 'jsxs'))[0] || valenced.react.ReactJSXRuntime
-		function both(el) { return wrapMessages(wrapHeader(decorateFast(decorateRow(decorateList(decorateMenu(el)))))) }
+		function both(el) { return wrapMessages(wrapHeader(wrapVoiceCard(decorateFast(decorateRow(decorateList(decorateMenu(el))))))) }
 		;['jsx', 'jsxs'].forEach(function (name) {
 			if (runtime && typeof runtime[name] === 'function') cleanup(valenced.patcher.after(runtime, name, both))
 		})
@@ -1187,8 +1259,9 @@
 					Design.TableRowGroup,
 					{ title: 'Status' },
 					h(Design.TableSwitchRow, { key: 'strip', label: 'Pinned strip above the DM tab', subLabel: 'Shows your pinned chats at the top of Messages, grouped in your sections. Tap to open, hold for options, tap a heading to fold.', value: stripEnabled(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripOn: !!v }); changed() } catch (e) {} } }),
+					h(Design.TableSwitchRow, { key: 'hidepinned', label: 'Hide pinned chats from the normal list', subLabel: 'They only show in the strip, not twice. Turn off to see them in both places.', value: hideOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { hidePinned: !!v }); refreshList() } catch (e) {} } }),
 					h(Design.TableSwitchRow, { key: 'stripbelow', label: 'Put the strip under the Messages header', subLabel: 'Under the title and search row. If it cannot be placed there, it stays at the very top.', value: stripBelow(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripBelow: !!v }); changed() } catch (e) {} } }),
-					h(Design.TableRow, { key: 'stripstatus', label: 'Pinned strip', subLabel: (status.strip ? 'Shown ' + status.strip + ' time(s)' : 'Not shown yet. Open the Messages tab.') + (status.lastOpen ? ' · last tap: ' + status.lastOpen : '') + (status.fastList ? ' · DM list gets: ' + status.fastList : '') + ' · under the header: ' + (status.voiceAnchor ? 'found' : 'not seen') + ' · screens seen: ' + (status.screens.join(', ') || 'none') }),
+					h(Design.TableRow, { key: 'stripstatus', label: 'Pinned strip', subLabel: (status.strip ? 'Shown ' + status.strip + ' time(s)' : 'Not shown yet. Open the Messages tab.') + (status.lastOpen ? ' · last tap: ' + status.lastOpen : '') + (status.fastList ? ' · DM list gets: ' + status.fastList : '') + (status.cards.length ? ' · voice-ish names: ' + status.cards.join(', ') : '') + ' · strip slot: ' + (status.voiceAnchor || 'top') + ' · screens seen: ' + (status.screens.join(', ') || 'none') }),
 					h(Design.TableRow, { key: 'store', label: 'DM list order', subLabel: status.store + (status.hooks.length ? ' · hooked: ' + status.hooks.join(', ') : ' · not hooked') + ' · reordered ' + status.reordered + ' time(s)' }),
 					h(Design.TableRow, { key: 'list', label: 'Section headers in the list', subLabel: status.headers ? 'Working (' + (status.headerLists + status.rowHeaders) + ' time(s))' : 'Not seen yet. Pin a chat into a section, then open the DM tab. Lists with chats seen: ' + status.lists }),
 					h(Design.TableRow, { key: 'lk', label: 'List props I reordered', subLabel: status.listKey.length ? status.listKey.join(', ') : 'none yet' }),
