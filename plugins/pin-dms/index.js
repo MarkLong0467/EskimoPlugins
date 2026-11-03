@@ -18,7 +18,7 @@
 
 	var storage
 	var listeners = []
-	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [], sortShapes: [], screens: [], voiceAnchor: false, voiceCards: [], strip: 0, lastOpen: '' }
+	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [], sortShapes: [], screens: [], voiceAnchor: false, voiceCards: [], fastList: '', strip: 0, lastOpen: '' }
 	var memo = {}
 
 	function finders() { return valenced.modules.finders }
@@ -747,6 +747,57 @@
 			}
 		} catch (e) {}
 	}
+	function nameOf(el) {
+		var t = el && el.type
+		if (!t || typeof t === 'string') return ''
+		var inner = t.type || t.render || t
+		return t.displayName || t.name || (inner && (inner.displayName || inner.name)) || ''
+	}
+	/** The real DM list ("MessagesFastestList"): note what it is given, and put the pinned chats first in any list it holds. */
+	function decorateFast(result) {
+		try {
+			if (nameOf(result) !== 'MessagesFastestList') return result
+			var props = result.props || {}
+			var keys = Object.keys(props)
+			if (!status.fastList) {
+				status.fastList = keys.slice(0, 24).map(function (k) {
+					var v = props[k]
+					return k + ':' + (Array.isArray(v) ? 'list' + v.length : typeof v === 'object' && v ? 'obj' : typeof v)
+				}).join(', ')
+				changed()
+			}
+			if (props.__pinFast) return result
+			var state = read()
+			if (!state.pins.length) return result
+			var next = { __pinFast: true }
+			var any = false
+			keys.forEach(function (k) {
+				var v = props[k]
+				if (!Array.isArray(v) || v.length < 2) return
+				var ids = v.map(chatId).filter(Boolean)
+				if (ids.length < 2 || ids.length < v.length * 0.5) return
+				var ordered = reorderRows(v)
+				if (ordered !== v) { next[k] = ordered; any = true; if (status.listKey.indexOf('fast.' + k) < 0) { status.listKey.push('fast.' + k); changed() } }
+			})
+			return any ? valenced.react.React.cloneElement(result, next) : result
+		} catch (e) {
+			return result
+		}
+	}
+	/** The header of the DM tab (title, search, Add Friends): the strip goes right under it. */
+	function wrapHeader(result) {
+		try {
+			if (nameOf(result) !== 'MessagesHeader') return result
+			if (!stripEnabled() || !stripBelow()) return result
+			if (result.props && result.props.__pinStrip) return result
+			var React = valenced.react.React
+			var RN = valenced.react.ReactNative
+			return React.createElement(RN.View, { key: result.key }, React.cloneElement(result, { __pinStrip: true }), React.createElement(PinnedStrip, { key: 'pin-strip-h', anchored: true }))
+		} catch (e) {
+			return result
+		}
+	}
+
 	/** The row of voice channel cards: the strip goes right under it. */
 	function wrapVoice(result) {
 		try {
@@ -1049,8 +1100,7 @@
 	function installElementHooks(cleanup) {
 		var f = finders()
 		var runtime = f.lookupModule(f.filters.withProps('jsx', 'jsxs'))[0] || valenced.react.ReactJSXRuntime
-		function both(el) { noteVoiceCard(el)
-			return wrapMessages(wrapVoice(decorateRow(decorateList(decorateMenu(el))))) }
+		function both(el) { return wrapMessages(wrapHeader(decorateFast(decorateRow(decorateList(decorateMenu(el)))))) }
 		;['jsx', 'jsxs'].forEach(function (name) {
 			if (runtime && typeof runtime[name] === 'function') cleanup(valenced.patcher.after(runtime, name, both))
 		})
@@ -1137,8 +1187,8 @@
 					Design.TableRowGroup,
 					{ title: 'Status' },
 					h(Design.TableSwitchRow, { key: 'strip', label: 'Pinned strip above the DM tab', subLabel: 'Shows your pinned chats at the top of Messages, grouped in your sections. Tap to open, hold for options, tap a heading to fold.', value: stripEnabled(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripOn: !!v }); changed() } catch (e) {} } }),
-					h(Design.TableSwitchRow, { key: 'stripbelow', label: 'Put the strip under the voice channel cards', subLabel: 'When nobody is in a voice channel, it stays at the very top.', value: stripBelow(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripBelow: !!v }); changed() } catch (e) {} } }),
-					h(Design.TableRow, { key: 'stripstatus', label: 'Pinned strip', subLabel: (status.strip ? 'Shown ' + status.strip + ' time(s)' : 'Not shown yet. Open the Messages tab.') + (status.lastOpen ? ' · last tap: ' + status.lastOpen : '') + (status.voiceCards.length ? ' · voice card candidates: ' + status.voiceCards.join(' | ') : '') + ' · under voice cards: ' + (status.voiceAnchor ? 'found' : 'not seen') + ' · screens seen: ' + (status.screens.join(', ') || 'none') }),
+					h(Design.TableSwitchRow, { key: 'stripbelow', label: 'Put the strip under the Messages header', subLabel: 'Under the title and search row. If it cannot be placed there, it stays at the very top.', value: stripBelow(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripBelow: !!v }); changed() } catch (e) {} } }),
+					h(Design.TableRow, { key: 'stripstatus', label: 'Pinned strip', subLabel: (status.strip ? 'Shown ' + status.strip + ' time(s)' : 'Not shown yet. Open the Messages tab.') + (status.lastOpen ? ' · last tap: ' + status.lastOpen : '') + (status.fastList ? ' · DM list gets: ' + status.fastList : '') + ' · under the header: ' + (status.voiceAnchor ? 'found' : 'not seen') + ' · screens seen: ' + (status.screens.join(', ') || 'none') }),
 					h(Design.TableRow, { key: 'store', label: 'DM list order', subLabel: status.store + (status.hooks.length ? ' · hooked: ' + status.hooks.join(', ') : ' · not hooked') + ' · reordered ' + status.reordered + ' time(s)' }),
 					h(Design.TableRow, { key: 'list', label: 'Section headers in the list', subLabel: status.headers ? 'Working (' + (status.headerLists + status.rowHeaders) + ' time(s))' : 'Not seen yet. Pin a chat into a section, then open the DM tab. Lists with chats seen: ' + status.lists }),
 					h(Design.TableRow, { key: 'lk', label: 'List props I reordered', subLabel: status.listKey.length ? status.listKey.join(', ') : 'none yet' }),
