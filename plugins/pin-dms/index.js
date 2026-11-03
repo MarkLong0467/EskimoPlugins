@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], sortFix: true }
+	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn: true }
 	var DM = 1
 	var GROUP_DM = 3
 	var METHODS = ['getPrivateChannelIds', 'getSortedChannels']
@@ -18,7 +18,7 @@
 
 	var storage
 	var listeners = []
-	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [], sortShapes: [] }
+	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [], sortShapes: [], screens: [], strip: 0, lastOpen: '' }
 	var memo = {}
 
 	function finders() { return valenced.modules.finders }
@@ -597,6 +597,137 @@
 	}
 	function openChatMenu(id) { openSheet(MENU_KEY, ChatMenu, { id: id }) }
 
+	// ---- The pinned strip, above the DM tab ----------------------------------------------------------
+	function stripEnabled() {
+		try { return !storage || !storage.cache || storage.cache.stripOn !== false } catch (e) { return true }
+	}
+	function openChat(id) {
+		var f = finders()
+		var done = ''
+		function tryCall(propName, args) {
+			try {
+				var mod = f.lookupModule(f.filters.withProps(propName))[0]
+				if (mod && typeof mod[propName] === 'function') { mod[propName].apply(mod, args); return true }
+			} catch (e) {}
+			return false
+		}
+		try {
+			if (tryCall('transitionToChannel', [id])) done = 'transitionToChannel'
+			else if (tryCall('selectPrivateChannel', [id])) done = 'selectPrivateChannel'
+			else {
+				var ch = stores().ChannelStore.getChannel(id)
+				var uid = ch && ch.type === DM && ch.recipients && ch.recipients[0]
+				if (uid && tryCall('openPrivateChannel', [uid])) done = 'openPrivateChannel'
+			}
+			if (!done) {
+				var Linking = valenced.react.ReactNative.Linking
+				Linking.openURL('https://discord.com/channels/@me/' + id)
+				done = 'link'
+			}
+		} catch (e) { done = 'failed: ' + String((e && e.message) || e).slice(0, 40) }
+		status.lastOpen = done
+		changed()
+	}
+	function avatarUrl(id) {
+		try {
+			var ch = stores().ChannelStore.getChannel(id)
+			if (!ch) return null
+			if (ch.type === GROUP_DM) return ch.icon ? 'https://cdn.discordapp.com/channel-icons/' + id + '/' + ch.icon + '.png?size=64' : null
+			var uid = ch.recipients && ch.recipients[0]
+			var user = uid && stores().UserStore.getUser(uid)
+			if (user && user.avatar) return 'https://cdn.discordapp.com/avatars/' + user.id + '/' + user.avatar + '.png?size=64'
+		} catch (e) {}
+		return null
+	}
+	function toggleFold(sectionId) {
+		var state = read()
+		var section = state.sections.filter(function (x) { return x.id === sectionId })[0]
+		if (!section) return
+		section.collapsed = !section.collapsed
+		commit(state)
+	}
+	function StripRow(props) {
+		var RN = valenced.react.ReactNative
+		var Design = valenced.discord.design.Design
+		var id = props.id
+		var uri = avatarUrl(id)
+		var label = channelLabel(id)
+		var color = props.section ? props.section.color : '#80848e'
+		return h(
+			RN.Pressable,
+			{ onPress: function () { openChat(id) }, onLongPress: function () { openChatMenu(id) }, style: { flexDirection: 'row', alignItems: 'center', gap: 10, height: 46, paddingRight: 14 } },
+			h(RN.View, { style: { width: 4, alignSelf: 'stretch', marginVertical: 6, borderRadius: 2, backgroundColor: color } }),
+			uri
+				? h(RN.Image, { source: { uri: uri }, style: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#2b2d31' } })
+				: h(RN.View, { style: { width: 32, height: 32, borderRadius: 16, backgroundColor: tint(color, 0.35), alignItems: 'center', justifyContent: 'center' } }, h(Design.Text, { variant: 'text-sm/bold' }, String(label).slice(0, 1).toUpperCase())),
+			h(Design.Text, { variant: 'text-md/semibold', numberOfLines: 1, style: { flex: 1 } }, label),
+			props.section ? h(RN.View, { style: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, backgroundColor: tint(color, 0.22) } }, h(Design.Text, { variant: 'text-xs/bold', style: { color: color } }, String(props.section.name).toUpperCase())) : null,
+		)
+	}
+	function PinnedStrip() {
+		var React = valenced.react.React
+		var RN = valenced.react.ReactNative
+		var Design = valenced.discord.design.Design
+		var tick = React.useState(0)
+		React.useEffect(function () {
+			var update = function () { tick[1](function (n) { return n + 1 }) }
+			listeners.push(update)
+			return function () { listeners = listeners.filter(function (l) { return l !== update }) }
+		}, [])
+		if (!stripEnabled()) return null
+		var state = read()
+		var ordered = pinnedOrder(state.pins.slice())
+		if (!ordered.length) return null
+		status.strip++
+		var groups = []
+		var loose = ordered.filter(function (id) { return !sectionOf(state, id) })
+		if (loose.length) groups.push({ section: null, ids: loose })
+		state.sections.forEach(function (sec) {
+			var ids = ordered.filter(function (id) { return state.assign[id] === sec.id })
+			if (ids.length) groups.push({ section: sec, ids: ids })
+		})
+		var topInset = 0
+		try { topInset = (RN.Platform.OS === 'android' && RN.StatusBar && RN.StatusBar.currentHeight) || 0 } catch (e) {}
+		var rows = []
+		groups.forEach(function (g) {
+			var folded = g.section && g.section.collapsed
+			if (g.section) {
+				rows.push(h(
+					RN.Pressable,
+					{ key: 'h' + g.section.id, onPress: function () { toggleFold(g.section.id) }, onLongPress: function () { openEditSection(g.section) }, style: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, height: 28 } },
+					h(Design.Text, { variant: 'text-xs/bold', style: { color: g.section.color } }, (folded ? '▸ ' : '▾ ') + String(g.section.name).toUpperCase() + '  ' + g.ids.length),
+					h(RN.View, { style: { flex: 1, height: 1.5, borderRadius: 1, backgroundColor: g.section.color, opacity: 0.5 } }),
+				))
+			} else if (groups.length > 1) {
+				rows.push(h(RN.View, { key: 'h-loose', style: { paddingHorizontal: 16, height: 28, justifyContent: 'center' } }, h(Design.Text, { variant: 'text-xs/bold', color: 'text-muted' }, 'PINNED')))
+			}
+			if (!folded) g.ids.forEach(function (id) { rows.push(h(StripRow, { key: 'r' + id, id: id, section: g.section })) })
+		})
+		var maxH = Math.round(RN.Dimensions.get('window').height * 0.36)
+		return h(
+			RN.View,
+			{ style: { paddingTop: topInset, paddingBottom: 6 } },
+			h(RN.ScrollView, { style: { maxHeight: maxH }, nestedScrollEnabled: true, keyboardShouldPersistTaps: 'handled' }, rows),
+		)
+	}
+	/** Puts the strip above the whole Messages screen. */
+	function wrapMessages(result) {
+		try {
+			var t = result && result.type
+			if (!t || typeof t === 'string') return result
+			var inner = t.type || t.render || t
+			var name = t.displayName || t.name || (inner && (inner.displayName || inner.name)) || ''
+			if (status.screens.length < 8 && /messages|private|dms?$|home/i.test(name) && status.screens.indexOf(name) < 0) { status.screens.push(name); changed() }
+			if (name !== 'Messages' || !stripEnabled()) return result
+			if (result.props && result.props.__pinStrip) return result
+			var React = valenced.react.React
+			var RN = valenced.react.ReactNative
+			return React.createElement(RN.View, { key: result.key, style: { flex: 1 } }, React.createElement(PinnedStrip, { key: 'pin-strip' }), React.cloneElement(result, { __pinStrip: true }))
+		} catch (e) {
+			return result
+		}
+	}
+
 	// ---- Section headers in the DM list --------------------------------------------------------------
 	function SectionHeader(props) {
 		var Design = valenced.discord.design.Design
@@ -865,7 +996,7 @@
 	function installElementHooks(cleanup) {
 		var f = finders()
 		var runtime = f.lookupModule(f.filters.withProps('jsx', 'jsxs'))[0] || valenced.react.ReactJSXRuntime
-		function both(el) { return decorateRow(decorateList(decorateMenu(el))) }
+		function both(el) { return wrapMessages(decorateRow(decorateList(decorateMenu(el)))) }
 		;['jsx', 'jsxs'].forEach(function (name) {
 			if (runtime && typeof runtime[name] === 'function') cleanup(valenced.patcher.after(runtime, name, both))
 		})
@@ -951,6 +1082,8 @@
 				h(
 					Design.TableRowGroup,
 					{ title: 'Status' },
+					h(Design.TableSwitchRow, { key: 'strip', label: 'Pinned strip above the DM tab', subLabel: 'Shows your pinned chats at the top of Messages, grouped in your sections. Tap to open, hold for options, tap a heading to fold.', value: stripEnabled(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripOn: !!v }); changed() } catch (e) {} } }),
+					h(Design.TableRow, { key: 'stripstatus', label: 'Pinned strip', subLabel: (status.strip ? 'Shown ' + status.strip + ' time(s)' : 'Not shown yet. Open the Messages tab.') + (status.lastOpen ? ' · last tap: ' + status.lastOpen : '') + ' · screens seen: ' + (status.screens.join(', ') || 'none') }),
 					h(Design.TableRow, { key: 'store', label: 'DM list order', subLabel: status.store + (status.hooks.length ? ' · hooked: ' + status.hooks.join(', ') : ' · not hooked') + ' · reordered ' + status.reordered + ' time(s)' }),
 					h(Design.TableRow, { key: 'list', label: 'Section headers in the list', subLabel: status.headers ? 'Working (' + (status.headerLists + status.rowHeaders) + ' time(s))' : 'Not seen yet. Pin a chat into a section, then open the DM tab. Lists with chats seen: ' + status.lists }),
 					h(Design.TableRow, { key: 'lk', label: 'List props I reordered', subLabel: status.listKey.length ? status.listKey.join(', ') : 'none yet' }),
