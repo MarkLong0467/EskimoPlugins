@@ -31,7 +31,7 @@ function load(initial) {
 		useRef: (i) => { const h = (hooks[cur] = hooks[cur] || []); const k = hi++; if (!(k in h)) h[k] = { current: i }; return h[k] },
 		useEffect: () => {},
 		createElement: (t, p, ...c) => ({ type: t, props: { ...p, children: c.length > 1 ? c : c[0] }, key: p && p.key }),
-		cloneElement: (e, p) => ({ ...e, props: { ...e.props, ...p } }),
+		cloneElement: (e, p, ...c) => ({ ...e, props: { ...e.props, ...p, ...(c.length ? { children: c.length > 1 ? c : c[0] } : {}) } }),
 	}
 	const runtime = { jsx: (t, p) => ({ type: t, props: p }), jsxs: (t, p) => ({ type: t, props: p }) }
 	global.valenced = {
@@ -129,7 +129,7 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 	const mk = () => Object.keys(LONG).map((k) => ({ channelId: LONG[k], lastMessageId: '1', isFavorite: false, isRequest: false }))
 	function MessagesFastestList() {}
 	function MessagesItemChannelFast() {}
-	const a = load({ sectionsJson: secs, assignJson: asg })
+	const a = load({ sectionsJson: secs, assignJson: asg, hdStyle2: 'rows' })
 	const el = a.runtime.jsx(MessagesFastestList, { data: { channels: mk(), sections: [0, 1, 6] } })
 	const ids = el.props.data.channels.map((c) => SHORT[c.channelId] || c.channelId.replace('pin-head:', 'H:'))
 	check('a heading row goes in front of each section, then the rest', ids.join() === 'H:s1,c2,H:s2,c4,H:rest,c1,c3,c5,g1', ids.join())
@@ -138,10 +138,10 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 	check('the list asking for a heading row gets the heading', hrow.type.name === 'ListHeader')
 	a.setCur('hd'); const ht = texts(expand(hrow.type(hrow.props)))
 	check('the heading shows the section name and count', ht.join('').indexOf('BOYS') >= 0 && ht.join('').indexOf('1') >= 0, ht.join('|'))
-	const hs = (o) => { const x = load(Object.assign({ sectionsJson: secs, assignJson: asg }, o)); const r = x.runtime.jsx(MessagesItemChannelFast, { channelId: 'pin-head:s1', row: 0 }); x.setCur('s'); return r.type(r.props).props.style }
+	const hs = (o) => { const x = load(Object.assign({ sectionsJson: secs, assignJson: asg, hdStyle2: 'rows' }, o)); const r = x.runtime.jsx(MessagesItemChannelFast, { channelId: 'pin-head:s1', row: 0 }); x.setCur('s'); return r.type(r.props).props.style }
 	check('a heading is as tall as a chat row and has a little room above its text', hs({}).height === 55 && hs({}).paddingTop === 29, JSON.stringify(hs({})))
 	check('more space above a heading means more padding above its text', hs({ hdAbove2: 50 }).paddingTop === 39 && hs({ hdAbove2: 11 }).paddingTop === 0)
-	const sx = load({ sectionsJson: secs, assignJson: asg }); sx.setCur('sp'); const tree = expand(sx.p.SettingsComponent({ api: { jsonStorage: sx.json } }))
+	const sx = load({ sectionsJson: secs, assignJson: asg, hdStyle2: 'rows' }); sx.setCur('sp'); const tree = expand(sx.p.SettingsComponent({ api: { jsonStorage: sx.json } }))
 	const all = []; const walkS = (n) => { if (Array.isArray(n)) return n.forEach(walkS); if (!n || typeof n !== 'object') return; all.push(n); walkS(n.props && n.props.children) }
 	walkS(tree)
 	const plus = all.filter((n) => n.props && n.props.text === '+')
@@ -152,7 +152,7 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 	check('the settings page shows the summary, the preview heading and the sections', /2 pinned chats in 2 sections/.test(txt) && /Heading position/.test(txt) && ['Sections', 'Pinned', 'Options', 'Diagnostics'].every((g) => all.some((n) => n.props && n.props.title === g)), txt.slice(0, 120))
 	// rows are never moved: the list clips them (1.13.0 hid everything)
 	function PressableHighlight() {}
-	const rows = load({ sectionsJson: secs, assignJson: asg })
+	const rows = load({ sectionsJson: secs, assignJson: asg, hdStyle2: 'rows' })
 	rows.runtime.jsx(MessagesFastestList, { data: { channels: mk(), sections: [0, 1, 6] } })
 	const row = rows.runtime.jsx(PressableHighlight, { onLongPress: () => {}, children: { type: 'V', props: { channelId: LONG.c1 } }, style: { height: 55 } })
 	check('a plain chat row keeps its own style (no shift)', JSON.stringify(row.props.style) === '{"height":55}', JSON.stringify(row.props.style))
@@ -161,20 +161,47 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 	check('the sections page still opens the edit sheet', true)
 	const normal = a.runtime.jsx(MessagesItemChannelFast, { channelId: LONG.c1, row: 3 })
 	check('a normal chat row is left alone', normal.type === MessagesItemChannelFast)
-	const folded = load({ sectionsJson: secs.replace('"color":"#00d4ff"', '"color":"#00d4ff","collapsed":true'), assignJson: asg })
+	const folded = load({ sectionsJson: secs.replace('"color":"#00d4ff"', '"color":"#00d4ff","collapsed":true'), assignJson: asg, hdStyle2: 'rows' })
 	const el2 = folded.runtime.jsx(MessagesFastestList, { data: { channels: mk(), sections: [0, 1, 6] } })
 	const ids2 = el2.props.data.channels.map((c) => SHORT[c.channelId] || c.channelId.replace('pin-head:', 'H:'))
 	check('a folded section keeps its heading and hides its chats', ids2.join() === 'H:s1,H:s2,c4,H:rest,c1,c3,c5,g1' && el2.props.data.sections.join() === '0,1,8', ids2.join() + ' / ' + el2.props.data.sections.join())
-	const odd = load({ sectionsJson: secs, assignJson: asg })
+	const odd = load({ sectionsJson: secs, assignJson: asg, hdStyle2: 'rows' })
 	const el3 = odd.runtime.jsx(MessagesFastestList, { data: { channels: mk(), sections: [0, 1, 99] } })
 	check('if the section sizes do not match, no headings are added (still pinned first)', el3.props.data.channels.length === 6 && short(el3.props.data.channels.map((c) => c.channelId)).startsWith('c2,c4'), el3.props.data.channels.length)
-	const off = load({ sectionsJson: secs, assignJson: asg, hdOff: true })
+	const off = load({ sectionsJson: secs, assignJson: asg, hdOff: true, hdStyle2: 'rows' })
 	const el4 = off.runtime.jsx(MessagesFastestList, { data: { channels: mk(), sections: [0, 1, 6] } })
 	check('headings can be switched off', el4.props.data.channels.length === 6)
-	const crashed = load({ sectionsJson: secs, assignJson: asg, hdTrial: true })
+	const crashed = load({ sectionsJson: secs, assignJson: asg, hdTrial: true, hdStyle2: 'rows' })
 	const el5 = crashed.runtime.jsx(MessagesFastestList, { data: { channels: mk(), sections: [0, 1, 6] } })
 	check('if the app died while headings were new, they come back off', el5.props.data.channels.length === 6 && crashed.data.cache.hdOff === true)
 }
+
+
+// 4d. Compact headings (the default): labels inside the chats, no extra rows
+{
+		const secs = '[{"id":"s1","name":"Boys","color":"#00d4ff"},{"id":"s2","name":"Girls","color":"#ff69b4"}]'
+		const mk = () => Object.keys(LONG).map((k) => ({ channelId: LONG[k], lastMessageId: '1', isFavorite: false, isRequest: false }))
+		function MessagesFastestList() {}
+		const asg2 = JSON.stringify({ [LONG.c2]: 's1', [LONG.c4]: 's1' })
+		const c = load({ sectionsJson: secs, assignJson: asg2 })
+		const elc = c.runtime.jsx(MessagesFastestList, { data: { channels: mk(), sections: [0, 1, 6] } })
+		check('compact: no heading rows, same number of rows', elc.props.data.channels.length === 6 && elc.props.data.sections.join() === '0,1,6' && short(elc.props.data.channels.map((x) => x.channelId)) === 'c2,c4,c1,c3,c5,g1', short(elc.props.data.channels.map((x) => x.channelId)))
+		function PressableHighlight() {}
+		const rowFor = (id) => c.runtime.jsx(PressableHighlight, { onLongPress: () => {}, children: { type: 'V', props: { channelId: LONG[id] } }, style: { height: 55 } })
+		const kidsOf = (el) => (Array.isArray(el.props.children) ? el.props.children : [el.props.children])
+		const label = (el) => kidsOf(el).filter((k) => k && k.type && k.type.name === 'CompactLabel').map((k) => k.props.kind)
+		check('compact: the first chat of a section carries its label', label(rowFor('c2')).join() === 's1', label(rowFor('c2')).join())
+		check('compact: the second chat of the same section has none', label(rowFor('c4')).length === 0)
+		check('compact: the first normal chat carries the Direct messages label', label(rowFor('c1')).join() === 'rest', label(rowFor('c1')).join())
+		check('compact: other chats have no label', label(rowFor('c3')).length === 0)
+		check('compact: the row keeps its own style (no shift)', JSON.stringify(rowFor('c2').props.style) === '{"height":55}')
+		const lab = kidsOf(rowFor('c2')).filter((k) => k.type && k.type.name === 'CompactLabel')[0]
+		c.setCur('lab'); const ltxt = texts(expand(lab.type(lab.props))).join('')
+		check('compact: the label shows the section name and count', ltxt.indexOf('S1') < 0 && ltxt.toUpperCase().indexOf('BOYS') >= 0 && ltxt.indexOf('2') >= 0, ltxt)
+		const f = load({ sectionsJson: secs.replace('"color":"#00d4ff"', '"color":"#00d4ff","collapsed":true'), assignJson: asg2 })
+		const elf = f.runtime.jsx(MessagesFastestList, { data: { channels: mk(), sections: [0, 1, 6] } })
+		check('compact: a folded section keeps its first chat and hides the rest', short(elf.props.data.channels.map((x) => x.channelId)) === 'c2,c1,c3,c5,g1' && elf.props.data.sections.join() === '0,1,5', short(elf.props.data.channels.map((x) => x.channelId)))
+	}
 
 // 5. The list pieces and the report
 {

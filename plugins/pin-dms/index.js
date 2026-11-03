@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.13.2'
+	var VERSION = '1.14.0'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -988,6 +988,71 @@
 		if (Array.isArray(style)) return style.concat([t])
 		return style ? [style, t] : t
 	}
+	/** 'compact' (default): the heading is a small label inside the first chat of each section, so no extra rows. 'rows': a full heading row. */
+	function compactOn() {
+		try { return !storage || !storage.cache || storage.cache.hdStyle2 !== 'rows' } catch (e) { return true }
+	}
+	/** Compact mode: a folded section keeps its first chat (it carries the label) and hides the rest. Null when nothing changes. */
+	function withCompactFold(list, d) {
+		var state = read()
+		if (!state.sections.some(function (x) { return x.collapsed }) || !hdOn() || !Array.isArray(d.sections)) return null
+		var at = -1
+		for (var i = 0; i < d.sections.length; i++) { if (d.sections[i] === d.channels.length && typeof d.sections[i] === 'number') { at = i; break } }
+		if (at < 0) return null
+		var seen = {}
+		var out = list.filter(function (entry) {
+			var id = chatId(entry)
+			if (!id || state.pins.indexOf(id) < 0) return true
+			var sec = sectionOf(state, id)
+			if (!sec || !sec.collapsed) return true
+			if (seen[sec.id]) return false
+			seen[sec.id] = true
+			return true
+		})
+		if (out.length === list.length) return null
+		var sections = d.sections.slice()
+		sections[at] = sections[at] + (out.length - d.channels.length)
+		return { channels: out, sections: sections }
+	}
+	/** Which row carries which label: the first chat of each section, the first loose pin, the first normal chat. */
+	function computeLabels(list) {
+		var state = read()
+		var labels = {}
+		var seen = {}
+		var anyPinned = false
+		var restDone = false
+		var looseDone = false
+		var sectioned = list.some(function (e) { var id = chatId(e); return id && state.pins.indexOf(id) >= 0 && sectionOf(state, id) })
+		list.forEach(function (entry) {
+			var id = chatId(entry)
+			if (!id) return
+			var pinned = state.pins.indexOf(id) >= 0
+			if (pinned) {
+				anyPinned = true
+				var sec = sectionOf(state, id)
+				if (sec && !seen[sec.id]) { seen[sec.id] = true; labels[id] = sec.id }
+				else if (!sec && sectioned && !looseDone) { looseDone = true; labels[id] = 'loose' }
+			} else if (anyPinned && !restDone) { restDone = true; labels[id] = 'rest' }
+		})
+		return labels
+	}
+	function CompactLabel(props) {
+		var RN = valenced.react.ReactNative
+		var Design = valenced.discord.design.Design
+		var state = read()
+		var kind = props.kind
+		var sec = state.sections.filter(function (x) { return x.id === kind })[0]
+		var name = sec ? sec.name : kind === 'loose' ? 'Pinned' : 'Direct messages'
+		var color = sec ? sec.color : '#80848e'
+		var count = sec ? state.pins.filter(function (id) { return state.assign[id] === sec.id }).length : 0
+		var label = (sec ? (sec.collapsed ? '▸ ' : '▾ ') : '') + String(name).toUpperCase() + (sec ? '  ' + count : '')
+		return h(
+			RN.Pressable,
+			{ onPress: sec ? function () { toggleFold(sec.id) } : undefined, onLongPress: sec ? function () { openEditSection(sec) } : undefined, hitSlop: { top: 8, bottom: 6, left: 8, right: 8 }, style: { position: 'absolute', top: 0, left: 16, right: 16, height: 12, flexDirection: 'row', alignItems: 'center', gap: 6 } },
+			h(Design.Text, { variant: 'text-xs/bold', style: { color: color, fontSize: 9, lineHeight: 11 } }, label),
+			h(RN.View, { style: { flex: 1, height: 1, backgroundColor: color, opacity: sec ? 0.5 : 0.3 } }),
+		)
+	}
 	/** How many heading rows sit above each row (a heading counts the ones before it, a chat counts the one above it too). */
 	function positionMap(channels) {
 		var map = {}
@@ -1058,15 +1123,19 @@
 				if (!(fastCache && fastCache.orig === d.channels && fastCache.key === stateKey)) {
 					var orderedCh = reorderRows(d.channels)
 					var withHd = null
-					try { withHd = withListHeaders(orderedCh, d) } catch (e) { withHd = null }
-					if (withHd) armHeadingTrial()
-					fastCache = { orig: d.channels, key: stateKey, data: withHd ? Object.assign({}, d, withHd) : orderedCh === d.channels ? d : Object.assign({}, d, { channels: orderedCh }), moved: !!withHd || orderedCh !== d.channels, headings: !!withHd, pos: withHd ? positionMap(withHd.channels) : null }
+					var compact = compactOn()
+					try { withHd = compact ? withCompactFold(orderedCh, d) : withListHeaders(orderedCh, d) } catch (e) { withHd = null }
+					var finalList = withHd ? withHd.channels : orderedCh
+					var labels = null
+					try { labels = compact && hdOn() && state.sections.length ? computeLabels(finalList) : null } catch (e) { labels = null }
+					if (withHd || labels) armHeadingTrial()
+					fastCache = { orig: d.channels, key: stateKey, data: withHd ? Object.assign({}, d, withHd) : orderedCh === d.channels ? d : Object.assign({}, d, { channels: orderedCh }), moved: !!withHd || orderedCh !== d.channels, headings: !!withHd && !compact, labels: labels, pos: withHd && !compact ? positionMap(withHd.channels) : null }
 				}
 				if (fastCache.moved) {
 					next.data = fastCache.data
 					any = true
 					if (status.listKey.indexOf('fast.data.channels') < 0) { status.listKey.push('fast.data.channels'); changed() }
-					if (fastCache.headings && status.listKey.indexOf('headings') < 0) { status.listKey.push('headings'); changed() }
+					if ((fastCache.headings || fastCache.labels) && status.listKey.indexOf('headings') < 0) { status.listKey.push('headings'); changed() }
 				}
 			}
 			keys.forEach(function (k) {
@@ -1304,11 +1373,12 @@
 			var React = valenced.react.React
 			var RN = valenced.react.ReactNative
 			var Design = valenced.discord.design.Design
-			var headingsOn = hdOn() && fastCache && fastCache.headings && fastCache.pos
-			var dy = headingsOn && fastCache.pos[id] ? gapShift() * fastCache.pos[id] : 0
+			var headingsOn = hdOn() && fastCache && (fastCache.headings || fastCache.labels)
+			var lab = hdOn() && fastCache && fastCache.labels ? fastCache.labels[id] : undefined
+			var dy = 0
 			var pinned = state.pins.indexOf(id) >= 0
 			var section = pinned ? sectionOf(state, id) : undefined
-			if (!section && !dy) return result
+			if (!section && !lab) return result
 			if (!Array.isArray(props.children) && typeof props.children === 'function') return result
 			var extra = []
 			if (section) {
@@ -1323,9 +1393,9 @@
 					))
 				}
 			}
+			if (lab) extra.push(React.createElement(CompactLabel, { key: 'pin-label', kind: lab }))
 			var kids = Array.isArray(props.children) ? props.children : [props.children]
-			var patch = dy ? { style: shiftStyle(props.style, dy) } : {}
-			return React.cloneElement(result, patch, kids.concat(extra))
+			return React.cloneElement(result, {}, kids.concat(extra))
 		} catch (e) {
 			return result
 		}
@@ -1457,6 +1527,20 @@
 				h(RN.View, { style: { position: 'absolute', left: 58, top: ROW_PAD + 18, width: 150, height: 6, borderRadius: 3, backgroundColor: '#4e5058' } }),
 			)
 		}
+		if (compactOn()) {
+			return h(
+				RN.View,
+				{ style: { height: ROW * 2, borderRadius: 14, backgroundColor: '#1e1f22', overflow: 'hidden' } },
+				fakeRow('a', 0, false),
+				fakeRow('b', ROW, true),
+				h(
+					RN.View,
+					{ key: 'l', style: { position: 'absolute', top: ROW, left: 16, right: 16, height: 12, flexDirection: 'row', alignItems: 'center', gap: 6 } },
+					h(Design.Text, { variant: 'text-xs/bold', style: { color: color, fontSize: 9, lineHeight: 11 } }, '▾ ' + String(name).toUpperCase() + '  1'),
+					h(RN.View, { style: { flex: 1, height: 1, backgroundColor: color, opacity: 0.5 } }),
+				),
+			)
+		}
 		return h(
 			RN.View,
 			{ style: { height: rowTop2 + ROW, borderRadius: 14, backgroundColor: '#1e1f22', overflow: 'hidden' } },
@@ -1574,15 +1658,18 @@
 				h(
 					Card,
 					null,
-					h(Design.Text, { variant: 'heading-md/bold' }, 'Heading position'),
-					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'The picture shows a heading between two chats. Change the numbers and watch the gaps.'),
+					h(Design.Text, { variant: 'heading-md/bold' }, 'Section headings'),
+					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, compactOn()
+						? 'Compact: a small coloured label sits on the first chat of each section, with no extra rows. Tap the label to fold, hold it to edit.'
+						: 'Rows: a full heading row in front of each section. Press − or + to move the text inside the row.'),
 					h(HeadingPreview, null),
-					h(Stepper, { label: 'Heading position', sub: 'Plus puts more room above the heading and less below it. Minus does the opposite.', value: gapAbove(), onMinus: function () { setGap('hdAbove2', gapAbove() - 4, 11, 55) }, onPlus: function () { setGap('hdAbove2', gapAbove() + 4, 11, 55) } }),
-					h(Design.Button, { text: 'Reset spacing', variant: 'secondary', size: 'sm', onPress: resetGaps }),
+					compactOn() ? null : h(Stepper, { label: 'Heading position', sub: 'Plus puts more room above the heading and less below it. Minus does the opposite.', value: gapAbove(), onMinus: function () { setGap('hdAbove2', gapAbove() - 4, 11, 55) }, onPlus: function () { setGap('hdAbove2', gapAbove() + 4, 11, 55) } }),
+					compactOn() ? null : h(Design.Button, { text: 'Reset position', variant: 'secondary', size: 'sm', onPress: resetGaps }),
 				),
 				h(
 					Design.TableRowGroup,
 					{ title: 'Options' },
+					h(Design.TableSwitchRow, { key: 'compact', label: 'Compact headings', subLabel: 'Small labels inside the chats, no extra rows. Turn off for full heading rows.', value: compactOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { hdStyle2: v ? 'compact' : 'rows' }); fastCache = null; refreshList(); changed() } catch (e) {} } }),
 					h(Design.TableSwitchRow, { key: 'headings', label: 'Section headings in the list', subLabel: 'A heading row with fold in front of each section. If the app ever fails to start with it, it turns itself off.', value: hdOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { hdOff: !v, hdTrial: false }); fastCache = null; refreshList() } catch (e) {} } }),
 				),
 				h(Design.TextInput, { label: 'Find a chat to pin', placeholder: 'Search your DMs', size: 'md', value: search[0], onChange: function (v) { search[1](v) } }),
