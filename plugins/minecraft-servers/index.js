@@ -22,6 +22,9 @@
 		alerts: false,
 		alertSeconds: 120,
 		historyLength: 40,
+		pingSource: 'phone',
+		pingSamples: 4,
+		pingFactor: 2,
 	}
 	var SHEET_KEY = 'marklong.minecraft-servers.panel'
 	var GREEN = '#23a55a'
@@ -306,6 +309,99 @@
 		toast(server.name + (data.online ? ' is online now (' + data.players.online + ' players)' : ' went offline'))
 	}
 
+	// ======================================================================================
+	// Ping from your own phone
+	// ======================================================================================
+	// A phone cannot open a plain connection to a Minecraft server, but it can start a secure web request to its address.
+	// The server answers that with a close, and the time to that close is two round trips (connect, send, close).
+	// So the ping is that time divided by two (the "factor", which you can calibrate in the settings).
+	function nowMs() { try { return typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now() } catch (e) { return Date.now() } }
+
+	function fetchTimed(url, ms) {
+		return new Promise(function (resolve) {
+			var done = false
+			var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null
+			var t0 = nowMs()
+			var timer = setTimeout(function () {
+				if (done) return
+				done = true
+				try { if (ctl) ctl.abort() } catch (e) {}
+				resolve({ dt: ms, timeout: true })
+			}, ms)
+			try {
+				fetch(url, { method: 'GET', signal: ctl ? ctl.signal : undefined }).then(
+					function () { if (done) return; done = true; clearTimeout(timer); resolve({ dt: nowMs() - t0, answered: true }) },
+					function (e) { if (done) return; done = true; clearTimeout(timer); resolve({ dt: nowMs() - t0, error: String((e && e.message) || e) }) },
+				)
+			} catch (e) {
+				done = true
+				clearTimeout(timer)
+				resolve({ dt: 0, error: String((e && e.message) || e) })
+			}
+		})
+	}
+	function median(list) {
+		var a = list.slice().sort(function (x, y) { return x - y })
+		var n = a.length
+		return n ? (n % 2 ? a[(n - 1) / 2] : (a[n / 2 - 1] + a[n / 2]) / 2) : null
+	}
+	function pingFactor() {
+		var f = Number(setting('pingFactor'))
+		return f >= 0.5 && f <= 6 ? f : 2
+	}
+	/** Where to measure: the real address behind the name (from the status site), as an IP when there is one. */
+	function pingTarget(server, data) {
+		var host = server.address
+		var port = server.port || 25565
+		if (data) {
+			if (data.port) port = data.port
+			var m = /^(.*):(\d+)$/.exec(data.srv || '')
+			if (m) { host = m[1]; port = Number(m[2]) }
+			if (data.ip && /^\d{1,3}(\.\d{1,3}){3}$/.test(data.ip) && !m) host = data.ip
+		}
+		return { host: host, port: port }
+	}
+	/** Resolves to { ms, raw, n } or { unsupported: true } or null. */
+	function measureLocal(server, data) {
+		if (server.edition === 'bedrock') return Promise.resolve(null)
+		var t = pingTarget(server, data)
+		var want = Math.max(2, Math.min(8, Number(setting('pingSamples')) || 4))
+		var tries = want + 1 // the first one also pays for finding the address, so it is thrown away
+		var good = []
+		var unsupported = false
+		function one(i) {
+			if (i >= tries || unsupported) return Promise.resolve()
+			return fetchTimed('https://' + t.host + ':' + t.port + '/?p=' + Math.floor(Math.random() * 1e9), 3500).then(function (r) {
+				if (r.error && /cleartext|not permitted|disallowed/i.test(r.error)) unsupported = true
+				else if (i > 0 && !r.timeout && !r.answered && r.dt >= 2) good.push(r.dt)
+				return one(i + 1)
+			})
+		}
+		return one(0).then(function () {
+			if (unsupported) return { unsupported: true }
+			if (good.length < 2) return null
+			var raw = median(good)
+			return { ms: Math.max(1, Math.round(raw / pingFactor())), raw: raw, n: good.length }
+		})
+	}
+	var lastRaw = { raw: null, name: '' }
+
+	/** Taps twice to delete: the first tap asks, the second (within 4 seconds) does it. */
+	var pendingDelete = { id: '', at: 0 }
+	function askDelete(s, after) {
+		if (pendingDelete.id === s.id && Date.now() - pendingDelete.at < 4000) {
+			pendingDelete = { id: '', at: 0 }
+			removeServer(s.id)
+			toast('Deleted ' + s.name)
+			if (after) after()
+			return true
+		}
+		pendingDelete = { id: s.id, at: Date.now() }
+		toast('Tap again to delete ' + s.name)
+		changed()
+		return false
+	}
+
 	/** Checks one server, unless a recent answer is good enough. */
 	function check(server, force) {
 		var entry = results[server.id]
@@ -318,9 +414,35 @@
 			function (data) {
 				delete inflight[server.id]
 				results[server.id] = { state: 'done', data: data, at: Date.now() }
-				try { record(server, data); checkAlerts(server, data) } catch (e) {}
+				var measure = setting('pingSource') !== 'site' && !data.error && data.online && server.edition !== 'bedrock'
+				if (!measure) {
+					if (!data.error && typeof data.ping === 'number') data.pingFrom = 'site'
+					try { record(server, data); checkAlerts(server, data) } catch (e) {}
+					changed()
+					return data
+				}
+				// Show the answer now; the ping from this phone follows a moment later.
+				data.providerPing = data.ping
+				data.ping = null
+				data.pingFrom = 'measuring'
+				try { checkAlerts(server, data) } catch (e) {}
 				changed()
-				return data
+				return measureLocal(server, data).then(
+					function (p) {
+						if (p && !p.unsupported) { data.ping = p.ms; data.pingFrom = 'phone'; data.rawPing = p.raw; lastRaw = { raw: p.raw, name: server.name } }
+						else { data.ping = typeof data.providerPing === 'number' ? data.providerPing : null; data.pingFrom = typeof data.providerPing === 'number' ? 'site' : 'none'; if (p && p.unsupported) data.pingNote = 'This phone does not allow the check' }
+						try { record(server, data) } catch (e) {}
+						changed()
+						return data
+					},
+					function () {
+						data.ping = typeof data.providerPing === 'number' ? data.providerPing : null
+						data.pingFrom = data.ping === null ? 'none' : 'site'
+						try { record(server, data) } catch (e) {}
+						changed()
+						return data
+					},
+				)
 			},
 			function (e) {
 				delete inflight[server.id]
@@ -639,6 +761,7 @@
 				row('Send status to chat', 'Posts a short summary', function () { sendToChat(s, d) }),
 				row(s.favorite ? 'Remove from favorites' : 'Add to favorites', 'Favorites can be shown first', function () { updateServer(s.id, { favorite: !s.favorite }); props.go({ name: 'list' }) }),
 				row('Edit', 'Name, address and options', function () { props.go({ name: 'edit', id: s.id }) }),
+				row(pendingDelete.id === s.id && Date.now() - pendingDelete.at < 4000 ? 'Tap again to delete' : 'Delete server', 'Removes it and its history', function () { askDelete(s, function () { props.go({ name: 'list' }) }) }),
 			]),
 		)
 	}
@@ -726,7 +849,7 @@
 		var h2 = stats(s)
 		var port = d && !d.error && d.port ? d.port : s.port || (s.edition === 'bedrock' ? 19132 : 25565)
 		var fill = online && d.players.max ? Math.min(100, Math.round((d.players.online / d.players.max) * 100)) : 0
-		return h(
+		var content = h(
 			RN.View,
 			{ style: { gap: 14 } },
 			h(Button, { text: '‹ All servers', onPress: function () { props.go({ name: 'list' }) } }),
@@ -754,7 +877,7 @@
 				RN.View,
 				{ style: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 } },
 				h(Stat, { key: 'players', label: 'Players', value: online ? d.players.online + (d.players.max ? ' / ' + d.players.max : '') : '–', color: online ? undefined : GRAY }, online && d.players.max ? h(RN.View, { style: { height: 6, borderRadius: 3, backgroundColor: raised(), marginTop: 6, overflow: 'hidden' } }, h(RN.View, { style: { width: fill + '%', height: 6, backgroundColor: fill > 85 ? AMBER : GREEN } })) : null),
-				h(Stat, { key: 'ping', label: 'Ping', value: online && d.ping !== null ? d.ping + ' ms' : '–', color: online ? pingColor(d.ping) : GRAY, sub: online && d.ping === null ? 'This site did not measure it' : undefined }),
+				h(Stat, { key: 'ping', label: 'Ping', value: online && d.ping !== null ? d.ping + ' ms' : online && d.pingFrom === 'measuring' ? '…' : '–', color: online ? pingColor(d.ping) : GRAY, sub: online ? (d.pingFrom === 'phone' ? 'Measured from your phone' : d.pingFrom === 'site' ? 'From the status site, not your phone' : d.pingFrom === 'measuring' ? 'Measuring from your phone' : d.pingNote || 'Not available') : undefined }),
 				h(Stat, { key: 'version', label: 'Version', value: online && d.version ? d.version : '–', sub: online && d.protocol !== null && d.protocol !== undefined ? 'Protocol ' + d.protocol : undefined }),
 				h(Stat, { key: 'software', label: 'Software', value: online && d.software ? d.software : online ? 'Not shared' : '–', sub: online ? (s.edition === 'bedrock' ? 'Bedrock' : 'Java') + (d.gamemode ? ' · ' + d.gamemode : '') : undefined }),
 				h(Stat, { key: 'ip', label: 'IP address', value: d && d.ip ? d.ip : s.address, sub: d && d.srv ? 'Real address ' + d.srv : d && d.ip ? 'Behind ' + s.address : 'Address you saved' }),
@@ -793,17 +916,20 @@
 					: null,
 			),
 			r && r.at ? T({ variant: 'text-xs/medium', color: 'text-muted', style: { textAlign: 'center' } }, 'Checked ' + ago(r.at) + (d && d.via && d.via.length ? ' via ' + d.via.join(' + ') : '')) : null,
-			h(Row2, null, [
+			h2.checks ? h(Button, { text: 'Clear this history', onPress: function () { var map = history(); delete map[s.id]; saveHistory(map); changed() } }) : null,
+		)
+		var asking = pendingDelete.id === s.id && Date.now() - pendingDelete.at < 4000
+		var footer = [
+			h(Row2, { key: 'a' }, [
 				h(Button, { key: 'r', text: loading ? 'Checking…' : 'Refresh', loading: loading, variant: 'primary', onPress: function () { check(s, true) } }),
-				h(Button, { key: 'c', text: 'Copy address', onPress: function () { copy(addressText(s), 'Address') } }),
-			]),
-			h(Row2, null, [
-				h(Button, { key: 's', text: 'Send to chat', onPress: function () { sendToChat(s, d) } }),
 				h(Button, { key: 'e', text: 'Edit', onPress: function () { props.go({ name: 'edit', id: s.id }) } }),
 			]),
-			h2.checks ? h(Button, { text: 'Clear this history', onPress: function () { var map = history(); delete map[s.id]; saveHistory(map); changed() } }) : null,
-			h(Button, { text: confirm[0] ? 'Tap again to delete' : 'Delete server', variant: 'destructive', onPress: function () { if (confirm[0]) { removeServer(s.id); props.go({ name: 'list' }) } else { confirm[1](true); setTimeout(function () { confirm[1](false) }, 3000) } } }),
-		)
+			h(Row2, { key: 'b' }, [
+				h(Button, { key: 's', text: 'Send to chat', onPress: function () { sendToChat(s, d) } }),
+				h(Button, { key: 'd', text: asking ? 'Tap again to delete' : 'Delete', variant: 'destructive', onPress: function () { askDelete(s, function () { props.go({ name: 'list' }) }) } }),
+			]),
+		]
+		return h(SheetBody, { footer: footer }, content)
 	}
 
 	// ======================================================================================
@@ -860,6 +986,7 @@
 				h(Button, { key: 'cancel', text: 'Cancel', onPress: function () { props.go(existing ? { name: 'detail', id: existing.id } : { name: 'list' }) } }),
 				h(Button, { key: 'save', text: existing ? 'Save changes' : 'Save server', variant: 'primary', onPress: doSave }),
 			]),
+			existing ? h(Button, { key: 'del', text: pendingDelete.id === existing.id && Date.now() - pendingDelete.at < 4000 ? 'Tap again to delete' : 'Delete server', variant: 'destructive', onPress: function () { askDelete(existing, function () { props.go({ name: 'list' }) }) } }) : null,
 		]
 		return h(
 			SheetBody,
@@ -917,7 +1044,7 @@
 		var v = view[0]
 		function go(next) { view[1](next) }
 		var body = v.name === 'detail' ? h(DetailView, { id: v.id, go: go }) : v.name === 'edit' ? h(EditView, { id: v.id, go: go }) : v.name === 'menu' ? h(MenuView, { id: v.id, go: go }) : h(ListView, { go: go })
-		return v.name === 'edit' ? body : h(SheetBody, null, body)
+		return v.name === 'edit' || v.name === 'detail' ? body : h(SheetBody, null, body)
 	}
 
 	/** A sheet whose buttons can stay at the bottom: `footer` is not part of the scrolling part. */
@@ -928,7 +1055,7 @@
 		return h(
 			Design.ActionSheet,
 			null,
-			h(RN.ScrollView, { style: { maxHeight: Math.round(size.height * (props.footer ? 0.7 : 0.88)) }, contentContainerStyle: { padding: 16, paddingBottom: props.footer ? 12 : 28 }, keyboardShouldPersistTaps: 'handled' }, props.children),
+			h(RN.ScrollView, { style: { maxHeight: Math.round(size.height * (props.footer ? 0.66 : 0.8)) }, contentContainerStyle: { padding: 16, paddingBottom: props.footer ? 12 : 28 }, keyboardShouldPersistTaps: 'handled', nestedScrollEnabled: true, scrollEnabled: true, bounces: true, showsVerticalScrollIndicator: true }, props.children),
 			props.footer ? h(RN.View, { style: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 18, gap: 8 } }, props.footer) : null,
 		)
 	}
@@ -1159,6 +1286,7 @@
 		storage = props.api.jsonStorage
 		storage.use()
 		var tick = React.useState(0)
+		var known = React.useState('')
 		React.useEffect(function () {
 			var update = function () { tick[1](function (n) { return n + 1 }) }
 			listeners.push(update)
@@ -1168,7 +1296,7 @@
 		var sum = summary()
 		var current = {
 			provider: setting('provider'), timeout: String(setting('timeout')), cacheSeconds: String(setting('cacheSeconds')), refreshSeconds: String(setting('refreshSeconds')),
-			sort: setting('sort'), placement: setting('placement'), alertSeconds: String(setting('alertSeconds')), historyLength: String(setting('historyLength')),
+			sort: setting('sort'), pingSource: setting('pingSource'), pingSamples: String(setting('pingSamples')), placement: setting('placement'), alertSeconds: String(setting('alertSeconds')), historyLength: String(setting('historyLength')),
 		}
 		function put(key, value) {
 			var patch = {}
@@ -1223,6 +1351,30 @@
 					{ value: 'mcsrvstat', label: 'mcsrvstat.us', subLabel: 'Java and Bedrock. No ping' },
 					{ value: 'minetools', label: 'minetools.eu', subLabel: 'Java only. Gives the ping' },
 				]),
+				radio('Where the ping comes from', 'pingSource', [
+					{ value: 'phone', label: 'Your phone (recommended)', subLabel: 'Measured from your own network, so it matches what you get in the game' },
+					{ value: 'site', label: 'The status site', subLabel: 'Measured from the site\'s computer, which may be far from you' },
+				]),
+				radio('Ping measurements', 'pingSamples', [{ value: '3', label: '3 tries', subLabel: 'Quicker' }, { value: '4', label: '4 tries' }, { value: '6', label: '6 tries', subLabel: 'Steadier' }], true),
+				h(
+					Card,
+					null,
+					T({ variant: 'heading-md/bold' }, 'Ping calibration'),
+					T({ variant: 'text-sm/medium', color: 'text-muted' }, 'The ping is estimated by timing how fast a server closes a connection and dividing by a factor. The factor is now ' + pingFactor().toFixed(1) + '. If the game shows a different ping, type what the game shows and tap Calibrate: the plugin uses its latest measurement to set the factor for you.'),
+					lastRaw.raw ? T({ variant: 'text-xs/medium', color: 'text-muted' }, 'Latest measurement: ' + Math.round(lastRaw.raw) + ' ms (' + lastRaw.name + '), shown as ' + Math.max(1, Math.round(lastRaw.raw / pingFactor())) + ' ms') : T({ variant: 'text-xs/medium', color: 'text-muted' }, 'No measurement yet. Open the list and let a server finish checking.'),
+					h(Design.TextInput, { label: 'Ping the game shows (ms)', placeholder: '80', size: 'md', value: known[0], onChange: function (v) { known[1](String(v).replace(/[^0-9]/g, '')) } }),
+					h(Row2, null, [
+						h(Button, { key: 'cal', text: 'Calibrate', variant: 'primary', onPress: function () {
+							var k = Number(known[0])
+							if (!lastRaw.raw || !k) { toast('Open a server first, then type the ping the game shows'); return }
+							var f = Math.max(0.5, Math.min(6, lastRaw.raw / k))
+							save({ pingFactor: Math.round(f * 100) / 100 })
+							toast('Factor set to ' + f.toFixed(2))
+							changed()
+						} }),
+						h(Button, { key: 'reset', text: 'Reset to 2.0', onPress: function () { save({ pingFactor: 2 }); toast('Factor reset'); changed() } }),
+					]),
+				),
 				radio('Wait for an answer', 'timeout', [{ value: '5', label: '5 seconds' }, { value: '8', label: '8 seconds' }, { value: '12', label: '12 seconds' }, { value: '20', label: '20 seconds' }], true),
 				radio('Keep an answer', 'cacheSeconds', [{ value: '0', label: 'Always check again' }, { value: '20', label: '20 seconds', subLabel: 'Opening the list again right away does not ask again' }, { value: '60', label: '1 minute' }, { value: '300', label: '5 minutes' }], true),
 				radio('While the list is open', 'refreshSeconds', [{ value: '0', label: 'Only when I tap Refresh' }, { value: '15', label: 'Every 15 seconds' }, { value: '30', label: 'Every 30 seconds' }, { value: '60', label: 'Every minute' }], true),
@@ -1270,7 +1422,7 @@
 					Design.TableRowGroup,
 					{ title: 'About' },
 					h(Design.TableRow, { key: 'privacy', label: 'Where the addresses go', subLabel: 'A phone cannot talk to a Minecraft server directly, so the addresses you save are sent to the status site you chose above, which asks the server for you.' }),
-					h(Design.TableRow, { key: 'ping', label: 'About the ping', subLabel: 'The ping comes from minetools.eu, measured from its computer to the server, not from your phone. Other sites do not give a ping.' }),
+					h(Design.TableRow, { key: 'ping', label: 'About the ping', subLabel: 'By default the ping is measured from your own phone, so it follows your own network. It is an estimate: it times how fast the server closes a connection and divides by the factor you set under Ping. The status sites measure from their own computers, which are often far away.' }),
 					h(Design.TableRow, { key: 'names', label: 'About player names', subLabel: 'Many servers only share a few names, or none. The count is always right.' }),
 					h(Design.TableRow, { key: 'status', label: 'Where it opens from', subLabel: status.button }),
 					h(Design.TableRow, { key: 'alerts', label: 'Alerts', subLabel: status.alerts }),
