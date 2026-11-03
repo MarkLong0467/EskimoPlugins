@@ -117,7 +117,8 @@ global.fetch=async(u,o)=>{
  // 8. live player count: the status site says 0, the server itself (minetools) says 3
  {
   const base={online:true,host:'live.example.com',port:25565,ip_address:'203.0.113.9',version:{name_raw:'Paper 1.21',name_clean:'Paper 1.21',protocol:767},players:{online:0,max:20,list:[]},motd:{clean:'Hi'},icon:null,retrieved_at:Date.now()-90000};
-  behaviour={'api.mcstatus.io/v2/status/java':base,'api.minetools.eu':{description:'x',latency:40,players:{max:20,online:3,sample:[{id:'1',name:'Steve'},{id:'2',name:'Alex'},{id:'3',name:'Kai'}]},version:{name:'Paper 1.21',protocol:767}}};
+  const fake=[{uuid:'0',name_clean:'§5§l§m---={| §f§lServer§5§l§m|}=---'},{uuid:'f',name_clean:'§aLobby: §e0/100 players online'},{uuid:'g',name_clean:'Has Space'}];
+  behaviour={'api.mcstatus.io/v2/status/java':base,'api.minetools.eu':{description:'x',latency:40,players:{max:20,online:3,sample:[{id:'0',name:'§5§l§m---={| §f§lServer§5§l§m|}=---'},{id:'1',name:'Steve'},{id:'f',name:'§aLobby: §e0/100 players online'},{id:'2',name:'Alex'},{id:'3',name:'Kai'},{id:'g',name:'Has Space'},{id:'1',name:'steve'}]},version:{name:'Paper 1.21',protocol:767}}};
   data.cache.serversJson=JSON.stringify([{id:'l1',name:'Live',address:'live.example.com',port:0,edition:'java'}]);
   data.cache.liveCounts=true;closeAfter=60;
   let t8=await openList();await sleep(500);t8=await draw(el(lastSheet,{}));
@@ -133,6 +134,9 @@ global.fetch=async(u,o)=>{
   check('the detail screen has four tabs', ['Overview','Players','Info','History'].every(l=>tabBtn(d8,l)), texts(d8).join('|').slice(0,200));
   tabBtn(d8,'Players').props.onPress();await sleep(10);d8=await draw(el(lastSheet,{}));
   check('the Players tab lists the names, and nothing else long', ['Steve','Alex','Kai'].every(n=>texts(d8).join('|').indexOf(n)>=0), texts(d8).join('|').slice(0,300));
+  check('lines that are not player names are hidden', ['Lobby','§','Has Space'].every(x=>texts(d8).join('|').indexOf(x)<0), texts(d8).join('|').slice(0,400));
+  check('the Players tab says how many lines were hidden', /3 lines the server puts in its player list are not player names/.test(texts(d8).join('|')), texts(d8).join('|').slice(0,500));
+  check('the same name twice is shown once', (texts(d8).join('|').match(/Steve/gi)||[]).length===1, texts(d8).join('|').slice(0,400));
   check('the Players tab does not repeat the stat boxes', texts(d8).join('|').indexOf('SOFTWARE')<0, '');
   tabBtn(d8,'Info').props.onPress();await sleep(10);d8=await draw(el(lastSheet,{}));
   check('the Info tab shows the address and port', /IP ADDRESS/.test(texts(d8).join('|')) && /PORT/.test(texts(d8).join('|')), texts(d8).join('|').slice(0,200));

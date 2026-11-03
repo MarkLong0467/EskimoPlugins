@@ -250,6 +250,25 @@
 		return out
 	}
 
+	/**
+	 * Many servers put text lines (a title, "Lobby: 0/100 players online") into the player list of the status answer.
+	 * A Java name is 1 to 16 letters, digits or underscores, so anything else (colour codes, spaces, dashes) is not a player.
+	 */
+	function realPlayers(list, edition) {
+		var re = edition === 'bedrock' ? /^[A-Za-z0-9 _.'\-]{1,32}$/ : /^[A-Za-z0-9_]{1,16}$/
+		var seen = {}
+		var out = []
+		var hidden = 0
+		;(list || []).forEach(function (p) {
+			var n = p && typeof p.name === 'string' ? p.name.trim() : ''
+			if (!re.test(n) || n.indexOf('\u00a7') >= 0) { hidden++; return }
+			if (seen[n.toLowerCase()]) return
+			seen[n.toLowerCase()] = 1
+			out.push(p)
+		})
+		return { list: out, hidden: hidden }
+	}
+
 	/** Asks for one server. Resolves to the normalised answer, or { error } when no site could be reached. */
 	function query(server) {
 		var seconds = Number(setting('timeout')) || 8
@@ -424,6 +443,12 @@
 			function (data) {
 				delete inflight[server.id]
 				results[server.id] = { state: 'done', data: data, at: Date.now() }
+				try {
+					if (!data.error && data.players && Array.isArray(data.players.list)) {
+						var rp = realPlayers(data.players.list, server.edition)
+						data.players = Object.assign({}, data.players, { list: rp.list, hidden: rp.hidden })
+					}
+				} catch (e) {}
 				var measure = setting('pingSource') !== 'site' && !data.error && data.online && server.edition !== 'bedrock'
 				if (!measure) {
 					if (!data.error && typeof data.ping === 'number') data.pingFrom = 'site'
@@ -578,13 +603,13 @@
 		var RN = valenced.react.ReactNative
 		return h(
 			RN.ScrollView,
-			{ horizontal: true, showsHorizontalScrollIndicator: false, contentContainerStyle: { gap: 8 } },
+			{ horizontal: true, showsHorizontalScrollIndicator: false, contentContainerStyle: { gap: props.compact ? 6 : 8 } },
 			props.items.map(function (item) {
 				var on = item.value === props.value
 				return h(
 					RN.Pressable,
 					{ key: String(item.value), onPress: function () { props.onChange(item.value) } },
-					h(RN.View, { style: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: on ? BLURPLE : raised() } }, T({ variant: 'text-sm/semibold', style: { color: on ? '#ffffff' : color('TEXT_NORMAL', '#dbdee1') } }, item.label)),
+					h(RN.View, { style: { paddingHorizontal: props.compact ? 11 : 14, paddingVertical: 7, borderRadius: 999, backgroundColor: on ? BLURPLE : raised() } }, T({ variant: 'text-sm/semibold', style: { color: on ? '#ffffff' : color('TEXT_NORMAL', '#dbdee1') } }, item.label)),
 				)
 			}),
 		)
@@ -868,7 +893,7 @@
 				h(
 					RN.View,
 					{ style: { flex: 1, gap: 4 } },
-					T({ variant: 'heading-lg/bold', numberOfLines: 2 }, s.name),
+					T({ variant: String(s.name).length > 20 ? 'heading-md/bold' : 'heading-lg/bold', numberOfLines: 2 }, s.name),
 					h(
 						RN.Pressable,
 						{ onPress: function () { copy(addressText(s), 'Address') } },
@@ -896,6 +921,7 @@
 							? h(PlayerChips, { list: d.players.list })
 							: T({ variant: 'text-sm/medium', color: 'text-muted' }, d.players.online ? 'This server does not share the names of the players.' : 'Nobody is playing right now.'),
 						d.players.list.length && d.players.online > d.players.list.length ? T({ variant: 'text-xs/medium', color: 'text-muted' }, 'Showing ' + d.players.list.length + ' names. The server only lists some of its players.') : null,
+						d.players.hidden ? T({ variant: 'text-xs/medium', color: 'text-muted' }, d.players.hidden + ' line' + (d.players.hidden === 1 ? '' : 's') + ' the server puts in its player list ' + (d.players.hidden === 1 ? 'is' : 'are') + ' not player names, so ' + (d.players.hidden === 1 ? 'it is' : 'they are') + ' hidden.') : null,
 				  )
 				: null
 		var modsCard = 			online && (d.plugins.length || d.mods.length)
@@ -922,7 +948,7 @@
 		var checkedLine = 			r && r.at ? T({ variant: 'text-xs/medium', color: 'text-muted', style: { textAlign: 'center' } }, 'Checked ' + ago(r.at) + (d && d.via && d.via.length ? ' via ' + d.via.join(' + ') : '')) : null
 		var clearButton = 			h2.checks ? h(Button, { text: 'Clear this history', onPress: function () { var map = history(); delete map[s.id]; saveHistory(map); changed() } }) : null
 		var grid = function (list) { return h(RN.View, { style: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 } }, list) }
-		var tabs = h(Segmented, { value: tab, onChange: function (v) { tabState[1](v) }, items: [{ value: 'overview', label: 'Overview' }, { value: 'players', label: online ? 'Players (' + d.players.online + ')' : 'Players' }, { value: 'info', label: 'Info' }, { value: 'history', label: 'History' }] })
+		var tabs = h(Segmented, { compact: true, value: tab, onChange: function (v) { tabState[1](v) }, items: [{ value: 'overview', label: 'Overview' }, { value: 'players', label: 'Players' }, { value: 'info', label: 'Info' }, { value: 'history', label: 'History' }] })
 		var page = tab === 'players'
 			? [playersCard || T({ key: 'np', variant: 'text-sm/medium', color: 'text-muted' }, 'The server is offline, so there is no player list.'), checkedLine]
 			: tab === 'info'
