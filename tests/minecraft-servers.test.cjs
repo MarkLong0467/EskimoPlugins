@@ -181,5 +181,31 @@ global.fetch=async(u,o)=>{
   let hasRefresh=false;walk(st9,n=>{if(n.props&&n.props.title==='While a panel is open')hasRefresh=true});
   check('the settings offer automatic refresh for open panels', hasRefresh);
  }
+ // 10. live status: both sites asked at once, the live one wins
+ {
+  const slow=(obj,ms)=>async()=>{await sleep(ms);return{ok:true,status:200,json:async()=>JSON.parse(JSON.stringify(obj))}};
+  const cached={online:true,host:'live2.example.com',port:25565,ip_address:'203.0.113.77',version:{name_raw:'Paper 1.21',name_clean:'Paper 1.21',protocol:767},players:{online:1,max:50,list:[]},motd:{clean:'Hi'},icon:null,retrieved_at:Date.now()-110000};
+  const liveOn={description:'x',latency:30,players:{max:50,online:9,sample:[{id:'a',name:'Steve'}]},version:{name:'Paper 1.21',protocol:767}};
+  data.cache.serversJson=JSON.stringify([{id:'q1',name:'Quick',address:'live2.example.com',port:0,edition:'java'}]);
+  data.cache.liveCounts=true;data.cache.pingSource='site';closeAfter=20;
+  behaviour={'api.mcstatus.io/v2/status/java':slow(cached,350),'api.minetools.eu':slow(liveOn,350)};
+  let t0=Date.now();
+  let t10=await openList();await sleep(650);t10=await draw(el(lastSheet,{}));
+  const took=Date.now()-t0;
+  check('both sites are asked at the same time (about 350 ms, not 700)', /9\/50/.test(texts(t10).join('|')) && took<900, took+'ms '+texts(t10).join('|').slice(0,200));
+  // the live site says offline while the cached answer still says online
+  const liveOff={error:'timed out'};
+  behaviour={'api.mcstatus.io/v2/status/java':cached,'api.minetools.eu':liveOff};
+  data.cache.pingSource='phone';closeAfter=60;
+  t10=await openList();await sleep(700);t10=await draw(el(lastSheet,{}));
+  check('live offline + cached online is not shown as Online (the phone decides: Reachable)', /Reachable/.test(texts(t10).join('|')) && !/\bOnline\b/.test(texts(t10).join('|')), texts(t10).join('|').slice(0,260));
+  // an SRV name: the live site is asked again at the real address
+  const srv=Object.assign({},cached,{srv_record:{host:'real.example.com',port:25570}});
+  behaviour={'api.mcstatus.io/v2/status/java':srv,'api.minetools.eu/ping/live2.example.com':liveOff,'api.minetools.eu/ping/real.example.com/25570':liveOn};
+  urls.length=0;
+  t10=await openList();await sleep(700);t10=await draw(el(lastSheet,{}));
+  check('an SRV name is asked again at its real address', urls.some(u=>u.indexOf('minetools.eu/ping/real.example.com/25570')>=0) && /9\/50/.test(texts(t10).join('|')), urls.filter(u=>/minetools/.test(u)).join(' ')+' | '+texts(t10).join('|').slice(0,200));
+  data.cache.pingSource='phone';
+ }
  console.log(failed?'\n'+failed+' check(s) failed':'\nAll checks passed');process.exit(failed?1:0)
 })();

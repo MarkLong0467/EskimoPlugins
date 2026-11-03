@@ -284,43 +284,57 @@
 		if (!java) {
 			return PROVIDERS.mcstatus.get(server, seconds).catch(function () { return PROVIDERS.mcsrvstat.get(server, seconds) }).catch(function (e) { return { error: errorText(e), online: false } })
 		}
-		// Java: mcstatus.io first. Its answer says where the server really is (an address can point somewhere else), and the
-		// ping is asked from there.
+		// Java. mcstatus.io has the details (icon, mods, where the name really points) but keeps its answer for a minute or more.
+		// minetools.eu asks the server itself, so it is the live one. Both are asked at once, and the live answer wins.
+		function applyLive(out, m) {
+			out.online = true
+			if (setting('liveCounts') && m.players && typeof m.players.online === 'number') {
+				out.players = Object.assign({}, out.players, { online: m.players.online, max: m.players.max || out.players.max, list: m.players.list.length ? m.players.list : out.players.list })
+				out.countsFrom = 'live'
+			}
+			return out
+		}
+		var live = settle([PROVIDERS.minetools.get(server, seconds)]).then(function (g) { return g[0] })
 		return PROVIDERS.mcstatus.get(server, seconds).then(
 			function (good) {
-				if (!good.online) {
-					// One site may not be able to reach the server, or may be showing an old answer. Ask the others before saying offline.
-					return settle([PROVIDERS.minetools.get(server, seconds), PROVIDERS.mcsrvstat.get(server, seconds)]).then(function (got) {
-						var up = got.filter(function (g) { return g.ok && g.v.online }).map(function (g) { return g.v })
-						if (!up.length) return good
-						return merge(up[0], up.slice(1).concat([good]))
-					})
-				}
-				var host = server.address
-				var port = good.port || server.port || 25565
-				var m = /^(.*):(\d+)$/.exec(good.srv || '')
-				if (m) { host = m[1]; port = Number(m[2]) }
-				return PROVIDERS.minetools.get({ address: host, port: port, edition: 'java' }, seconds).then(
-					function (ping) {
-						var out = merge(good, [ping])
-						// Status sites keep their answer for a minute or more. minetools asks the server itself, so its count is the live one.
-						if (setting('liveCounts') && ping.online && ping.players && typeof ping.players.online === 'number') {
-							out.players = Object.assign({}, out.players, { online: ping.players.online, max: ping.players.max || out.players.max, list: ping.players.list.length ? ping.players.list : out.players.list })
-							out.countsFrom = 'live'
+				return live.then(function (L) {
+					var first = L.ok ? L.v : null
+					// A name that points somewhere else (an SRV record) has to be asked at its real address.
+					var real = /^(.*):(\d+)$/.exec(good.srv || '')
+					var again = first && !first.online && real
+						? settle([PROVIDERS.minetools.get({ address: real[1], port: Number(real[2]), edition: 'java' }, seconds)]).then(function (g) { return g[0].ok ? g[0].v : first })
+						: Promise.resolve(first)
+					return again.then(function (m) {
+						if (m && m.online) return applyLive(merge(good.online ? good : m, [good.online ? m : good]), m)
+						if (good.online && m) {
+							// The cached answer says online, the live one says offline: the server probably just went down (or blocks the live site).
+							var o = merge(good, [m])
+							o.online = false
+							o.siteConflict = true
+							return o
 						}
-						return out
-					},
-					function () { return good },
-				)
+						if (good.online) return good
+						// Offline for both: one more site, in case the first two cannot reach the server.
+						return settle([PROVIDERS.mcsrvstat.get(server, seconds)]).then(function (got) {
+							var up = got.filter(function (g) { return g.ok && g.v.online }).map(function (g) { return g.v })
+							return up.length ? merge(up[0], [good]) : good
+						})
+					})
+				})
 			},
-			function (first) {
-				return settle([PROVIDERS.minetools.get(server, seconds), PROVIDERS.mcsrvstat.get(server, seconds)]).then(function (got) {
-					var ok = got.filter(function (g) { return g.ok }).map(function (g) { return g.v })
-					if (ok.length) {
-						var main = ok.filter(function (g) { return g.online })[0] || ok[0]
-						return merge(main, ok.filter(function (g) { return g !== main }))
-					}
-					return { error: errorText(first), online: false }
+			function (firstError) {
+				return live.then(function (L) {
+					return settle([PROVIDERS.mcsrvstat.get(server, seconds)]).then(function (got) {
+						var ok = got.filter(function (g) { return g.ok }).map(function (g) { return g.v })
+						if (L.ok) ok.unshift(L.v)
+						if (ok.length) {
+							var main = ok.filter(function (g) { return g.online })[0] || ok[0]
+							var out = merge(main, ok.filter(function (g) { return g !== main }))
+							if (L.ok && L.v.online) applyLive(out, L.v)
+							return out
+						}
+						return { error: errorText(firstError), online: false }
+					})
 				})
 			},
 		)
@@ -912,7 +926,7 @@
 		var fill = online && d.players.max ? Math.min(100, Math.round((d.players.online / d.players.max) * 100)) : 0
 		var tab = tabState[0]
 		var reach = st.key === 'reachable'
-		var reachCard = reach ? h(Card, { style: { backgroundColor: tint(AMBER, 0.14) } }, T({ variant: 'text-md/semibold', style: { color: AMBER } }, 'Your phone can reach it'), T({ variant: 'text-sm/medium' }, 'The status sites say this server is offline, but your phone can reach its address (' + (d.ping !== null ? 'about ' + d.ping + ' ms' : 'it answers') + '). Some servers block the status sites, or are slow to answer them. Player names and the version are not available while only your phone can see it.')) : null
+		var reachCard = reach ? h(Card, { style: { backgroundColor: tint(AMBER, 0.14) } }, T({ variant: 'text-md/semibold', style: { color: AMBER } }, 'Your phone can reach it'), T({ variant: 'text-sm/medium' }, (d.siteConflict ? 'One status site says this server is online and another says offline, ' : 'The status sites say this server is offline, ') + 'but your phone can reach its address (' + (d.ping !== null ? 'about ' + d.ping + ' ms' : 'it answers') + '). Some servers block the status sites, or are slow to answer them. Player names and the version are not available while only your phone can see it.')) : null
 		var backButton = 			h(Button, { text: '‹ All servers', onPress: function () { props.go({ name: 'list' }) } })
 		var headerRow = 			h(
 				RN.View,
