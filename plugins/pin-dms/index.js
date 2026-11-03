@@ -18,7 +18,7 @@
 
 	var storage
 	var listeners = []
-	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [] }
+	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {} }
 	var memo = {}
 
 	function finders() { return valenced.modules.finders }
@@ -132,7 +132,29 @@
 		return out
 	}
 
+	function labelOf(entry) {
+		try {
+			if (typeof entry === 'string') return 's' + entry.slice(-4)
+			if (entry && typeof entry === 'object') return 'o' + String(entry.name || entry.id || '?').slice(0, 6)
+		} catch (e) {}
+		return typeof entry
+	}
 	function pinnedFirst(list, method) {
+		var out = pinnedFirstInner(list, method)
+		try {
+			var a = status.activity[method] || (status.activity[method] = { calls: 0, moved: 0, len: 0, pins: 0 })
+			a.calls++
+			if (Array.isArray(list)) {
+				a.len = list.length
+				a.pins = list.filter(function (e) { var id = idOf(e, 0); return id && read().pins.indexOf(id) >= 0 }).length
+				if (out !== list) { a.moved++; a.after = out.slice(0, 3).map(labelOf).join(',') }
+				a.before = list.slice(0, 3).map(labelOf).join(',')
+			}
+			if (a.calls <= 3 || a.calls % 20 === 0) changed()
+		} catch (e) {}
+		return out
+	}
+	function pinnedFirstInner(list, method) {
 		var state = read()
 		if (!Array.isArray(list) || !state.pins.length) return list
 		var ids = list.map(function (entry) { return idOf(entry, 0) })
@@ -757,6 +779,7 @@
 					h(Design.TableRow, { key: 'store', label: 'DM list order', subLabel: status.store + (status.hooks.length ? ' · hooked: ' + status.hooks.join(', ') : ' · not hooked') + ' · reordered ' + status.reordered + ' time(s)' }),
 					h(Design.TableRow, { key: 'list', label: 'Section headers in the list', subLabel: status.headers ? 'Working (' + status.headerLists + ' time(s))' : 'Not seen yet. Pin a chat into a section, then open the DM tab. Lists with chats seen: ' + status.lists }),
 					h(Design.TableRow, { key: 'lk', label: 'List props I reordered', subLabel: status.listKey.length ? status.listKey.join(', ') : 'none yet' }),
+					h(Design.TableRow, { key: 'activity', label: 'Hook activity', subLabel: Object.keys(status.activity).length ? Object.keys(status.activity).map(function (m) { var a = status.activity[m]; return m + ': ' + a.calls + ' calls, ' + a.len + ' entries, ' + a.pins + ' pinned, moved ' + a.moved + (a.after ? ', ' + a.before + ' -> ' + a.after : '') }).join(' | ') : 'Nothing called yet. Open the Messages tab.' }),
 					status.rowLists.length ? h(Design.TableRow, { key: 'rowlists', label: 'Long lists I saw', subLabel: status.rowLists.join(' | ') }) : null,
 					status.shapes.length ? h(Design.TableRow, { key: 'shapes', label: 'Lists that hold your pinned chats', subLabel: status.shapes.join(' | ') + '. Send this to the developer.' }) : null,
 					status.unmatched.length ? h(Design.TableRow, { key: 'unmatched', label: 'A list holds your pinned chats in a place I do not know', subLabel: 'Row fields: ' + status.unmatched.join(' | ') + '. Send this to the developer.' }) : null,
