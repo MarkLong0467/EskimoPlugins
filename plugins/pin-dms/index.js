@@ -628,7 +628,9 @@
 				{ key: 'pin-tag', pointerEvents: 'none', style: { position: 'absolute', right: 14, bottom: 6, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, backgroundColor: tint(section.color, 0.22) } },
 				React.createElement(Design.Text, { variant: 'text-xs/bold', style: { color: section.color } }, String(section.name || '').toUpperCase()),
 			)
-			return React.createElement(RN.View, { key: result.key }, result, stripe, tag)
+			if (!Array.isArray(props.children) && typeof props.children === 'function') return result
+			var kids = Array.isArray(props.children) ? props.children : [props.children]
+			return React.cloneElement(result, {}, kids.concat([stripe, tag]))
 		} catch (e) {
 			return result
 		}
