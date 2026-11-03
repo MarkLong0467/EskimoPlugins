@@ -13,6 +13,7 @@
 		timeout: 8,
 		cacheSeconds: 20,
 		refreshSeconds: 0,
+		refreshSeconds2: 30,
 		compact: false,
 		heads: true,
 		motd: true,
@@ -287,6 +288,14 @@
 		// ping is asked from there.
 		return PROVIDERS.mcstatus.get(server, seconds).then(
 			function (good) {
+				if (!good.online) {
+					// One site may not be able to reach the server, or may be showing an old answer. Ask the others before saying offline.
+					return settle([PROVIDERS.minetools.get(server, seconds), PROVIDERS.mcsrvstat.get(server, seconds)]).then(function (got) {
+						var up = got.filter(function (g) { return g.ok && g.v.online }).map(function (g) { return g.v })
+						if (!up.length) return good
+						return merge(up[0], up.slice(1).concat([good]))
+					})
+				}
 				var host = server.address
 				var port = good.port || server.port || 25565
 				var m = /^(.*):(\d+)$/.exec(good.srv || '')
@@ -449,6 +458,21 @@
 						data.players = Object.assign({}, data.players, { list: rp.list, hidden: rp.hidden })
 					}
 				} catch (e) {}
+				if (!data.error && !data.online && server.edition !== 'bedrock' && setting('pingSource') !== 'site' && /^\d{1,3}(\.\d{1,3}){3}$/.test(pingTarget(server, data).host)) {
+					// The sites say offline. If the phone can reach the address, say so: some servers block status sites.
+					data.pingFrom = 'measuring'
+					changed()
+					return measureLocal(server, data).then(
+						function (p) {
+							if (p && !p.unsupported) { data.phoneReachable = true; data.ping = p.ms; data.pingFrom = 'phone'; data.rawPing = p.raw }
+							else data.pingFrom = 'none'
+							try { record(server, data); checkAlerts(server, data) } catch (e) {}
+							changed()
+							return data
+						},
+						function () { data.pingFrom = 'none'; try { record(server, data) } catch (e) {} changed(); return data },
+					)
+				}
 				var measure = setting('pingSource') !== 'site' && !data.error && data.online && server.edition !== 'bedrock'
 				if (!measure) {
 					if (!data.error && typeof data.ping === 'number') data.pingFrom = 'site'
@@ -505,7 +529,9 @@
 		var d = r.data
 		if (!d) return { key: 'loading', label: 'Checking…', color: GRAY }
 		if (d.error) return { key: 'error', label: 'No answer', color: AMBER }
-		return d.online ? { key: 'online', label: 'Online', color: GREEN } : { key: 'offline', label: 'Offline', color: RED }
+		if (d.online) return { key: 'online', label: 'Online', color: GREEN }
+		if (d.phoneReachable) return { key: 'reachable', label: 'Reachable', color: AMBER }
+		return { key: 'offline', label: 'Offline', color: RED }
 	}
 	function playersText(d) {
 		return d && !d.error && d.online ? d.players.online + (d.players.max ? '/' + d.players.max : '') : '–'
@@ -885,6 +911,8 @@
 		var port = d && !d.error && d.port ? d.port : s.port || (s.edition === 'bedrock' ? 19132 : 25565)
 		var fill = online && d.players.max ? Math.min(100, Math.round((d.players.online / d.players.max) * 100)) : 0
 		var tab = tabState[0]
+		var reach = st.key === 'reachable'
+		var reachCard = reach ? h(Card, { style: { backgroundColor: tint(AMBER, 0.14) } }, T({ variant: 'text-md/semibold', style: { color: AMBER } }, 'Your phone can reach it'), T({ variant: 'text-sm/medium' }, 'The status sites say this server is offline, but your phone can reach its address (' + (d.ping !== null ? 'about ' + d.ping + ' ms' : 'it answers') + '). Some servers block the status sites, or are slow to answer them. Player names and the version are not available while only your phone can see it.')) : null
 		var backButton = 			h(Button, { text: '‹ All servers', onPress: function () { props.go({ name: 'list' }) } })
 		var headerRow = 			h(
 				RN.View,
@@ -955,7 +983,7 @@
 			? [grid([ipStat, portStat]), modsCard || T({ key: 'nm', variant: 'text-sm/medium', color: 'text-muted' }, online ? 'This server does not share a list of mods or plugins.' : 'The server is offline.')]
 			: tab === 'history'
 			? [historyCard, clearButton]
-			: [errorCard, eulaCard, motdCard, grid([playersStat, pingStat, versionStat, softwareStat]), checkedLine]
+				: [errorCard, reachCard, eulaCard, motdCard, grid([playersStat, pingStat, versionStat, softwareStat]), checkedLine]
 		var content = h(RN.View, { style: { gap: 14 } }, backButton, headerRow, tabs, page)
 		var asking = pendingDelete.id === s.id && Date.now() - pendingDelete.at < 4000
 		var footer = [
@@ -1073,7 +1101,7 @@
 			var update = function () { tick[1](function (n) { return n + 1 }) }
 			listeners.push(update)
 			checkAll(false)
-			var seconds = Number(setting('refreshSeconds'))
+			var seconds = Number(setting('refreshSeconds2'))
 			var timer = seconds ? setInterval(function () { checkAll(true) }, seconds * 1000) : null
 			return function () {
 				listeners = listeners.filter(function (l) { return l !== update })
@@ -1383,7 +1411,7 @@
 		var list = sorted(servers())
 		var sum = summary()
 		var current = {
-			provider: setting('provider'), timeout: String(setting('timeout')), cacheSeconds: String(setting('cacheSeconds')), refreshSeconds: String(setting('refreshSeconds')),
+			provider: setting('provider'), timeout: String(setting('timeout')), cacheSeconds: String(setting('cacheSeconds')), refreshSeconds2: String(setting('refreshSeconds2')),
 			sort: setting('sort'), pingSource: setting('pingSource'), pingSamples: String(setting('pingSamples')), placement: setting('placement'), alertSeconds: String(setting('alertSeconds')), historyLength: String(setting('historyLength')),
 		}
 		function put(key, value) {
@@ -1467,7 +1495,7 @@
 				),
 				radio('Wait for an answer', 'timeout', [{ value: '5', label: '5 seconds' }, { value: '8', label: '8 seconds' }, { value: '12', label: '12 seconds' }, { value: '20', label: '20 seconds' }], true),
 				radio('Keep an answer', 'cacheSeconds', [{ value: '0', label: 'Always check again' }, { value: '20', label: '20 seconds', subLabel: 'Opening the list again right away does not ask again' }, { value: '60', label: '1 minute' }, { value: '300', label: '5 minutes' }], true),
-				radio('While the list is open', 'refreshSeconds', [{ value: '0', label: 'Only when I tap Refresh' }, { value: '15', label: 'Every 15 seconds' }, { value: '30', label: 'Every 30 seconds' }, { value: '60', label: 'Every minute' }], true),
+				radio('While a panel is open', 'refreshSeconds2', [{ value: '0', label: 'Only when I tap Refresh' }, { value: '15', label: 'Every 15 seconds' }, { value: '30', label: 'Every 30 seconds', subLabel: 'The list and a server\'s screen update by themselves' }, { value: '60', label: 'Every minute' }], true),
 				h(
 					Design.TableRowGroup,
 					{ title: 'How it looks' },

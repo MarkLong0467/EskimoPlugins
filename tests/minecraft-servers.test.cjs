@@ -156,5 +156,30 @@ global.fetch=async(u,o)=>{
   check('with the sheet\'s own scroll view the panel uses it (inside a safety net)', f9&&f9.type&&f9.type.__t==='SheetScroll', JSON.stringify(f9&&f9.type&&(f9.type.__t||f9.type.name)));
   delete global.valenced.discord.design.Design.BottomSheetScrollView;
  }
+ // 9. the status sites say offline
+ {
+  const mkOff=(ip)=>({online:false,host:'down.example.com',port:25297,ip_address:ip,version:null,players:{online:0,max:0,list:[]},motd:{clean:''},icon:null});
+  data.cache.serversJson=JSON.stringify([{id:'o1',name:'Odd',address:'down.example.com',port:25297,edition:'java'}]);
+  data.cache.liveCounts=true;closeAfter=60;phoneUrls=[];
+  // a) every site says offline, the phone can reach the address
+  behaviour={'api.mcstatus.io/v2/status/java':mkOff('203.0.113.50')};
+  let t9=await openList();await sleep(700);t9=await draw(el(lastSheet,{}));
+  check('offline for the sites but reachable from the phone: shown as Reachable, not Offline', /Reachable/.test(texts(t9).join('|')) && !/Offline/.test(texts(t9).join('|')), texts(t9).join('|').slice(0,260));
+  const mine=phoneUrls.filter(u=>/:25297\//.test(u));
+  check('the phone probed the IP address itself, not the name', mine.length>0 && mine.every(u=>u.indexOf('203.0.113.50:25297')>0), mine.join(' '));
+  // b) one site says offline but another says online
+  behaviour={'api.mcstatus.io/v2/status/java':mkOff('203.0.113.50'),'api.minetools.eu':{description:'x',latency:40,players:{max:20,online:2,sample:[{id:'1',name:'Steve'}]},version:{name:'Paper 1.21',protocol:767}}};
+  t9=await openList();await sleep(700);t9=await draw(el(lastSheet,{}));
+  check('if another site sees it online, it is online', /Online|2\/20/.test(texts(t9).join('|')) && !/Offline|Reachable/.test(texts(t9).join('|')), texts(t9).join('|').slice(0,260));
+  // c) no IP to probe: nothing is guessed
+  behaviour={'api.mcstatus.io/v2/status/java':mkOff('')};
+  phoneUrls=[];
+  t9=await openList();await sleep(500);t9=await draw(el(lastSheet,{}));
+  check('without an IP address to try, the server is simply Offline', /Offline/.test(texts(t9).join('|')) && phoneUrls.length===0, texts(t9).join('|').slice(0,260)+' '+phoneUrls.length);
+  // d) the panels refresh by themselves by default
+  lastSheet=null;store=new Map();const st9=await draw(el(p.SettingsComponent,{api:{jsonStorage:json}}));
+  let hasRefresh=false;walk(st9,n=>{if(n.props&&n.props.title==='While a panel is open')hasRefresh=true});
+  check('the settings offer automatic refresh for open panels', hasRefresh);
+ }
  console.log(failed?'\n'+failed+' check(s) failed':'\nAll checks passed');process.exit(failed?1:0)
 })();
