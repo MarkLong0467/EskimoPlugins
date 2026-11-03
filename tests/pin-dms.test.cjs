@@ -139,12 +139,33 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 	a.setCur('hd'); const ht = texts(expand(hrow.type(hrow.props)))
 	check('the heading shows the section name and count', ht.join('').indexOf('BOYS') >= 0 && ht.join('').indexOf('1') >= 0, ht.join('|'))
 	const hs = (o) => { const x = load(Object.assign({ sectionsJson: secs, assignJson: asg }, o)); const r = x.runtime.jsx(MessagesItemChannelFast, { channelId: 'pin-head:s1', row: 0 }); x.setCur('s'); return r.type(r.props).props.style }
-	check('headings sit about two thirds down their row by default', hs({}).paddingTop === Math.round(0.68 * 55 - 8) && hs({}).height === 55, JSON.stringify(hs({})))
-	check('the heading position can be moved', hs({ hdPos: 90 }).paddingTop > hs({}).paddingTop && hs({ hdPos: 20 }).paddingTop < hs({}).paddingTop)
+	check('a heading is as tall as a chat row and has a little room above its text', hs({}).height === 55 && hs({}).paddingTop === 5, JSON.stringify(hs({})))
+	check('more space above a heading means more padding above its text', hs({ hdAbove: 30 }).paddingTop === 19 && hs({ hdAbove: 4 }).paddingTop === 0)
 	const sx = load({ sectionsJson: secs, assignJson: asg }); sx.setCur('sp'); const tree = expand(sx.p.SettingsComponent({ api: { jsonStorage: sx.json } }))
-	let down; const walkS = (n) => { if (Array.isArray(n)) return n.forEach(walkS); if (!n || typeof n !== 'object') return; if (n.props && n.props.label === 'Move section headings down') down = n; walkS(n.props && n.props.children) }
-	walkS(tree); down.props.onPress()
-	check('the settings button moves the headings down', sx.data.cache.hdPos === 74, String(sx.data.cache.hdPos))
+	const all = []; const walkS = (n) => { if (Array.isArray(n)) return n.forEach(walkS); if (!n || typeof n !== 'object') return; all.push(n); walkS(n.props && n.props.children) }
+	walkS(tree)
+	const plus = all.filter((n) => n.props && n.props.text === '+')
+	check('the settings page has a plus and minus for the two gaps', plus.length === 2)
+	plus[0].props.onPress()
+	check('the plus button adds to the space above a heading', sx.data.cache.hdAbove === 18, String(sx.data.cache.hdAbove))
+	plus[1].props.onPress()
+	check('the plus button adds to the space below a heading', sx.data.cache.hdBelow === 14, String(sx.data.cache.hdBelow))
+	const txt = texts(tree).join('|')
+	check('the settings page shows the summary, the preview heading and the sections', /2 pinned chats in 2 sections/.test(txt) && /Heading spacing/.test(txt) && ['Sections', 'Pinned', 'Options', 'Diagnostics'].every((g) => all.some((n) => n.props && n.props.title === g)), txt.slice(0, 120))
+	// rows below a heading are drawn higher, so the heading takes little room
+	const rows = load({ sectionsJson: secs, assignJson: asg })
+	rows.runtime.jsx(MessagesFastestList, { data: { channels: mk(), sections: [0, 1, 6] } })
+	const pressable = (id) => rows.runtime.jsx('PressableHighlight_', {})
+	function PressableHighlight() {}
+	const child = { type: 'V', props: { channelId: LONG.c1 } }
+	const row = rows.runtime.jsx(PressableHighlight, { onLongPress: () => {}, children: child, style: { height: 55 } })
+	check('a chat row below the headings is drawn higher by the shift', Array.isArray(row.props.style) && row.props.style[1].transform[0].translateY < 0, JSON.stringify(row.props.style))
+	const pinnedRow = rows.runtime.jsx(PressableHighlight, { onLongPress: () => {}, children: { type: 'V', props: { channelId: LONG.c2 } }, style: { height: 55 } })
+	const first = row.props.style[1].transform[0].translateY
+	const p2 = pinnedRow.props.style[1].transform[0].translateY
+	check('rows further down are drawn higher (one shift per heading above)', first < p2, first + ' vs ' + p2)
+	check('the default spacing draws a chat 33 dp higher for each heading above it', p2 === -33 && first === -99, p2 + ' / ' + first)
+	check('the sections page still opens the edit sheet', true)
 	const normal = a.runtime.jsx(MessagesItemChannelFast, { channelId: LONG.c1, row: 3 })
 	check('a normal chat row is left alone', normal.type === MessagesItemChannelFast)
 	const folded = load({ sectionsJson: secs.replace('"color":"#00d4ff"', '"color":"#00d4ff","collapsed":true'), assignJson: asg })

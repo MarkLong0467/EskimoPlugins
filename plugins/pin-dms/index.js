@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.12.3'
+	var VERSION = '1.13.0'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -581,6 +581,14 @@
 			{ footer: footer },
 			h(Design.Text, { variant: 'heading-lg/bold' }, section ? 'Edit Category' : 'New Category'),
 			h(Design.TextInput, { label: 'Name', placeholder: 'Boys', size: 'md', maxLength: 30, value: nameState[0], onChange: function (v) { nameState[1](v) } }),
+			section && read().sections.length > 1
+				? h(
+						RN.View,
+						{ style: { flexDirection: 'row', gap: 10 } },
+						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: '↑ Move up', size: 'sm', variant: 'secondary', onPress: function () { moveSection(section.id, -1) } })),
+						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: '↓ Move down', size: 'sm', variant: 'secondary', onPress: function () { moveSection(section.id, 1) } })),
+				  )
+				: null,
 			h(Design.Text, { variant: 'text-md/semibold' }, 'Color'),
 			h(
 				RN.View,
@@ -938,19 +946,56 @@
 		sections[at] = sections[at] + (out.length - d.channels.length)
 		return { channels: out, sections: sections }
 	}
-	/** Where the heading text sits inside its row, as a percentage from the top (0 high, 100 low). */
-	function headingPos() {
+	/**
+	 * Spacing around a heading. The list gives every row the same height, so a heading row is as tall as a chat.
+	 * To make it compact, the chats below a heading are drawn a little higher (they overlap the empty bottom of the heading row).
+	 * gapAbove: space between the chat above and the heading text. gapBelow: space between the heading text and the chat below.
+	 */
+	var ROW = 55
+	var ROW_PAD = 11
+	var TEXT_H = 16
+	function numSetting(key, fallback, min, max) {
 		try {
-			var v = storage && storage.cache && storage.cache.hdPos
-			return typeof v === 'number' && v >= 0 && v <= 100 ? v : 68
-		} catch (e) { return 68 }
+			var v = storage && storage.cache && storage.cache[key]
+			return typeof v === 'number' && v >= min && v <= max ? v : fallback
+		} catch (e) { return fallback }
 	}
-	function setHeadingPos(v) {
+	function gapAbove() { return numSetting('hdAbove', 16, 4, 40) }
+	function gapBelow() { return numSetting('hdBelow', 12, 6, 30) }
+	function gapShift() { return Math.max(0, Math.min(40, Math.round(ROW + 2 * ROW_PAD - TEXT_H - gapAbove() - gapBelow()))) }
+	function gapTop() { return Math.max(0, gapAbove() - ROW_PAD) }
+	function setGap(key, v, min, max) {
 		try {
-			Object.assign(storage.cache, { hdPos: Math.max(0, Math.min(100, v)) })
+			Object.assign(storage.cache, (function (o) { o[key] = Math.max(min, Math.min(max, v)); return o })({}))
 			fastCache = null
 			refreshList()
+			changed()
 		} catch (e) {}
+	}
+	function resetGaps() {
+		try {
+			Object.assign(storage.cache, { hdAbove: 16, hdBelow: 12 })
+			fastCache = null
+			refreshList()
+			changed()
+		} catch (e) {}
+	}
+	/** Moves a row up by dy dp, whatever form its style takes. */
+	function shiftStyle(style, dy) {
+		if (!dy) return style
+		var t = { transform: [{ translateY: -dy }] }
+		if (typeof style === 'function') return function (st) { var b = style(st); return Array.isArray(b) ? b.concat([t]) : [b, t] }
+		if (Array.isArray(style)) return style.concat([t])
+		return style ? [style, t] : t
+	}
+	/** How many heading rows sit above each row (a heading counts the ones before it, a chat counts the one above it too). */
+	function positionMap(channels) {
+		var map = {}
+		var count = 0
+		channels.forEach(function (entry) {
+			if (entry.__pinHeader) { map[entry.channelId] = count; count++ } else map[entry.channelId] = count
+		})
+		return map
 	}
 	function ListHeader(props) {
 		var RN = valenced.react.ReactNative
@@ -962,10 +1007,9 @@
 		var color = sec ? sec.color : '#80848e'
 		var count = sec ? state.pins.filter(function (id) { return state.assign[id] === sec.id }).length : 0
 		var label = (sec ? (sec.collapsed ? '▸ ' : '▾ ') : '') + String(name).toUpperCase() + (sec ? '  ' + count : '')
-		var top = Math.max(0, Math.round(headingPos() / 100 * 55 - 8))
 		return h(
 			RN.Pressable,
-			{ onPress: sec ? function () { toggleFold(sec.id) } : undefined, onLongPress: sec ? function () { openEditSection(sec) } : undefined, style: { height: 55, paddingHorizontal: 16, justifyContent: 'flex-start', paddingTop: top } },
+			{ onPress: sec ? function () { toggleFold(sec.id) } : undefined, onLongPress: sec ? function () { openEditSection(sec) } : undefined, style: { height: ROW, paddingHorizontal: 16, justifyContent: 'flex-start', paddingTop: gapTop(), transform: props.shift ? [{ translateY: -props.shift }] : undefined } },
 			h(
 				RN.View,
 				{ style: { flexDirection: 'row', alignItems: 'center', gap: 8 } },
@@ -981,7 +1025,8 @@
 			var id = result.props && result.props.channelId
 			if (typeof id !== 'string' || id.indexOf('pin-head:') !== 0) return result
 			status.hdRows++
-			return valenced.react.React.createElement(ListHeader, { key: result.key, kind: id.slice(9) })
+			var before = fastCache && fastCache.pos ? fastCache.pos[id] || 0 : 0
+			return valenced.react.React.createElement(ListHeader, { key: result.key, kind: id.slice(9), shift: gapShift() * before })
 		} catch (e) {
 			return result
 		}
@@ -1015,7 +1060,7 @@
 					var withHd = null
 					try { withHd = withListHeaders(orderedCh, d) } catch (e) { withHd = null }
 					if (withHd) armHeadingTrial()
-					fastCache = { orig: d.channels, key: stateKey, data: withHd ? Object.assign({}, d, withHd) : orderedCh === d.channels ? d : Object.assign({}, d, { channels: orderedCh }), moved: !!withHd || orderedCh !== d.channels, headings: !!withHd }
+					fastCache = { orig: d.channels, key: stateKey, data: withHd ? Object.assign({}, d, withHd) : orderedCh === d.channels ? d : Object.assign({}, d, { channels: orderedCh }), moved: !!withHd || orderedCh !== d.channels, headings: !!withHd, pos: withHd ? positionMap(withHd.channels) : null }
 				}
 				if (fastCache.moved) {
 					next.data = fastCache.data
@@ -1255,24 +1300,32 @@
 			var state = read()
 			if (!state.pins.length || !state.sections.length) return result
 			var id = deepId(props.children)
-			if (!id || state.pins.indexOf(id) < 0) return result
-			var section = sectionOf(state, id)
-			if (!section) return result
+			if (!id) return result
 			var React = valenced.react.React
 			var RN = valenced.react.ReactNative
 			var Design = valenced.discord.design.Design
-			status.rowHeaders++
-			if (!status.headers) { status.headers = true; status.list = 'found, tags added'; changed() }
-			var withHeadings = hdOn() && status.listKey.indexOf('headings') >= 0
-			var stripe = React.createElement(RN.View, { key: 'pin-stripe', pointerEvents: 'none', style: { position: 'absolute', left: 0, top: 8, bottom: 8, width: 4, borderRadius: 2, backgroundColor: section.color } })
-			var tag = React.createElement(
-				RN.View,
-				{ key: 'pin-tag', pointerEvents: 'none', style: { position: 'absolute', right: 10, bottom: 4, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999, backgroundColor: solid(section.color, 0.3) } },
-				React.createElement(Design.Text, { variant: 'text-xs/bold', style: { color: section.color, fontSize: 10, lineHeight: 14 } }, String(section.name || '').toUpperCase()),
-			)
+			var headingsOn = hdOn() && fastCache && fastCache.headings && fastCache.pos
+			var dy = headingsOn && fastCache.pos[id] ? gapShift() * fastCache.pos[id] : 0
+			var pinned = state.pins.indexOf(id) >= 0
+			var section = pinned ? sectionOf(state, id) : undefined
+			if (!section && !dy) return result
 			if (!Array.isArray(props.children) && typeof props.children === 'function') return result
+			var extra = []
+			if (section) {
+				status.rowHeaders++
+				if (!status.headers) { status.headers = true; status.list = 'found, tags added'; changed() }
+				extra.push(React.createElement(RN.View, { key: 'pin-stripe', pointerEvents: 'none', style: { position: 'absolute', left: 0, top: 8, bottom: 8, width: 4, borderRadius: 2, backgroundColor: section.color } }))
+				if (!headingsOn) {
+					extra.push(React.createElement(
+						RN.View,
+						{ key: 'pin-tag', pointerEvents: 'none', style: { position: 'absolute', right: 10, bottom: 4, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999, backgroundColor: solid(section.color, 0.3) } },
+						React.createElement(Design.Text, { variant: 'text-xs/bold', style: { color: section.color, fontSize: 10, lineHeight: 14 } }, String(section.name || '').toUpperCase()),
+					))
+				}
+			}
 			var kids = Array.isArray(props.children) ? props.children : [props.children]
-			return React.cloneElement(result, {}, kids.concat(withHeadings ? [stripe] : [stripe, tag]))
+			var patch = dy ? { style: shiftStyle(props.style, dy) } : {}
+			return React.cloneElement(result, patch, kids.concat(extra))
 		} catch (e) {
 			return result
 		}
@@ -1384,6 +1437,59 @@
 	}
 
 	// ---- Settings ----------------------------------------------------------------------------------
+	/** A small picture of a heading between two chats, drawn with the real spacing numbers. */
+	function HeadingPreview(props) {
+		var RN = valenced.react.ReactNative
+		var Design = valenced.discord.design.Design
+		var state = read()
+		var sec = state.sections[0]
+		var color = sec ? sec.color : '#3498db'
+		var name = sec ? sec.name : 'Section'
+		var shift = gapShift()
+		var rowTop2 = ROW * 2 - shift
+		function fakeRow(key, top, strong) {
+			return h(
+				RN.View,
+				{ key: key, style: { position: 'absolute', left: 0, right: 0, top: top, height: ROW } },
+				h(RN.View, { style: { position: 'absolute', left: 4, top: 8, bottom: 8, width: 4, borderRadius: 2, backgroundColor: strong ? color : '#80848e' } }),
+				h(RN.View, { style: { position: 'absolute', left: 16, top: ROW_PAD, width: 32, height: 32, borderRadius: 16, backgroundColor: '#4e5058' } }),
+				h(RN.View, { style: { position: 'absolute', left: 58, top: ROW_PAD + 3, width: 90, height: 8, borderRadius: 4, backgroundColor: '#80848e' } }),
+				h(RN.View, { style: { position: 'absolute', left: 58, top: ROW_PAD + 18, width: 150, height: 6, borderRadius: 3, backgroundColor: '#4e5058' } }),
+			)
+		}
+		return h(
+			RN.View,
+			{ style: { height: rowTop2 + ROW, borderRadius: 14, backgroundColor: '#1e1f22', overflow: 'hidden' } },
+			fakeRow('a', 0, false),
+			h(
+				RN.View,
+				{ key: 'h', style: { position: 'absolute', left: 0, right: 0, top: ROW, height: ROW, paddingHorizontal: 16, paddingTop: gapTop() } },
+				h(
+					RN.View,
+					{ style: { flexDirection: 'row', alignItems: 'center', gap: 8 } },
+					h(Design.Text, { variant: 'text-xs/bold', style: { color: color } }, '▾ ' + String(name).toUpperCase() + '  1'),
+					h(RN.View, { style: { flex: 1, height: 1.5, borderRadius: 1, backgroundColor: color, opacity: 0.55 } }),
+				),
+			),
+			fakeRow('b', rowTop2, true),
+		)
+	}
+	function Stepper(props) {
+		var RN = valenced.react.ReactNative
+		var Design = valenced.discord.design.Design
+		return h(
+			RN.View,
+			{ style: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 } },
+			h(RN.View, { style: { flex: 1 } }, h(Design.Text, { variant: 'text-md/semibold' }, props.label), h(Design.Text, { variant: 'text-xs/medium', color: 'text-muted' }, props.sub)),
+			h(Design.Button, { text: '−', size: 'sm', variant: 'secondary', onPress: props.onMinus }),
+			h(RN.View, { style: { minWidth: 36, alignItems: 'center' } }, h(Design.Text, { variant: 'text-md/bold' }, String(props.value))),
+			h(Design.Button, { text: '+', size: 'sm', variant: 'secondary', onPress: props.onPlus }),
+		)
+	}
+	function Card(props) {
+		var RN = valenced.react.ReactNative
+		return h(RN.View, { style: { borderRadius: 14, padding: 14, gap: 10, backgroundColor: '#2b2d31' } }, props.children)
+	}
 	function SettingsComponent(props) {
 		var React = valenced.react.React
 		var Design = valenced.discord.design.Design
@@ -1392,6 +1498,7 @@
 		storage.use()
 		var tick = React.useState(0)
 		var search = React.useState('')
+		var tech = React.useState(false)
 		React.useEffect(function () {
 			var update = function () { tick[1](function (n) { return n + 1 }) }
 			listeners.push(update)
@@ -1402,28 +1509,17 @@
 		var q = String(search[0]).toLowerCase().trim()
 		function dot(color) { return h(RN.View, { style: { width: 14, height: 14, borderRadius: 7, backgroundColor: color } }) }
 
-		var sectionRows = state.sections.map(function (s, i) {
+		var sectionRows = state.sections.map(function (s) {
 			var count = state.pins.filter(function (id) { return state.assign[id] === s.id }).length
 			return h(Design.TableRow, {
 				key: 'sec' + s.id,
 				label: s.name,
-				subLabel: count + ' chat' + (count === 1 ? '' : 's') + (s.collapsed ? ' · folded' : '') + ' · tap to edit',
+				subLabel: count + ' chat' + (count === 1 ? '' : 's') + (s.collapsed ? ' · folded' : '') + ' · tap to edit or reorder',
 				icon: dot(s.color),
 				onPress: function () { openEditSection(s) },
 			})
 		})
-		var sectionMoves = state.sections.length > 1
-			? state.sections.map(function (s) {
-					return h(
-						RN.View,
-						{ key: 'sm' + s.id, style: { flexDirection: 'row', gap: 8, paddingVertical: 3 } },
-						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: '↑ ' + s.name, size: 'sm', variant: 'secondary', onPress: function () { moveSection(s.id, -1) } })),
-						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: '↓ ' + s.name, size: 'sm', variant: 'secondary', onPress: function () { moveSection(s.id, 1) } })),
-					)
-			  })
-			: []
-
-		var pinnedRows = state.pins.map(function (id) {
+		var pinnedRows = pinnedOrder(state.pins.slice()).map(function (id) {
 			var s = sectionOf(state, id)
 			return h(Design.TableRow, {
 				key: 'pin' + id,
@@ -1434,25 +1530,63 @@
 			})
 		})
 		var others = all.filter(function (id) { return state.pins.indexOf(id) < 0 && (!q || channelLabel(id).toLowerCase().indexOf(q) >= 0) }).slice(0, 60)
+		var pinCount = state.pins.length
+		var summary = pinCount + ' pinned chat' + (pinCount === 1 ? '' : 's') + ' in ' + state.sections.length + ' section' + (state.sections.length === 1 ? '' : 's')
+
+		var technical = [
+			h(Design.TableRow, { key: 'store', label: 'DM list order', subLabel: status.store + (status.hooks.length ? ' · hooked: ' + status.hooks.join(', ') : ' · not hooked') + ' · reordered ' + status.reordered + ' time(s)' }),
+			h(Design.TableRow, { key: 'list', label: 'Section headings in the list', subLabel: (status.listKey.indexOf('headings') >= 0 ? 'Working' : 'Not seen yet') + ' · heading rows drawn: ' + status.hdRows }),
+			h(Design.TableRow, { key: 'lk', label: 'List props I reordered', subLabel: status.listKey.length ? status.listKey.join(', ') : 'none yet' }),
+			h(Design.TableRow, { key: 'activity', label: 'Hook activity', subLabel: Object.keys(status.activity).length ? Object.keys(status.activity).map(function (m) { var a = status.activity[m]; return m + ': ' + a.calls + ' calls, ' + a.len + ' entries, ' + a.pins + ' pinned, moved ' + a.moved }).join(' | ') : 'Nothing called yet. Open the Messages tab.' }),
+			h(Design.TableRow, { key: 'stripstatus', label: 'Pinned strip', subLabel: (status.strip ? 'Shown ' + status.strip + ' time(s)' : 'Not shown') + (status.lastOpen ? ' · last tap: ' + status.lastOpen : '') }),
+			h(Design.TableRow, { key: 'menu', label: 'Hold-down menu', subLabel: status.menus ? 'Added ' + status.menus + ' time(s)' : 'Not seen yet. Hold a DM in the list.' }),
+			status.error ? h(Design.TableRow, { key: 'error', label: 'Problem', subLabel: status.error }) : null,
+		]
 
 		return h(
 			RN.ScrollView,
 			{ style: { flex: 1 }, contentContainerStyle: { paddingBottom: 38 }, keyboardShouldPersistTaps: 'handled' },
 			h(
 				Design.Stack,
-				{ style: { paddingVertical: 24, paddingHorizontal: 12 }, spacing: 24 },
+				{ style: { paddingVertical: 20, paddingHorizontal: 12 }, spacing: 22 },
 				h(
-					Design.TableRowGroup,
-					{ title: 'Sections (' + state.sections.length + ')' },
-					sectionRows.concat([h(Design.TableRow, { key: 'newSection', label: 'New section', subLabel: 'A coloured heading you can fold, like Girls or Boys', onPress: function () { openEditSection(null) } })]),
+					Card,
+					null,
+					h(Design.Text, { variant: 'heading-lg/bold' }, 'Pin DMs'),
+					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, summary + '. Pinned chats sit at the top of Messages, in coloured sections you can fold.'),
+					h(
+						RN.View,
+						{ style: { flexDirection: 'row', gap: 10 } },
+						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'New section', variant: 'primary', size: 'sm', onPress: function () { openEditSection(null) } })),
+						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Copy report', variant: 'secondary', size: 'sm', onPress: copyReport })),
+					),
 				),
-				sectionMoves.length ? h(Design.Stack, { spacing: 4 }, h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'Move a section up or down'), sectionMoves) : null,
 				h(
 					Design.TableRowGroup,
-					{ title: 'Pinned (' + state.pins.length + ')' },
+					{ title: 'Sections' },
+					sectionRows.length ? sectionRows : [h(Design.TableRow, { key: 'nosec', label: 'No sections yet', subLabel: 'Tap New section above, like Girls or Boys.' })],
+				),
+				h(
+					Design.TableRowGroup,
+					{ title: 'Pinned' },
 					pinnedRows.length ? pinnedRows : [h(Design.TableRow, { key: 'none', label: 'Nothing pinned yet', subLabel: 'Hold a DM and choose Pin DM, or pick one below.' })],
 				),
-				h(Design.TextInput, { label: 'Search your DMs', placeholder: 'Search', size: 'md', value: search[0], onChange: function (v) { search[1](v) } }),
+				h(
+					Card,
+					null,
+					h(Design.Text, { variant: 'heading-md/bold' }, 'Heading spacing'),
+					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'The picture shows a heading between two chats. Change the numbers and watch the gaps.'),
+					h(HeadingPreview, null),
+					h(Stepper, { label: 'Space above a heading', sub: 'Between the chat above and the heading.', value: gapAbove(), onMinus: function () { setGap('hdAbove', gapAbove() - 2, 4, 40) }, onPlus: function () { setGap('hdAbove', gapAbove() + 2, 4, 40) } }),
+					h(Stepper, { label: 'Space below a heading', sub: 'Between the heading and its chat.', value: gapBelow(), onMinus: function () { setGap('hdBelow', gapBelow() - 2, 6, 30) }, onPlus: function () { setGap('hdBelow', gapBelow() + 2, 6, 30) } }),
+					h(Design.Button, { text: 'Reset spacing', variant: 'secondary', size: 'sm', onPress: resetGaps }),
+				),
+				h(
+					Design.TableRowGroup,
+					{ title: 'Options' },
+					h(Design.TableSwitchRow, { key: 'headings', label: 'Section headings in the list', subLabel: 'A heading row with fold in front of each section. If the app ever fails to start with it, it turns itself off.', value: hdOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { hdOff: !v, hdTrial: false }); fastCache = null; refreshList() } catch (e) {} } }),
+				),
+				h(Design.TextInput, { label: 'Find a chat to pin', placeholder: 'Search your DMs', size: 'md', value: search[0], onChange: function (v) { search[1](v) } }),
 				h(
 					Design.TableRowGroup,
 					{ title: 'Your DMs' },
@@ -1462,26 +1596,17 @@
 				),
 				h(
 					Design.TableRowGroup,
-					{ title: 'Status' },
-					h(Design.TableRow, { key: 'copyreport', label: 'Copy diagnostic report', subLabel: 'Open the Messages tab first, then tap here and paste it in the chat. It lists what the DM tab is made of.', onPress: copyReport }),
-					h(Design.TableSwitchRow, { key: 'headings', label: 'Section headings in the list', subLabel: 'Puts a heading row (with fold) in front of each section of pinned chats. If the app ever fails to start with it, it turns itself off.', value: hdOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { hdOff: !v, hdTrial: false }); fastCache = null; refreshList() } catch (e) {} } }),
-					h(Design.TableRow, { key: 'sp-up', label: 'Move section headings up', subLabel: 'Now ' + headingPos() + '% down the row. Higher up means more room below the heading and less above it.', onPress: function () { setHeadingPos(headingPos() - 6) } }),
-					h(Design.TableRow, { key: 'sp-down', label: 'Move section headings down', subLabel: 'Lower down means more room above the heading and less below it, so it sits close to its chats.', onPress: function () { setHeadingPos(headingPos() + 6) } }),
-					h(Design.TableRow, { key: 'sp-reset', label: 'Reset heading position', subLabel: 'Back to 68%.', onPress: function () { setHeadingPos(68) } }),
-					h(Design.TableSwitchRow, { key: 'strip', label: 'Pinned strip above the DM tab', subLabel: 'Optional. Your pinned chats already sit at the top of the list, so this repeats them in a panel with section headings. Off by default.', value: stripEnabled(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripOn2: !!v }); changed() } catch (e) {} } }),
-					h(Design.TableSwitchRow, { key: 'hidepinned', label: 'Hide pinned chats from the normal list', subLabel: 'Experimental. They only show in the strip, not twice. Off by default.', value: hideOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { hidePinned2: !!v }); refreshList() } catch (e) {} } }),
-					h(Design.TableSwitchRow, { key: 'stripbelow', label: 'Try to put the strip under the Messages header', subLabel: 'Experimental. Off by default, the strip stays at the very top.', value: stripBelow(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripBelow2: !!v }); changed() } catch (e) {} } }),
-					h(Design.TableRow, { key: 'stripstatus', label: 'Pinned strip', subLabel: (status.strip ? 'Shown ' + status.strip + ' time(s)' : 'Not shown yet. Open the Messages tab.') + (status.lastOpen ? ' · last tap: ' + status.lastOpen : '') + (status.fastList ? ' · DM list gets: ' + status.fastList : '') + (status.cards.length ? ' · voice-ish names: ' + status.cards.join(', ') : '') + ' · strip slot: ' + (status.voiceAnchor || 'top') + ' · screens seen: ' + (status.screens.join(', ') || 'none') }),
-					h(Design.TableRow, { key: 'store', label: 'DM list order', subLabel: status.store + (status.hooks.length ? ' · hooked: ' + status.hooks.join(', ') : ' · not hooked') + ' · reordered ' + status.reordered + ' time(s)' }),
-					h(Design.TableRow, { key: 'list', label: 'Section headers in the list', subLabel: status.headers ? 'Working (' + (status.headerLists + status.rowHeaders) + ' time(s))' : 'Not seen yet. Pin a chat into a section, then open the DM tab. Lists with chats seen: ' + status.lists }),
-					h(Design.TableRow, { key: 'lk', label: 'List props I reordered', subLabel: status.listKey.length ? status.listKey.join(', ') : 'none yet' }),
-					h(Design.TableRow, { key: 'pinm', label: 'Discord pin methods found', subLabel: status.pinMethods.length ? status.pinMethods.join(', ') : 'none' }),
-					h(Design.TableRow, { key: 'activity', label: 'Hook activity', subLabel: Object.keys(status.activity).length ? Object.keys(status.activity).map(function (m) { var a = status.activity[m]; return m + ': ' + a.calls + ' calls, ' + a.len + ' entries, ' + a.pins + ' pinned, moved ' + a.moved + (a.after ? ', ' + a.before + ' -> ' + a.after : '') }).join(' | ') : 'Nothing called yet. Open the Messages tab.' }),
-					status.rowLists.length ? h(Design.TableRow, { key: 'rowlists', label: 'Long lists I saw', subLabel: status.rowLists.join(' | ') }) : null,
-					status.shapes.length ? h(Design.TableRow, { key: 'shapes', label: 'Lists that hold your pinned chats', subLabel: status.shapes.join(' | ') + '. Send this to the developer.' }) : null,
-					status.unmatched.length ? h(Design.TableRow, { key: 'unmatched', label: 'A list holds your pinned chats in a place I do not know', subLabel: 'Row fields: ' + status.unmatched.join(' | ') + '. Send this to the developer.' }) : null,
-					h(Design.TableRow, { key: 'menu', label: 'Hold-down menu', subLabel: status.menus ? 'Added ' + status.menus + ' time(s)' : 'Not seen yet. Hold a DM in the list.' }),
-					status.error ? h(Design.TableRow, { key: 'error', label: 'Problem', subLabel: status.error }) : null,
+					{ title: 'Experimental' },
+					h(Design.TableSwitchRow, { key: 'strip', label: 'Pinned strip above the DM tab', subLabel: 'Repeats your pinned chats in a panel at the top. Off by default.', value: stripEnabled(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripOn2: !!v }); changed() } catch (e) {} } }),
+					h(Design.TableSwitchRow, { key: 'stripbelow', label: 'Put the strip under the Messages header', subLabel: 'Only matters when the strip is on.', value: stripBelow(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripBelow2: !!v }); changed() } catch (e) {} } }),
+					h(Design.TableSwitchRow, { key: 'hidepinned', label: 'Hide pinned chats from other lists', subLabel: 'Leaves them out of the normal DM lists the plugin can reach.', value: hideOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { hidePinned2: !!v }); refreshList() } catch (e) {} } }),
+				),
+				h(
+					Design.TableRowGroup,
+					{ title: 'Diagnostics' },
+					h(Design.TableRow, { key: 'copyreport', label: 'Copy diagnostic report', subLabel: 'Open the Messages tab first, then tap here and paste it to the developer.', onPress: copyReport }),
+					h(Design.TableSwitchRow, { key: 'tech', label: 'Show technical details', value: tech[0], onValueChange: function (v) { tech[1](!!v) } }),
+					tech[0] ? technical : null,
 				),
 			),
 		)
