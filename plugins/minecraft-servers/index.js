@@ -23,6 +23,8 @@
 		alertSeconds: 120,
 		historyLength: 40,
 		pingSource: 'phone',
+		liveCounts: true,
+		plainScroll: false,
 		pingSamples: 4,
 		pingFactor: 2,
 	}
@@ -168,7 +170,7 @@
 		var name = v ? v.name_clean || v.name_raw || v.name || '' : ''
 		var s = splitVersion(name, j && j.software)
 		return base(server, {
-			online: !!(j && j.online), ip: (j && j.ip_address) || '', port: (j && j.port) || undefined, version: s.version, software: s.software,
+			online: !!(j && j.online), retrievedAt: (j && j.retrieved_at) || 0, ip: (j && j.ip_address) || '', port: (j && j.port) || undefined, version: s.version, software: s.software,
 			srv: j && j.srv_record && j.srv_record.host ? j.srv_record.host + ':' + j.srv_record.port : '', eula: !!(j && j.eula_blocked),
 			protocol: v && v.protocol !== undefined ? v.protocol : null, gamemode: (j && j.gamemode) || '',
 			players: { online: j && j.players ? j.players.online || 0 : 0, max: j && j.players ? j.players.max || 0 : 0, list: ((j && j.players && j.players.list) || []).map(function (p) { return { name: p.name_clean || p.name_raw || p.name, id: p.uuid || p.id } }).filter(function (p) { return p.name }) },
@@ -271,7 +273,15 @@
 				var m = /^(.*):(\d+)$/.exec(good.srv || '')
 				if (m) { host = m[1]; port = Number(m[2]) }
 				return PROVIDERS.minetools.get({ address: host, port: port, edition: 'java' }, seconds).then(
-					function (ping) { return merge(good, [ping]) },
+					function (ping) {
+						var out = merge(good, [ping])
+						// Status sites keep their answer for a minute or more. minetools asks the server itself, so its count is the live one.
+						if (setting('liveCounts') && ping.online && ping.players && typeof ping.players.online === 'number') {
+							out.players = Object.assign({}, out.players, { online: ping.players.online, max: ping.players.max || out.players.max, list: ping.players.list.length ? ping.players.list : out.players.list })
+							out.countsFrom = 'live'
+						}
+						return out
+					},
 					function () { return good },
 				)
 			},
@@ -839,7 +849,7 @@
 		var React = valenced.react.React
 		var RN = valenced.react.ReactNative
 		var s = serverById(props.id)
-		var confirm = React.useState(false)
+		var tabState = React.useState('overview')
 		if (!s) return h(ListView, props)
 		var r = results[s.id]
 		var d = r && r.data
@@ -849,11 +859,9 @@
 		var h2 = stats(s)
 		var port = d && !d.error && d.port ? d.port : s.port || (s.edition === 'bedrock' ? 19132 : 25565)
 		var fill = online && d.players.max ? Math.min(100, Math.round((d.players.online / d.players.max) * 100)) : 0
-		var content = h(
-			RN.View,
-			{ style: { gap: 14 } },
-			h(Button, { text: '‹ All servers', onPress: function () { props.go({ name: 'list' }) } }),
-			h(
+		var tab = tabState[0]
+		var backButton = 			h(Button, { text: '‹ All servers', onPress: function () { props.go({ name: 'list' }) } })
+		var headerRow = 			h(
 				RN.View,
 				{ style: { flexDirection: 'row', alignItems: 'center', gap: 14 } },
 				h(Avatar, { server: s, data: d, size: 64, dotColor: st.color }),
@@ -868,22 +876,18 @@
 					),
 					h(Chip, { text: loading && !d ? 'Checking…' : st.label, color: st.color, dot: true }),
 				),
-			),
-			st.key === 'error'
+			)
+		var errorCard = 			st.key === 'error'
 				? h(Card, { style: { backgroundColor: tint(AMBER, 0.14) } }, T({ variant: 'text-md/semibold', style: { color: AMBER } }, 'Could not get an answer'), T({ variant: 'text-sm/medium' }, String(d.error)), T({ variant: 'text-xs/medium', color: 'text-muted' }, 'Check the address, or try another status site in the plugin settings.'))
-				: null,
-			online && setting('motd') && d.motd ? h(Card, null, T({ variant: 'text-xs/semibold', color: 'text-muted' }, 'MESSAGE OF THE DAY'), T({ variant: 'text-md/medium' }, d.motd)) : null,
-			h(
-				RN.View,
-				{ style: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 } },
-				h(Stat, { key: 'players', label: 'Players', value: online ? d.players.online + (d.players.max ? ' / ' + d.players.max : '') : '–', color: online ? undefined : GRAY }, online && d.players.max ? h(RN.View, { style: { height: 6, borderRadius: 3, backgroundColor: raised(), marginTop: 6, overflow: 'hidden' } }, h(RN.View, { style: { width: fill + '%', height: 6, backgroundColor: fill > 85 ? AMBER : GREEN } })) : null),
-				h(Stat, { key: 'ping', label: 'Ping', value: online && d.ping !== null ? d.ping + ' ms' : online && d.pingFrom === 'measuring' ? '…' : '–', color: online ? pingColor(d.ping) : GRAY, sub: online ? (d.pingFrom === 'phone' ? 'Measured from your phone' : d.pingFrom === 'site' ? 'From the status site, not your phone' : d.pingFrom === 'measuring' ? 'Measuring from your phone' : d.pingNote || 'Not available') : undefined }),
-				h(Stat, { key: 'version', label: 'Version', value: online && d.version ? d.version : '–', sub: online && d.protocol !== null && d.protocol !== undefined ? 'Protocol ' + d.protocol : undefined }),
-				h(Stat, { key: 'software', label: 'Software', value: online && d.software ? d.software : online ? 'Not shared' : '–', sub: online ? (s.edition === 'bedrock' ? 'Bedrock' : 'Java') + (d.gamemode ? ' · ' + d.gamemode : '') : undefined }),
-				h(Stat, { key: 'ip', label: 'IP address', value: d && d.ip ? d.ip : s.address, sub: d && d.srv ? 'Real address ' + d.srv : d && d.ip ? 'Behind ' + s.address : 'Address you saved' }),
-				h(Stat, { key: 'port', label: 'Port', value: String(port), sub: s.port ? 'Set by you' : 'Default' }),
-			),
-			online
+				: null
+		var motdCard = 			online && setting('motd') && d.motd ? h(Card, null, T({ variant: 'text-xs/semibold', color: 'text-muted' }, 'MESSAGE OF THE DAY'), T({ variant: 'text-md/medium' }, d.motd)) : null
+		var playersStat = 				h(Stat, { key: 'players', label: 'Players', value: online ? d.players.online + (d.players.max ? ' / ' + d.players.max : '') : '–', color: online ? undefined : GRAY, sub: online ? (d.countsFrom === 'live' ? 'Live count' : d.retrievedAt ? 'Status site, ' + ago(d.retrievedAt) : undefined) : undefined }, online && d.players.max ? h(RN.View, { style: { height: 6, borderRadius: 3, backgroundColor: raised(), marginTop: 6, overflow: 'hidden' } }, h(RN.View, { style: { width: fill + '%', height: 6, backgroundColor: fill > 85 ? AMBER : GREEN } })) : null)
+		var pingStat = 				h(Stat, { key: 'ping', label: 'Ping', value: online && d.ping !== null ? d.ping + ' ms' : online && d.pingFrom === 'measuring' ? '…' : '–', color: online ? pingColor(d.ping) : GRAY, sub: online ? (d.pingFrom === 'phone' ? 'Measured from your phone' : d.pingFrom === 'site' ? 'From the status site, not your phone' : d.pingFrom === 'measuring' ? 'Measuring from your phone' : d.pingNote || 'Not available') : undefined })
+		var versionStat = 				h(Stat, { key: 'version', label: 'Version', value: online && d.version ? d.version : '–', sub: online && d.protocol !== null && d.protocol !== undefined ? 'Protocol ' + d.protocol : undefined })
+		var softwareStat = 				h(Stat, { key: 'software', label: 'Software', value: online && d.software ? d.software : online ? 'Not shared' : '–', sub: online ? (s.edition === 'bedrock' ? 'Bedrock' : 'Java') + (d.gamemode ? ' · ' + d.gamemode : '') : undefined })
+		var ipStat = 				h(Stat, { key: 'ip', label: 'IP address', value: d && d.ip ? d.ip : s.address, sub: d && d.srv ? 'Real address ' + d.srv : d && d.ip ? 'Behind ' + s.address : 'Address you saved' })
+		var portStat = 				h(Stat, { key: 'port', label: 'Port', value: String(port), sub: s.port ? 'Set by you' : 'Default' })
+		var playersCard = 			online
 				? h(
 						Card,
 						null,
@@ -893,12 +897,12 @@
 							: T({ variant: 'text-sm/medium', color: 'text-muted' }, d.players.online ? 'This server does not share the names of the players.' : 'Nobody is playing right now.'),
 						d.players.list.length && d.players.online > d.players.list.length ? T({ variant: 'text-xs/medium', color: 'text-muted' }, 'Showing ' + d.players.list.length + ' names. The server only lists some of its players.') : null,
 				  )
-				: null,
-			online && (d.plugins.length || d.mods.length)
+				: null
+		var modsCard = 			online && (d.plugins.length || d.mods.length)
 				? h(Card, null, T({ variant: 'text-md/bold' }, d.mods.length ? 'Mods (' + d.mods.length + ')' : 'Plugins (' + d.plugins.length + ')'), h(NameList, { list: d.mods.length ? d.mods : d.plugins, what: d.mods.length ? 'mods' : 'plugins' }))
-				: null,
-			d && !d.error && d.eula ? h(Card, { style: { backgroundColor: tint(RED, 0.14) } }, T({ variant: 'text-md/semibold', style: { color: RED } }, 'Blocked by Mojang'), T({ variant: 'text-sm/medium' }, 'Mojang blocks this server for breaking the Minecraft EULA, so players cannot join it from the normal launcher.')) : null,
-			h(
+				: null
+		var eulaCard = 			d && !d.error && d.eula ? h(Card, { style: { backgroundColor: tint(RED, 0.14) } }, T({ variant: 'text-md/semibold', style: { color: RED } }, 'Blocked by Mojang'), T({ variant: 'text-sm/medium' }, 'Mojang blocks this server for breaking the Minecraft EULA, so players cannot join it from the normal launcher.')) : null
+		var historyCard = 			h(
 				Card,
 				null,
 				h(RN.View, { style: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' } }, T({ variant: 'text-md/bold' }, 'History'), h2.checks ? T({ variant: 'text-sm/medium', color: 'text-muted' }, h2.checks + ' check' + (h2.checks === 1 ? '' : 's')) : null),
@@ -914,10 +918,19 @@
 							h(Chip, { text: 'Peak ' + h2.peak + ' players', color: BLURPLE }),
 					  )
 					: null,
-			),
-			r && r.at ? T({ variant: 'text-xs/medium', color: 'text-muted', style: { textAlign: 'center' } }, 'Checked ' + ago(r.at) + (d && d.via && d.via.length ? ' via ' + d.via.join(' + ') : '')) : null,
-			h2.checks ? h(Button, { text: 'Clear this history', onPress: function () { var map = history(); delete map[s.id]; saveHistory(map); changed() } }) : null,
-		)
+			)
+		var checkedLine = 			r && r.at ? T({ variant: 'text-xs/medium', color: 'text-muted', style: { textAlign: 'center' } }, 'Checked ' + ago(r.at) + (d && d.via && d.via.length ? ' via ' + d.via.join(' + ') : '')) : null
+		var clearButton = 			h2.checks ? h(Button, { text: 'Clear this history', onPress: function () { var map = history(); delete map[s.id]; saveHistory(map); changed() } }) : null
+		var grid = function (list) { return h(RN.View, { style: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 } }, list) }
+		var tabs = h(Segmented, { value: tab, onChange: function (v) { tabState[1](v) }, items: [{ value: 'overview', label: 'Overview' }, { value: 'players', label: online ? 'Players (' + d.players.online + ')' : 'Players' }, { value: 'info', label: 'Info' }, { value: 'history', label: 'History' }] })
+		var page = tab === 'players'
+			? [playersCard || T({ key: 'np', variant: 'text-sm/medium', color: 'text-muted' }, 'The server is offline, so there is no player list.'), checkedLine]
+			: tab === 'info'
+			? [grid([ipStat, portStat]), modsCard || T({ key: 'nm', variant: 'text-sm/medium', color: 'text-muted' }, online ? 'This server does not share a list of mods or plugins.' : 'The server is offline.')]
+			: tab === 'history'
+			? [historyCard, clearButton]
+			: [errorCard, eulaCard, motdCard, grid([playersStat, pingStat, versionStat, softwareStat]), checkedLine]
+		var content = h(RN.View, { style: { gap: 14 } }, backButton, headerRow, tabs, page)
 		var asking = pendingDelete.id === s.id && Date.now() - pendingDelete.at < 4000
 		var footer = [
 			h(Row2, { key: 'a' }, [
@@ -1047,6 +1060,46 @@
 		return v.name === 'edit' || v.name === 'detail' ? body : h(SheetBody, null, body)
 	}
 
+	// ---- The scrolling part of a sheet ---------------------------------------------------------------
+	// Inside a bottom sheet a plain scroll view can lose its touches to the sheet. The sheet library has its own scroll view for that;
+	// use it when it can be found, and fall back to the plain one if it cannot be drawn.
+	var scrollPick = null
+	var boundaryClass = null
+	function sheetScrollComponent() {
+		var RN = valenced.react.ReactNative
+		if (scrollPick) return scrollPick
+		var pick = RN.ScrollView
+		try {
+			if (!setting('plainScroll')) {
+				var D = valenced.discord.design.Design
+				var c = D && (D.BottomSheetScrollView || D.ActionSheetScrollView)
+				if (!c) { var f = finders(); var m = f.lookupModule(f.filters.withProps('BottomSheetScrollView'))[0]; c = m && m.BottomSheetScrollView }
+				if (c) pick = c
+			}
+		} catch (e) {}
+		scrollPick = pick
+		return pick
+	}
+	function scrollBoundary() {
+		if (boundaryClass) return boundaryClass
+		var React = valenced.react.React
+		if (typeof React.Component !== 'function') return null
+		boundaryClass = class extends React.Component {
+			constructor(p) { super(p); this.state = { bad: false } }
+			static getDerivedStateFromError() { return { bad: true } }
+			componentDidCatch() {}
+			render() { return this.state.bad ? this.props.fallback : this.props.children }
+		}
+		return boundaryClass
+	}
+	function scrollView(RN, scrollProps, children) {
+		var Scroll = sheetScrollComponent()
+		var plain = h(RN.ScrollView, scrollProps, children)
+		var Boundary = Scroll === RN.ScrollView ? null : scrollBoundary()
+		if (!Boundary) return plain
+		return h(Boundary, { fallback: plain }, h(Scroll, scrollProps, children))
+	}
+
 	/**
 	 * How tall the scrolling part of a sheet may be: the window, minus the fixed buttons, minus the room the sheet itself
 	 * needs (the gap above it, its handle, the bottom bar of the phone). Too tall and the buttons end up below the screen.
@@ -1064,7 +1117,7 @@
 		return h(
 			Design.ActionSheet,
 			null,
-			h(RN.ScrollView, { style: { maxHeight: sheetScrollMax(size.height, props.footer) }, contentContainerStyle: { padding: 16, paddingBottom: props.footer ? 12 : 28 }, keyboardShouldPersistTaps: 'handled', nestedScrollEnabled: true, scrollEnabled: true, bounces: true, showsVerticalScrollIndicator: true }, props.children),
+			scrollView(RN, { style: { maxHeight: sheetScrollMax(size.height, props.footer) }, contentContainerStyle: { padding: 16, paddingBottom: props.footer ? 12 : 28 }, keyboardShouldPersistTaps: 'handled', nestedScrollEnabled: true, scrollEnabled: true, bounces: true, showsVerticalScrollIndicator: true }, props.children),
 			props.footer ? h(RN.View, { style: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 18, gap: 8 } }, props.footer) : null,
 		)
 	}
@@ -1364,6 +1417,8 @@
 					{ value: 'phone', label: 'Your phone (recommended)', subLabel: 'Measured from your own network, so it matches what you get in the game' },
 					{ value: 'site', label: 'The status site', subLabel: 'Measured from the site\'s computer, which may be far from you' },
 				]),
+				toggle('plainScroll', 'Plain scrolling in panels', 'Turn this on if a panel will not scroll or looks wrong. Off uses the sheet\'s own scrolling when it can be found.'),
+				toggle('liveCounts', 'Live player count', 'Status sites keep an answer for a minute or more, so a player who just joined can be missing. This also asks minetools.eu, which asks the server itself.'),
 				radio('Ping measurements', 'pingSamples', [{ value: '3', label: '3 tries', subLabel: 'Quicker' }, { value: '4', label: '4 tries' }, { value: '6', label: '6 tries', subLabel: 'Steadier' }], true),
 				h(
 					Card,

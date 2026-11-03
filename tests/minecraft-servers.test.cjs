@@ -1,11 +1,11 @@
 const fs=require('fs');const path=require('path');const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 // ---- tiny React renderer with state per component path
 let store=new Map(),cur,idx,effects=[],dirty=false;
-const React={useState:i0=>{const c=cur;const i=idx++;if(!(i in c.s))c.s[i]=i0;return[c.s[i],v=>{c.s[i]=typeof v==='function'?v(c.s[i]):v;dirty=true}]},
+const React={Component:class{},useState:i0=>{const c=cur;const i=idx++;if(!(i in c.s))c.s[i]=i0;return[c.s[i],v=>{c.s[i]=typeof v==='function'?v(c.s[i]):v;dirty=true}]},
  useEffect:(f,deps)=>{const c=cur;const i=idx++;if(!c.e[i]){c.e[i]={};effects.push(()=>{c.e[i].cleanup=f()})}},cloneElement:(e,p)=>({...e,props:{...e.props,...p}})};
 const el=(type,props,key)=>({type,props:props||{},key});const runtime={jsx:(t,p,k)=>el(t,p,k),jsxs:(t,p,k)=>el(t,p,k)};
 function render(node,path){if(Array.isArray(node))return node.map((n,i)=>render(n,path+'/'+i));if(!node||typeof node!=='object')return node;
- if(typeof node.type==='function'){const p=path+'/'+(node.key||node.type.name);let c=store.get(p);if(!c){c={s:{},e:{}};store.set(p,c)}const pc=cur,pi=idx;cur=c;idx=0;const out=node.type(node.props);cur=pc;idx=pi;return render(out,p)}
+ if(typeof node.type==='function'){const p=path+'/'+(node.key||node.type.name);let c=store.get(p);if(!c){c={s:{},e:{}};store.set(p,c)}const pc=cur,pi=idx;cur=c;idx=0;const out=(node.type.prototype&&node.type.prototype.render)?(()=>{const inst=new node.type(node.props);inst.props=node.props;return inst.render()})():node.type(node.props);cur=pc;idx=pi;return render(out,p)}
  const kids=node.props&&node.props.children;return{...node,props:{...node.props,children:kids===undefined?undefined:render(kids,path+'/'+(node.key||(typeof node.type==='string'?node.type:'x')))}}}
 async function draw(root){let t;for(let n=0;n<5;n++){dirty=false;effects=[];t=render(root,'r');effects.forEach(f=>f());await sleep(5);if(!dirty)break}return t}
 const walk=(n,f)=>{if(Array.isArray(n))return n.forEach(x=>walk(x,f));if(!n||typeof n!=='object')return;f(n);walk(n.props&&n.props.children,f)};
@@ -114,5 +114,43 @@ global.fetch=async(u,o)=>{
  lastSheet=null;store=new Map();let st=await draw(el(p.SettingsComponent,{api:{jsonStorage:json}}));
  check('the settings page lists a ping group and the calibration', texts(st).join('|').indexOf('Ping calibration')>=0 && texts(st).some(x=>/Calibrate/.test(x)), texts(st).filter(x=>/Calib|Ping/.test(x)).join('|'));
 
+ // 8. live player count: the status site says 0, the server itself (minetools) says 3
+ {
+  const base={online:true,host:'live.example.com',port:25565,ip_address:'203.0.113.9',version:{name_raw:'Paper 1.21',name_clean:'Paper 1.21',protocol:767},players:{online:0,max:20,list:[]},motd:{clean:'Hi'},icon:null,retrieved_at:Date.now()-90000};
+  behaviour={'api.mcstatus.io/v2/status/java':base,'api.minetools.eu':{description:'x',latency:40,players:{max:20,online:3,sample:[{id:'1',name:'Steve'},{id:'2',name:'Alex'},{id:'3',name:'Kai'}]},version:{name:'Paper 1.21',protocol:767}}};
+  data.cache.serversJson=JSON.stringify([{id:'l1',name:'Live',address:'live.example.com',port:0,edition:'java'}]);
+  data.cache.liveCounts=true;closeAfter=60;
+  let t8=await openList();await sleep(500);t8=await draw(el(lastSheet,{}));
+  check('the list shows the live count (3), not the status site\'s 0', /3\/20|3 \/ 20/.test(texts(t8).join('|')), texts(t8).join('|').slice(0,200));
+  data.cache.liveCounts=false;
+  t8=await openList();await sleep(500);t8=await draw(el(lastSheet,{}));
+  check('with live counts off the status site\'s count is shown', /0\/20|0 \/ 20/.test(texts(t8).join('|')), texts(t8).join('|').slice(0,200));
+  data.cache.liveCounts=true;
+  // detail tabs
+  let pr8;walk(t8,n=>{if(!pr8&&n.props&&n.props.onPress&&n.props.onLongPress)pr8=n});pr8.props.onPress();await sleep(20);
+  let d8=await draw(el(lastSheet,{}));
+  const tabBtn=(tree,label)=>{let hit;walk(tree,n=>{if(!hit&&n.props&&n.props.onPress&&!n.props.text&&JSON.stringify(n.props.children||'').indexOf(label)>=0)hit=n});return hit};
+  check('the detail screen has four tabs', ['Overview','Players','Info','History'].every(l=>tabBtn(d8,l)), texts(d8).join('|').slice(0,200));
+  tabBtn(d8,'Players').props.onPress();await sleep(10);d8=await draw(el(lastSheet,{}));
+  check('the Players tab lists the names, and nothing else long', ['Steve','Alex','Kai'].every(n=>texts(d8).join('|').indexOf(n)>=0), texts(d8).join('|').slice(0,300));
+  check('the Players tab does not repeat the stat boxes', texts(d8).join('|').indexOf('SOFTWARE')<0, '');
+  tabBtn(d8,'Info').props.onPress();await sleep(10);d8=await draw(el(lastSheet,{}));
+  check('the Info tab shows the address and port', /IP ADDRESS/.test(texts(d8).join('|')) && /PORT/.test(texts(d8).join('|')), texts(d8).join('|').slice(0,200));
+  tabBtn(d8,'History').props.onPress();await sleep(10);d8=await draw(el(lastSheet,{}));
+  check('the History tab shows the history card', /History/.test(texts(d8).join('|')), texts(d8).join('|').slice(0,200));
+  // the sheet's own scroll view is used when it exists, with the plain one as the fallback
+  const kidsOfSheet=(tree)=>{let sh;walk(tree,n=>{if(n.type&&n.type.__t==='Sheet')sh=n});return sh&&sh.props.children};
+  const first=kidsOfSheet(d8)&&kidsOfSheet(d8)[0];
+  check('without the sheet\'s own scroll view the plain scroll view is used', first&&first.type&&first.type.__t==='Scroll', first&&JSON.stringify(first.type&&first.type.__t||first.type));
+  // a fresh copy of the plugin, with a sheet scroll view available: it is used, inside a safety net that falls back to the plain one
+  global.valenced.discord.design.Design.BottomSheetScrollView=mk('SheetScroll');
+  const p2=new Function('valenced','plugin','return '+fs.readFileSync(path.join(__dirname,'..','plugins','minecraft-servers','index.js'),'utf8'))(valenced,plugin).default;
+  p2.start({cleanup:f=>f,jsonStorage:json});
+  lastSheet=null;store=new Map();const st2=await draw(el(p2.SettingsComponent,{api:{jsonStorage:json}}));press(st2,'Open the list');await sleep(5);
+  const d9=await draw(el(lastSheet,{}));
+  const f9=kidsOfSheet(d9)&&kidsOfSheet(d9)[0];
+  check('with the sheet\'s own scroll view the panel uses it (inside a safety net)', f9&&f9.type&&f9.type.__t==='SheetScroll', JSON.stringify(f9&&f9.type&&(f9.type.__t||f9.type.name)));
+  delete global.valenced.discord.design.Design.BottomSheetScrollView;
+ }
  console.log(failed?'\n'+failed+' check(s) failed':'\nAll checks passed');process.exit(failed?1:0)
 })();

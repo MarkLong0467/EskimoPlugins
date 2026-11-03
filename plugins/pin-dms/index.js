@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.15.2'
+	var VERSION = '1.15.3'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -533,6 +533,46 @@
 
 	// ---- Sheets ------------------------------------------------------------------------------------------
 	/** A sheet whose buttons stay at the bottom: `footer` is not part of the scrolling part. */
+	// ---- The scrolling part of a sheet ---------------------------------------------------------------
+	// Inside a bottom sheet a plain scroll view can lose its touches to the sheet. The sheet library has its own scroll view for that;
+	// use it when it can be found, and fall back to the plain one if it cannot be drawn.
+	var scrollPick = null
+	var boundaryClass = null
+	function sheetScrollComponent() {
+		var RN = valenced.react.ReactNative
+		if (scrollPick) return scrollPick
+		var pick = RN.ScrollView
+		try {
+			if (!(storage && storage.cache && storage.cache.plainScroll === true)) {
+				var D = valenced.discord.design.Design
+				var c = D && (D.BottomSheetScrollView || D.ActionSheetScrollView)
+				if (!c) { var f = finders(); var m = f.lookupModule(f.filters.withProps('BottomSheetScrollView'))[0]; c = m && m.BottomSheetScrollView }
+				if (c) pick = c
+			}
+		} catch (e) {}
+		scrollPick = pick
+		return pick
+	}
+	function scrollBoundary() {
+		if (boundaryClass) return boundaryClass
+		var React = valenced.react.React
+		if (typeof React.Component !== 'function') return null
+		boundaryClass = class extends React.Component {
+			constructor(p) { super(p); this.state = { bad: false } }
+			static getDerivedStateFromError() { return { bad: true } }
+			componentDidCatch() {}
+			render() { return this.state.bad ? this.props.fallback : this.props.children }
+		}
+		return boundaryClass
+	}
+	function scrollView(RN, scrollProps, children) {
+		var Scroll = sheetScrollComponent()
+		var plain = h(RN.ScrollView, scrollProps, children)
+		var Boundary = Scroll === RN.ScrollView ? null : scrollBoundary()
+		if (!Boundary) return plain
+		return h(Boundary, { fallback: plain }, h(Scroll, scrollProps, children))
+	}
+
 	/** The scrolling part of a sheet may be as tall as the window minus the fixed buttons and the room the sheet itself needs. */
 	function sheetScrollMax(windowHeight, footer) {
 		var rows = footer ? (Array.isArray(footer) ? footer.filter(Boolean).length : 1) : 0
@@ -546,7 +586,7 @@
 		return h(
 			Design.ActionSheet,
 			null,
-			h(RN.ScrollView, { style: { maxHeight: sheetScrollMax(size.height, props.footer) }, keyboardShouldPersistTaps: 'handled', nestedScrollEnabled: true, showsVerticalScrollIndicator: true }, h(Design.Stack, { spacing: 16, style: { padding: 16 } }, props.children)),
+			scrollView(RN, { style: { maxHeight: sheetScrollMax(size.height, props.footer) }, keyboardShouldPersistTaps: 'handled', nestedScrollEnabled: true, showsVerticalScrollIndicator: true }, h(Design.Stack, { spacing: 16, style: { padding: 16 } }, props.children)),
 			props.footer ? h(RN.View, { style: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 18, gap: 8 } }, props.footer) : null,
 		)
 	}
