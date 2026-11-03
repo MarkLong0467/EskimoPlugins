@@ -75,7 +75,7 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 
 // 3. The strip
 {
-	const a = load({ sectionsJson: '[{"id":"s1","name":"Boys","color":"#00d4ff"}]', assignJson: JSON.stringify({ [LONG.c2]: 's1' }) })
+	const a = load({ stripOn2: true, sectionsJson: '[{"id":"s1","name":"Boys","color":"#00d4ff"}]', assignJson: JSON.stringify({ [LONG.c2]: 's1' }) })
 	function Messages() {}
 	const el = a.runtime.jsx(Messages, { x: 1 })
 	check('the Messages screen is wrapped with the strip on top', el.type === 'V' && el.props.children[0].type.name === 'PinnedStrip' && el.props.children[1].type === Messages)
@@ -87,13 +87,13 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 	let row; const walk = (n) => { if (Array.isArray(n)) return n.forEach(walk); if (!n || typeof n !== 'object') return; if (!row && n.type === 'P' && n.props.onLongPress && n.props.style && n.props.style.height === 46) row = n; walk(n.props && n.props.children) }
 	walk(out); row.props.onPress()
 	check('tapping a row opens the chat', /discord\.com\/channels\/@me\/9000/.test(global.opened || ''), global.opened)
-	const off = load({ stripOn: false }); const el2 = off.runtime.jsx(Messages, {})
+	const off = load({ stripOn2: false }); const el2 = off.runtime.jsx(Messages, {})
 	check('the strip can be turned off', el2.type === Messages)
 }
 
 // 4. Under the header, under the voice card, one strip only
 {
-	const a = load({ stripBelow2: true })
+	const a = load({ stripOn2: true, stripBelow2: true })
 	function MessagesHeader() {}
 	function ActiveVoiceCards() {}
 	const h = a.runtime.jsx(MessagesHeader, {})
@@ -103,6 +103,23 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 	a.setCur('v'); const outV = expand(v.props.children[1].type(v.props.children[1].props))
 	a.setCur('h'); const outH = v.props.children[1] && h.props.children[1].type(h.props.children[1].props)
 	check('the voice slot shows, and the header slot steps aside', !!outV && outH === null)
+}
+
+// 4b. The real DM list hands over data.channels: pinned chats go first, nothing else changes
+{
+	const a = load({ hidePinned2: false })
+	function MessagesFastestList() {}
+	const channels = Object.keys(LONG).map((k) => ({ channelId: LONG[k], lastMessageId: '1', isFavorite: false, isRequest: false }))
+	const data = { channels, channelFavorites: [], dataKey: null, sections: [0, 1, 6] }
+	const el = a.runtime.jsx(MessagesFastestList, { data, listItemHeight: 55 })
+	const got = el.props.data.channels.map((c) => c.channelId)
+	check('pinned chats come first in data.channels', short(got) === 'c2,c4,c1,c3,c5,g1', short(got))
+	check('the other fields of data are kept as they were', el.props.data.sections === data.sections && el.props.data.channelFavorites === data.channelFavorites && el.props.listItemHeight === 55)
+	check('the list keeps the same number of rows', got.length === channels.length)
+	const el2 = a.runtime.jsx(MessagesFastestList, { data })
+	check('the same input gives the same data object (no needless re-layout)', el2.props.data === el.props.data)
+	const none = load({ pinsJson: '[]' }); const el3 = none.runtime.jsx(MessagesFastestList, { data })
+	check('with no pins the list is left alone', el3.props.data === data)
 }
 
 // 5. The list pieces and the report

@@ -5,8 +5,8 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.10.0'
-	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn: true, stripBelow2: false, hidePinned2: false }
+	var VERSION = '1.11.0'
+	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
 	var GROUP_DM = 3
 	var METHODS = ['getPrivateChannelIds', 'getSortedChannels']
@@ -715,7 +715,7 @@
 		try { return !storage || !storage.cache || storage.cache.stripBelow2 === true } catch (e) { return true }
 	}
 	function stripEnabled() {
-		try { return !storage || !storage.cache || storage.cache.stripOn !== false } catch (e) { return true }
+		try { return !storage || !storage.cache || storage.cache.stripOn2 === true } catch (e) { return true }
 	}
 	function openChat(id) {
 		var f = finders()
@@ -878,6 +878,7 @@
 		return t.displayName || t.name || (inner && (inner.displayName || inner.name)) || ''
 	}
 	/** The real DM list ("MessagesFastestList"): note what it is given, and put the pinned chats first in any list it holds. */
+	var fastCache = null
 	function decorateFast(result) {
 		try {
 			if (nameOf(result) !== 'MessagesFastestList') return result
@@ -895,6 +896,20 @@
 			if (!state.pins.length) return result
 			var next = { __pinFast: true }
 			var any = false
+			// The DM tab hands the chats over as data.channels: [{ channelId, lastMessageId, ... }]. Pinned ones go first.
+			var d = props.data
+			if (d && typeof d === 'object' && !Array.isArray(d) && Array.isArray(d.channels) && d.channels.length > 1) {
+				var stateKey = JSON.stringify(state)
+				if (!(fastCache && fastCache.orig === d.channels && fastCache.key === stateKey)) {
+					var orderedCh = reorderRows(d.channels)
+					fastCache = { orig: d.channels, key: stateKey, data: orderedCh === d.channels ? d : Object.assign({}, d, { channels: orderedCh }), moved: orderedCh !== d.channels }
+				}
+				if (fastCache.moved) {
+					next.data = fastCache.data
+					any = true
+					if (status.listKey.indexOf('fast.data.channels') < 0) { status.listKey.push('fast.data.channels'); changed() }
+				}
+			}
 			keys.forEach(function (k) {
 				var v = props[k]
 				if (!Array.isArray(v) || v.length < 2) return
@@ -1330,7 +1345,7 @@
 					Design.TableRowGroup,
 					{ title: 'Status' },
 					h(Design.TableRow, { key: 'copyreport', label: 'Copy diagnostic report', subLabel: 'Open the Messages tab first, then tap here and paste it in the chat. It lists what the DM tab is made of.', onPress: copyReport }),
-					h(Design.TableSwitchRow, { key: 'strip', label: 'Pinned strip above the DM tab', subLabel: 'Shows your pinned chats at the top of Messages, grouped in your sections. Tap to open, hold for options, tap a heading to fold.', value: stripEnabled(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripOn: !!v }); changed() } catch (e) {} } }),
+					h(Design.TableSwitchRow, { key: 'strip', label: 'Pinned strip above the DM tab', subLabel: 'Optional. Your pinned chats already sit at the top of the list, so this repeats them in a panel with section headings. Off by default.', value: stripEnabled(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripOn2: !!v }); changed() } catch (e) {} } }),
 					h(Design.TableSwitchRow, { key: 'hidepinned', label: 'Hide pinned chats from the normal list', subLabel: 'Experimental. They only show in the strip, not twice. Off by default.', value: hideOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { hidePinned2: !!v }); refreshList() } catch (e) {} } }),
 					h(Design.TableSwitchRow, { key: 'stripbelow', label: 'Try to put the strip under the Messages header', subLabel: 'Experimental. Off by default, the strip stays at the very top.', value: stripBelow(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripBelow2: !!v }); changed() } catch (e) {} } }),
 					h(Design.TableRow, { key: 'stripstatus', label: 'Pinned strip', subLabel: (status.strip ? 'Shown ' + status.strip + ' time(s)' : 'Not shown yet. Open the Messages tab.') + (status.lastOpen ? ' · last tap: ' + status.lastOpen : '') + (status.fastList ? ' · DM list gets: ' + status.fastList : '') + (status.cards.length ? ' · voice-ish names: ' + status.cards.join(', ') : '') + ' · strip slot: ' + (status.voiceAnchor || 'top') + ' · screens seen: ' + (status.screens.join(', ') || 'none') }),
