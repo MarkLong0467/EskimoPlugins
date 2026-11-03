@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [] }
+	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], sortFix: true }
 	var DM = 1
 	var GROUP_DM = 3
 	var METHODS = ['getPrivateChannelIds', 'getSortedChannels']
@@ -289,11 +289,54 @@
 		})
 	}
 
+	/** The DM tab sorts the chats by time after the stores hand them over. Put the pinned ones back first. */
+	function sortFixEnabled() {
+		try { return !storage || !storage.cache || storage.cache.sortFix !== false } catch (e) { return true }
+	}
+	function fixSorted(arr) {
+		try {
+			if (!Array.isArray(arr) || arr.length < 8 || !sortFixEnabled()) return arr
+			var state = read()
+			if (!state.pins.length) return arr
+			var probe = 0
+			for (var i = 0; i < 3; i++) { if (idOf(arr[i], 0)) probe++ }
+			if (probe < 3) return arr
+			var ids = arr.map(function (e) { return idOf(e, 0) })
+			var known = ids.filter(Boolean)
+			if (known.length < arr.length * 0.8) return arr
+			var first = pinnedOrder(known)
+			if (!first.length) return arr
+			var byId = {}
+			arr.forEach(function (e, i) { if (ids[i]) byId[ids[i]] = e })
+			var chosen = {}
+			first.forEach(function (id) { chosen[id] = 1 })
+			var slots = []
+			arr.forEach(function (e, i) { if (ids[i]) slots.push(i) })
+			var entries = first.map(function (id) { return byId[id] }).concat(arr.filter(function (e, i) { return ids[i] && !chosen[ids[i]] }))
+			if (entries.length !== slots.length) return arr
+			var changedAny = false
+			slots.forEach(function (slot, n) { if (arr[slot] !== entries[n]) { arr[slot] = entries[n]; changedAny = true } })
+			if (changedAny) {
+				var a = status.activity['Array.sort'] || (status.activity['Array.sort'] = { calls: 0, moved: 0, len: 0, pins: 0 })
+				a.calls++; a.moved++; a.len = arr.length; a.pins = first.length
+				a.after = arr.slice(0, 3).map(labelOf).join(',')
+				if (a.moved <= 3 || a.moved % 25 === 0) changed()
+			}
+			return arr
+		} catch (e) {
+			return arr
+		}
+	}
+
 	function installStoreHooks(cleanup) {
 		var store = sortStore()
 		if (store) status.store = 'found'
 		hookStore(store, 'SortStore', cleanup)
 		try { hookStore(stores().ChannelStore, 'ChannelStore', cleanup) } catch (e) {}
+		try {
+			cleanup(valenced.patcher.after(Array.prototype, 'sort', function (result) { return fixSorted(result) }))
+			status.hooks.push('Array.sort')
+		} catch (e) {}
 	}
 
 	function refreshList() {
@@ -897,6 +940,7 @@
 				h(
 					Design.TableRowGroup,
 					{ title: 'Status' },
+					h(Design.TableSwitchRow, { key: 'sortfix', label: 'Keep pinned chats on top', subLabel: 'The DM tab sorts by time after the plugin reorders it. This puts pinned chats back on top. Turn off if anything looks wrong.', value: sortFixEnabled(), onValueChange: function (v) { try { Object.assign(storage.cache, { sortFix: !!v }); refreshList() } catch (e) {} } }),
 					h(Design.TableRow, { key: 'store', label: 'DM list order', subLabel: status.store + (status.hooks.length ? ' · hooked: ' + status.hooks.join(', ') : ' · not hooked') + ' · reordered ' + status.reordered + ' time(s)' }),
 					h(Design.TableRow, { key: 'list', label: 'Section headers in the list', subLabel: status.headers ? 'Working (' + (status.headerLists + status.rowHeaders) + ' time(s))' : 'Not seen yet. Pin a chat into a section, then open the DM tab. Lists with chats seen: ' + status.lists }),
 					h(Design.TableRow, { key: 'lk', label: 'List props I reordered', subLabel: status.listKey.length ? status.listKey.join(', ') : 'none yet' }),
