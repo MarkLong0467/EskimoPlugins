@@ -97,6 +97,7 @@ global.fetch=async(u,o)=>{
  const scroll=Array.isArray(kids)?kids[0]:null; const footer=Array.isArray(kids)?kids[1]:null;
  check('the detail view has a scrolling part and a fixed footer', !!scroll&&!!footer);
  check('the scrolling part can scroll inside the sheet', scroll&&scroll.props.nestedScrollEnabled===true&&scroll.props.scrollEnabled===true&&scroll.props.style.maxHeight<=800*0.7, JSON.stringify(scroll&&scroll.props.style));
+ check('the scrolling part plus the buttons fit on the screen (800 dp window)', scroll&&scroll.props.style.maxHeight+2*52+8+28+200<=800, JSON.stringify(scroll&&scroll.props.style));
  const ftxt=texts(footer).join('|');
  check('Refresh, Edit, Send to chat and Delete are in the footer', ['Refresh','Edit','Send to chat','Delete'].every(x=>ftxt.indexOf('['+x+']')>=0), ftxt);
  press(footer,'Delete');await sleep(5);

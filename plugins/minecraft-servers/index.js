@@ -1047,6 +1047,15 @@
 		return v.name === 'edit' || v.name === 'detail' ? body : h(SheetBody, null, body)
 	}
 
+	/**
+	 * How tall the scrolling part of a sheet may be: the window, minus the fixed buttons, minus the room the sheet itself
+	 * needs (the gap above it, its handle, the bottom bar of the phone). Too tall and the buttons end up below the screen.
+	 */
+	function sheetScrollMax(windowHeight, footer) {
+		var rows = footer ? (Array.isArray(footer) ? footer.filter(Boolean).length : 1) : 0
+		var footerH = rows ? rows * 52 + (rows - 1) * 8 + 28 : 0
+		return Math.max(200, Math.round(windowHeight - footerH - (rows ? 200 : 150)))
+	}
 	/** A sheet whose buttons can stay at the bottom: `footer` is not part of the scrolling part. */
 	function SheetBody(props) {
 		var Design = valenced.discord.design.Design
@@ -1055,7 +1064,7 @@
 		return h(
 			Design.ActionSheet,
 			null,
-			h(RN.ScrollView, { style: { maxHeight: Math.round(size.height * (props.footer ? 0.66 : 0.8)) }, contentContainerStyle: { padding: 16, paddingBottom: props.footer ? 12 : 28 }, keyboardShouldPersistTaps: 'handled', nestedScrollEnabled: true, scrollEnabled: true, bounces: true, showsVerticalScrollIndicator: true }, props.children),
+			h(RN.ScrollView, { style: { maxHeight: sheetScrollMax(size.height, props.footer) }, contentContainerStyle: { padding: 16, paddingBottom: props.footer ? 12 : 28 }, keyboardShouldPersistTaps: 'handled', nestedScrollEnabled: true, scrollEnabled: true, bounces: true, showsVerticalScrollIndicator: true }, props.children),
 			props.footer ? h(RN.View, { style: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 18, gap: 8 } }, props.footer) : null,
 		)
 	}

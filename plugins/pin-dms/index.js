@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.15.1'
+	var VERSION = '1.15.2'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -533,6 +533,12 @@
 
 	// ---- Sheets ------------------------------------------------------------------------------------------
 	/** A sheet whose buttons stay at the bottom: `footer` is not part of the scrolling part. */
+	/** The scrolling part of a sheet may be as tall as the window minus the fixed buttons and the room the sheet itself needs. */
+	function sheetScrollMax(windowHeight, footer) {
+		var rows = footer ? (Array.isArray(footer) ? footer.filter(Boolean).length : 1) : 0
+		var footerH = rows ? rows * 52 + (rows - 1) * 8 + 28 : 0
+		return Math.max(200, Math.round(windowHeight - footerH - (rows ? 200 : 150)))
+	}
 	function SheetBody(props) {
 		var Design = valenced.discord.design.Design
 		var RN = valenced.react.ReactNative
@@ -540,7 +546,7 @@
 		return h(
 			Design.ActionSheet,
 			null,
-			h(RN.ScrollView, { style: { maxHeight: Math.round(size.height * (props.footer ? 0.62 : 0.8)) }, keyboardShouldPersistTaps: 'handled' }, h(Design.Stack, { spacing: 16, style: { padding: 16 } }, props.children)),
+			h(RN.ScrollView, { style: { maxHeight: sheetScrollMax(size.height, props.footer) }, keyboardShouldPersistTaps: 'handled', nestedScrollEnabled: true, showsVerticalScrollIndicator: true }, h(Design.Stack, { spacing: 16, style: { padding: 16 } }, props.children)),
 			props.footer ? h(RN.View, { style: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 18, gap: 8 } }, props.footer) : null,
 		)
 	}
