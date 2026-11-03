@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.12.2'
+	var VERSION = '1.12.3'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -938,9 +938,19 @@
 		sections[at] = sections[at] + (out.length - d.channels.length)
 		return { channels: out, sections: sections }
 	}
-	/** Where the heading text sits inside its row: 'center' (default), 'below' (close to its chats), 'above' (close to the group above). */
-	function spaceMode() {
-		try { var m = storage && storage.cache && storage.cache.hdSpace2; return m === 'center' || m === 'above' ? m : 'below' } catch (e) { return 'center' }
+	/** Where the heading text sits inside its row, as a percentage from the top (0 high, 100 low). */
+	function headingPos() {
+		try {
+			var v = storage && storage.cache && storage.cache.hdPos
+			return typeof v === 'number' && v >= 0 && v <= 100 ? v : 68
+		} catch (e) { return 68 }
+	}
+	function setHeadingPos(v) {
+		try {
+			Object.assign(storage.cache, { hdPos: Math.max(0, Math.min(100, v)) })
+			fastCache = null
+			refreshList()
+		} catch (e) {}
 	}
 	function ListHeader(props) {
 		var RN = valenced.react.ReactNative
@@ -952,11 +962,10 @@
 		var color = sec ? sec.color : '#80848e'
 		var count = sec ? state.pins.filter(function (id) { return state.assign[id] === sec.id }).length : 0
 		var label = (sec ? (sec.collapsed ? '▸ ' : '▾ ') : '') + String(name).toUpperCase() + (sec ? '  ' + count : '')
-		var mode = spaceMode()
-		var place = mode === 'below' ? { justifyContent: 'flex-end', paddingBottom: 12 } : mode === 'above' ? { justifyContent: 'flex-start', paddingTop: 10 } : { justifyContent: 'center' }
+		var top = Math.max(0, Math.round(headingPos() / 100 * 55 - 8))
 		return h(
 			RN.Pressable,
-			{ onPress: sec ? function () { toggleFold(sec.id) } : undefined, onLongPress: sec ? function () { openEditSection(sec) } : undefined, style: Object.assign({ height: 55, paddingHorizontal: 16 }, place) },
+			{ onPress: sec ? function () { toggleFold(sec.id) } : undefined, onLongPress: sec ? function () { openEditSection(sec) } : undefined, style: { height: 55, paddingHorizontal: 16, justifyContent: 'flex-start', paddingTop: top } },
 			h(
 				RN.View,
 				{ style: { flexDirection: 'row', alignItems: 'center', gap: 8 } },
@@ -1456,9 +1465,9 @@
 					{ title: 'Status' },
 					h(Design.TableRow, { key: 'copyreport', label: 'Copy diagnostic report', subLabel: 'Open the Messages tab first, then tap here and paste it in the chat. It lists what the DM tab is made of.', onPress: copyReport }),
 					h(Design.TableSwitchRow, { key: 'headings', label: 'Section headings in the list', subLabel: 'Puts a heading row (with fold) in front of each section of pinned chats. If the app ever fails to start with it, it turns itself off.', value: hdOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { hdOff: !v, hdTrial: false }); fastCache = null; refreshList() } catch (e) {} } }),
-					h(Design.TableRow, { key: 'sp-center', label: (spaceMode() === 'center' ? '✓ ' : '') + 'Heading spacing: centered', subLabel: 'The heading sits in the middle of its row.', onPress: function () { try { Object.assign(storage.cache, { hdSpace2: 'center' }); fastCache = null; refreshList() } catch (e) {} } }),
-					h(Design.TableRow, { key: 'sp-below', label: (spaceMode() === 'below' ? '✓ ' : '') + 'Heading spacing: room above, close to its chats', subLabel: 'The heading sits a little low, with more room above it than below. Default.', onPress: function () { try { Object.assign(storage.cache, { hdSpace2: 'below' }); fastCache = null; refreshList() } catch (e) {} } }),
-					h(Design.TableRow, { key: 'sp-above', label: (spaceMode() === 'above' ? '✓ ' : '') + 'Heading spacing: close to the group above', subLabel: 'The heading sits high, right under the previous group.', onPress: function () { try { Object.assign(storage.cache, { hdSpace2: 'above' }); fastCache = null; refreshList() } catch (e) {} } }),
+					h(Design.TableRow, { key: 'sp-up', label: 'Move section headings up', subLabel: 'Now ' + headingPos() + '% down the row. Higher up means more room below the heading and less above it.', onPress: function () { setHeadingPos(headingPos() - 6) } }),
+					h(Design.TableRow, { key: 'sp-down', label: 'Move section headings down', subLabel: 'Lower down means more room above the heading and less below it, so it sits close to its chats.', onPress: function () { setHeadingPos(headingPos() + 6) } }),
+					h(Design.TableRow, { key: 'sp-reset', label: 'Reset heading position', subLabel: 'Back to 68%.', onPress: function () { setHeadingPos(68) } }),
 					h(Design.TableSwitchRow, { key: 'strip', label: 'Pinned strip above the DM tab', subLabel: 'Optional. Your pinned chats already sit at the top of the list, so this repeats them in a panel with section headings. Off by default.', value: stripEnabled(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripOn2: !!v }); changed() } catch (e) {} } }),
 					h(Design.TableSwitchRow, { key: 'hidepinned', label: 'Hide pinned chats from the normal list', subLabel: 'Experimental. They only show in the strip, not twice. Off by default.', value: hideOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { hidePinned2: !!v }); refreshList() } catch (e) {} } }),
 					h(Design.TableSwitchRow, { key: 'stripbelow', label: 'Try to put the strip under the Messages header', subLabel: 'Experimental. Off by default, the strip stays at the very top.', value: stripBelow(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripBelow2: !!v }); changed() } catch (e) {} } }),

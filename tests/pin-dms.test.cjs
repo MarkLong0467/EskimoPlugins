@@ -139,8 +139,12 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 	a.setCur('hd'); const ht = texts(expand(hrow.type(hrow.props)))
 	check('the heading shows the section name and count', ht.join('').indexOf('BOYS') >= 0 && ht.join('').indexOf('1') >= 0, ht.join('|'))
 	const hs = (o) => { const x = load(Object.assign({ sectionsJson: secs, assignJson: asg }, o)); const r = x.runtime.jsx(MessagesItemChannelFast, { channelId: 'pin-head:s1', row: 0 }); x.setCur('s'); return r.type(r.props).props.style }
-	check('headings sit low in their row by default, with room above', hs({}).justifyContent === 'flex-end' && hs({}).paddingBottom === 12 && hs({}).height === 55)
-	check('the heading spacing can be centred or high', hs({ hdSpace2: 'center' }).justifyContent === 'center' && hs({ hdSpace2: 'above' }).justifyContent === 'flex-start')
+	check('headings sit about two thirds down their row by default', hs({}).paddingTop === Math.round(0.68 * 55 - 8) && hs({}).height === 55, JSON.stringify(hs({})))
+	check('the heading position can be moved', hs({ hdPos: 90 }).paddingTop > hs({}).paddingTop && hs({ hdPos: 20 }).paddingTop < hs({}).paddingTop)
+	const sx = load({ sectionsJson: secs, assignJson: asg }); sx.setCur('sp'); const tree = expand(sx.p.SettingsComponent({ api: { jsonStorage: sx.json } }))
+	let down; const walkS = (n) => { if (Array.isArray(n)) return n.forEach(walkS); if (!n || typeof n !== 'object') return; if (n.props && n.props.label === 'Move section headings down') down = n; walkS(n.props && n.props.children) }
+	walkS(tree); down.props.onPress()
+	check('the settings button moves the headings down', sx.data.cache.hdPos === 74, String(sx.data.cache.hdPos))
 	const normal = a.runtime.jsx(MessagesItemChannelFast, { channelId: LONG.c1, row: 3 })
 	check('a normal chat row is left alone', normal.type === MessagesItemChannelFast)
 	const folded = load({ sectionsJson: secs.replace('"color":"#00d4ff"', '"color":"#00d4ff","collapsed":true'), assignJson: asg })
