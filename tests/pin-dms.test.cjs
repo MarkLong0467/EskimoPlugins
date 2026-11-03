@@ -252,6 +252,7 @@ const later = []
 		const row = a.runtime.jsx(TableRow, { label: 'Pin', icon, onPress: () => {} })
 		return a.runtime.jsx(TableRowGroup, { children: [row] })
 	}
+	const mkGroupNoSheet = (a) => { const icon = a.runtime.jsx(PinIcon, {}); const row = a.runtime.jsx(TableRow, { label: 'Pin', icon, onPress: () => {} }); return a.runtime.jsx(TableRowGroup, { children: [row] }) }
 	const labelsOf = (g) => (Array.isArray(g.props.children) ? g.props.children : [g.props.children]).map((r) => r.props.label)
 	const a = load({ sectionsJson: secs })
 	const g = mkGroup(a)
@@ -272,6 +273,12 @@ const later = []
 	const noch = load({ sectionsJson: secs })
 	const icon2 = noch.runtime.jsx(PinIcon, {}); const row2 = noch.runtime.jsx(TableRow, { label: 'Pin', icon: icon2 })
 	check('without a DM sheet behind it nothing is replaced', noch.runtime.jsx(TableRowGroup, { children: [row2] }).props.children[0].props.label === 'Pin')
+	function SheetHeader() {}
+	function MessagesItemChannelFast() {}
+	const hdr = load({ sectionsJson: secs }); hdr.runtime.jsx(SheetHeader, { channel: { id: LONG.c3, type: 1 } })
+	check('any piece of the sheet carrying a DM tells us which chat it is', labelsOf(mkGroupNoSheet(hdr)).join('|') === 'Pin to Boys|Pin to Girls|Pin (no group)')
+	const rowOnly = load({ sectionsJson: secs }); rowOnly.runtime.jsx(MessagesItemChannelFast, { channelId: LONG.c4 })
+	check('the list\'s own rows do not count as a sheet', mkGroupNoSheet(rowOnly).props.children[0].props.label === 'Pin')
 	const big = load({ sectionsJson: secs }); big.runtime.jsx(DMChannelSheet, { channel: { id: LONG.c3, type: 1 } })
 	const many = big.runtime.jsx(TableRowGroup, { children: [1, 2, 3, 4].map(() => big.runtime.jsx(TableRow, { label: 'Pin', icon: big.runtime.jsx(PinIcon, {}) })) })
 	check('a long group of rows is not mistaken for the Pin group', many.props.children.length === 4)

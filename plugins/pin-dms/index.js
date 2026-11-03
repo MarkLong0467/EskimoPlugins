@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.15.0'
+	var VERSION = '1.15.1'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -1517,11 +1517,15 @@
 			if (id) lastMenu = { id: id, at: Date.now(), message: !!props.message }
 		} catch (e) {}
 	}
+	/** Any piece made while the sheet opens that carries a DM channel tells us which chat it is for. The list's own rows do not count. */
 	function noteMenuElement(el) {
 		try {
 			var name = nameOf(el)
-			if (!name || !/sheet|menu|actions|context/i.test(name)) return
-			rememberMenu(el.props, null)
+			if (!name || /^MessagesItem|^MessagesFast|^MessagesHeader|^FastList|^_FastList|^Chat|^Guild|^HomeDrawer/.test(name)) return
+			var props = el.props
+			if (!props || typeof props !== 'object' || props.message) return
+			var id = dmOf(props)
+			if (id) lastMenu = { id: id, at: Date.now(), message: false }
 		} catch (e) {}
 	}
 	function iconNameOf(row) {
@@ -1585,11 +1589,6 @@
 			var hd = decorateHeaderRow(el)
 			if (hd !== el) return hd
 			return wrapMessages(wrapHeader(wrapVoiceCard(decorateFast(decorateRow(decorateList(decorateMenu(el))))))) }
-		try {
-			if (valenced.patcher.before && sheets() && typeof sheets().openLazy === 'function') {
-				cleanup(valenced.patcher.before(sheets(), 'openLazy', function (args) { try { rememberMenu(args && args[2], args && args[1]) } catch (e) {} }))
-			}
-		} catch (e) {}
 		;['jsx', 'jsxs'].forEach(function (name) {
 			if (runtime && typeof runtime[name] === 'function') cleanup(valenced.patcher.after(runtime, name, both))
 		})
