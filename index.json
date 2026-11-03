@@ -1326,6 +1326,19 @@
               "version": "*"
             }
           }
+        },
+        "2.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.bypass-status@2.0.0.zip",
+          "sha256": "a1ed5dce66fff944bc416fc69df9b5fc411966b051180bf37fd410be712381f7",
+          "size": 9114,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
         }
       },
       "name": "Bypass Status",
@@ -1335,7 +1348,7 @@
         "Bypass Status for Equicord (the idea; code written from scratch for Valenced)"
       ],
       "channels": {
-        "latest": "1.0.0"
+        "latest": "2.0.0"
       }
     }
   }
