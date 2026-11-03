@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.14.0'
+	var VERSION = '1.14.1'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -963,6 +963,8 @@
 	function gapAbove() { return numSetting('hdAbove2', 40, 11, 55) }
 	/** Rows cannot be drawn higher (the list clips them), so the shift is always 0. */
 	function gapShift() { return 0 }
+	/** Compact labels: how far the chat under a label is moved down, so the label does not touch its name. */
+	function labelClear() { return numSetting('hdClear', 6, 0, 16) }
 	function gapTop() { return Math.max(0, gapAbove() - ROW_PAD) }
 	function setGap(key, v, min, max) {
 		try {
@@ -974,7 +976,7 @@
 	}
 	function resetGaps() {
 		try {
-			Object.assign(storage.cache, { hdAbove2: 40 })
+			Object.assign(storage.cache, { hdAbove2: 40, hdClear: 6 })
 			fastCache = null
 			refreshList()
 			changed()
@@ -1395,6 +1397,12 @@
 			}
 			if (lab) extra.push(React.createElement(CompactLabel, { key: 'pin-label', kind: lab }))
 			var kids = Array.isArray(props.children) ? props.children : [props.children]
+			if (lab && labelClear() > 0) {
+				kids = kids.map(function (child) {
+					if (!child || typeof child !== 'object' || !child.props || !child.type) return child
+					return React.cloneElement(child, { style: shiftStyle(child.props.style, -labelClear()) })
+				})
+			}
 			return React.cloneElement(result, {}, kids.concat(extra))
 		} catch (e) {
 			return result
@@ -1517,14 +1525,15 @@
 		var name = sec ? sec.name : 'Section'
 		var shift = gapShift()
 		var rowTop2 = ROW * 2 - shift
-		function fakeRow(key, top, strong) {
+		function fakeRow(key, top, strong, down) {
+			down = down || 0
 			return h(
 				RN.View,
 				{ key: key, style: { position: 'absolute', left: 0, right: 0, top: top, height: ROW } },
 				h(RN.View, { style: { position: 'absolute', left: 4, top: 8, bottom: 8, width: 4, borderRadius: 2, backgroundColor: strong ? color : '#80848e' } }),
-				h(RN.View, { style: { position: 'absolute', left: 16, top: ROW_PAD, width: 32, height: 32, borderRadius: 16, backgroundColor: '#4e5058' } }),
-				h(RN.View, { style: { position: 'absolute', left: 58, top: ROW_PAD + 3, width: 90, height: 8, borderRadius: 4, backgroundColor: '#80848e' } }),
-				h(RN.View, { style: { position: 'absolute', left: 58, top: ROW_PAD + 18, width: 150, height: 6, borderRadius: 3, backgroundColor: '#4e5058' } }),
+				h(RN.View, { style: { position: 'absolute', left: 16, top: ROW_PAD + down, width: 32, height: 32, borderRadius: 16, backgroundColor: '#4e5058' } }),
+				h(RN.View, { style: { position: 'absolute', left: 58, top: ROW_PAD + 3 + down, width: 90, height: 8, borderRadius: 4, backgroundColor: '#80848e' } }),
+				h(RN.View, { style: { position: 'absolute', left: 58, top: ROW_PAD + 18 + down, width: 150, height: 6, borderRadius: 3, backgroundColor: '#4e5058' } }),
 			)
 		}
 		if (compactOn()) {
@@ -1532,7 +1541,7 @@
 				RN.View,
 				{ style: { height: ROW * 2, borderRadius: 14, backgroundColor: '#1e1f22', overflow: 'hidden' } },
 				fakeRow('a', 0, false),
-				fakeRow('b', ROW, true),
+				fakeRow('b', ROW, true, labelClear()),
 				h(
 					RN.View,
 					{ key: 'l', style: { position: 'absolute', top: ROW, left: 16, right: 16, height: 12, flexDirection: 'row', alignItems: 'center', gap: 6 } },
@@ -1663,8 +1672,9 @@
 						? 'Compact: a small coloured label sits on the first chat of each section, with no extra rows. Tap the label to fold, hold it to edit.'
 						: 'Rows: a full heading row in front of each section. Press − or + to move the text inside the row.'),
 					h(HeadingPreview, null),
+					compactOn() ? h(Stepper, { label: 'Space under labels', sub: 'Moves the chat under a label down so the label does not touch its name.', value: labelClear(), onMinus: function () { setGap('hdClear', labelClear() - 1, 0, 16) }, onPlus: function () { setGap('hdClear', labelClear() + 1, 0, 16) } }) : null,
 					compactOn() ? null : h(Stepper, { label: 'Heading position', sub: 'Plus puts more room above the heading and less below it. Minus does the opposite.', value: gapAbove(), onMinus: function () { setGap('hdAbove2', gapAbove() - 4, 11, 55) }, onPlus: function () { setGap('hdAbove2', gapAbove() + 4, 11, 55) } }),
-					compactOn() ? null : h(Design.Button, { text: 'Reset position', variant: 'secondary', size: 'sm', onPress: resetGaps }),
+					h(Design.Button, { text: 'Reset spacing', variant: 'secondary', size: 'sm', onPress: resetGaps }),
 				),
 				h(
 					Design.TableRowGroup,
