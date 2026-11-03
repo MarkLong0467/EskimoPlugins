@@ -135,13 +135,13 @@
 	function pinnedFirst(list, method) {
 		var state = read()
 		if (!Array.isArray(list) || !state.pins.length) return list
-		var ids = list.map(chatId)
+		var ids = list.map(function (entry) { return idOf(entry, 0) })
 		var key = method + '|' + JSON.stringify(state) + '|' + ids.join(',')
 		if (memo[method] && memo[method].key === key) return memo[method].result
 		var byId = {}
 		list.forEach(function (entry) { var id = idOf(entry); if (id) byId[id] = entry })
-		var top = pinnedOrder(ids).map(function (id) { return byId[id] })
-		if (!top.length) return list
+		var top = pinnedOrder(ids).map(function (id) { return byId[id] }).filter(function (entry) { return entry !== undefined })
+		if (!top.length || top.length + list.filter(function (entry) { return top.indexOf(entry) < 0 }).length !== list.length) return list
 		var chosen = {}
 		pinnedOrder(ids).forEach(function (id) { chosen[id] = 1 })
 		var result = top.concat(list.filter(function (entry) { return !chosen[idOf(entry)] }))
