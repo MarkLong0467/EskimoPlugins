@@ -470,7 +470,7 @@
         "PinDMs for Vencord and BetterDiscord (the idea; code written from scratch for Valenced)"
       ],
       "channels": {
-        "latest": "1.10.0"
+        "latest": "1.11.0"
       },
       "versions": {
         "1.0.0": {
@@ -763,6 +763,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.pin-dms@1.10.0.zip",
           "sha256": "d6639e5c5b6efddded013aec9801ecd15a659eff7b5b7d879f25ea9589d16ffd",
           "size": 17875,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.11.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.pin-dms@1.11.0.zip",
+          "sha256": "e5616a4127478b435ed63553d8cc35facc844e031c58c12c483a1c1da1e28663",
+          "size": 18182,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
