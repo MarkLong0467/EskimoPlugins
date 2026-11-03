@@ -139,8 +139,8 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 	a.setCur('hd'); const ht = texts(expand(hrow.type(hrow.props)))
 	check('the heading shows the section name and count', ht.join('').indexOf('BOYS') >= 0 && ht.join('').indexOf('1') >= 0, ht.join('|'))
 	const hs = (o) => { const x = load(Object.assign({ sectionsJson: secs, assignJson: asg }, o)); const r = x.runtime.jsx(MessagesItemChannelFast, { channelId: 'pin-head:s1', row: 0 }); x.setCur('s'); return r.type(r.props).props.style }
-	check('headings are centred in their row by default', hs({}).justifyContent === 'center' && hs({}).height === 55)
-	check('the heading spacing can be low or high', hs({ hdSpace: 'below' }).justifyContent === 'flex-end' && hs({ hdSpace: 'above' }).justifyContent === 'flex-start')
+	check('headings sit low in their row by default, with room above', hs({}).justifyContent === 'flex-end' && hs({}).paddingBottom === 12 && hs({}).height === 55)
+	check('the heading spacing can be centred or high', hs({ hdSpace2: 'center' }).justifyContent === 'center' && hs({ hdSpace2: 'above' }).justifyContent === 'flex-start')
 	const normal = a.runtime.jsx(MessagesItemChannelFast, { channelId: LONG.c1, row: 3 })
 	check('a normal chat row is left alone', normal.type === MessagesItemChannelFast)
 	const folded = load({ sectionsJson: secs.replace('"color":"#00d4ff"', '"color":"#00d4ff","collapsed":true'), assignJson: asg })
