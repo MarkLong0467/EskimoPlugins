@@ -18,7 +18,7 @@
 
 	var storage
 	var listeners = []
-	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {} }
+	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0 }
 	var memo = {}
 
 	function finders() { return valenced.modules.finders }
@@ -132,6 +132,7 @@
 		return out
 	}
 
+	var lastIds = []
 	function labelOf(entry) {
 		try {
 			if (typeof entry === 'string') return 's' + entry.slice(-4)
@@ -141,6 +142,7 @@
 	}
 	function pinnedFirst(list, method) {
 		var out = pinnedFirstInner(list, method)
+		try { if (/getPrivateChannelIds/.test(method) && Array.isArray(out) && typeof out[0] === 'string') lastIds = out } catch (e) {}
 		try {
 			var a = status.activity[method] || (status.activity[method] = { calls: 0, moved: 0, len: 0, pins: 0 })
 			a.calls++
@@ -596,6 +598,45 @@
 		} catch (e) {}
 	}
 
+	/** Rows: put a section's heading above its first chat, and fold the chats of a closed section away. */
+	function decorateRow(result) {
+		try {
+			var props = result && result.props
+			if (!props || typeof props.onLongPress !== 'function' || !props.children || !result.type) return result
+			var tn = result.type.displayName || result.type.name || ''
+			if (!/Pressable/.test(tn)) return result
+			var state = read()
+			if (!state.pins.length || !state.sections.length || !lastIds.length) return result
+			var id = deepId(props.children)
+			if (!id) return result
+			var React = valenced.react.React
+			var RN = valenced.react.ReactNative
+			var pinned = state.pins.indexOf(id) >= 0
+			var parts = []
+			var hide = false
+			var section = pinned ? sectionOf(state, id) : undefined
+			if (section) {
+				var firstOf
+				for (var i = 0; i < lastIds.length; i++) {
+					if (state.pins.indexOf(lastIds[i]) >= 0 && state.assign[lastIds[i]] === section.id) { firstOf = lastIds[i]; break }
+				}
+				if (firstOf === id) parts.push(React.createElement(SectionHeader, { key: 'pin-head', section: section }))
+				if (section.collapsed) hide = true
+			} else if (!pinned) {
+				var firstRest
+				for (var j = 0; j < lastIds.length; j++) { if (state.pins.indexOf(lastIds[j]) < 0) { firstRest = lastIds[j]; break } }
+				if (firstRest === id) parts.push(React.createElement(SectionHeader, { key: 'pin-rest', section: { id: 'rest', name: 'Direct messages', color: '#80848e', rest: true } }))
+			}
+			if (!parts.length && !hide) return result
+			status.rowHeaders++
+			if (!status.headers) { status.headers = true; status.list = 'found, headers added'; changed() }
+			if (!hide) parts.push(result)
+			return React.createElement(RN.View, { key: result.key }, parts)
+		} catch (e) {
+			return result
+		}
+	}
+
 	/** Recognises the list the DM tab draws: it gets the pinned chats first, and the section headers. */
 	function decorateList(result) {
 		try {
@@ -690,7 +731,7 @@
 	function installElementHooks(cleanup) {
 		var f = finders()
 		var runtime = f.lookupModule(f.filters.withProps('jsx', 'jsxs'))[0] || valenced.react.ReactJSXRuntime
-		function both(el) { return decorateList(decorateMenu(el)) }
+		function both(el) { return decorateRow(decorateList(decorateMenu(el))) }
 		;['jsx', 'jsxs'].forEach(function (name) {
 			if (runtime && typeof runtime[name] === 'function') cleanup(valenced.patcher.after(runtime, name, both))
 		})
@@ -777,7 +818,7 @@
 					Design.TableRowGroup,
 					{ title: 'Status' },
 					h(Design.TableRow, { key: 'store', label: 'DM list order', subLabel: status.store + (status.hooks.length ? ' · hooked: ' + status.hooks.join(', ') : ' · not hooked') + ' · reordered ' + status.reordered + ' time(s)' }),
-					h(Design.TableRow, { key: 'list', label: 'Section headers in the list', subLabel: status.headers ? 'Working (' + status.headerLists + ' time(s))' : 'Not seen yet. Pin a chat into a section, then open the DM tab. Lists with chats seen: ' + status.lists }),
+					h(Design.TableRow, { key: 'list', label: 'Section headers in the list', subLabel: status.headers ? 'Working (' + (status.headerLists + status.rowHeaders) + ' time(s))' : 'Not seen yet. Pin a chat into a section, then open the DM tab. Lists with chats seen: ' + status.lists }),
 					h(Design.TableRow, { key: 'lk', label: 'List props I reordered', subLabel: status.listKey.length ? status.listKey.join(', ') : 'none yet' }),
 					h(Design.TableRow, { key: 'activity', label: 'Hook activity', subLabel: Object.keys(status.activity).length ? Object.keys(status.activity).map(function (m) { var a = status.activity[m]; return m + ': ' + a.calls + ' calls, ' + a.len + ' entries, ' + a.pins + ' pinned, moved ' + a.moved + (a.after ? ', ' + a.before + ' -> ' + a.after : '') }).join(' | ') : 'Nothing called yet. Open the Messages tab.' }),
 					status.rowLists.length ? h(Design.TableRow, { key: 'rowlists', label: 'Long lists I saw', subLabel: status.rowLists.join(' | ') }) : null,
