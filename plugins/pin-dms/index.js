@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn: true }
+	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn: true, stripBelow: true }
 	var DM = 1
 	var GROUP_DM = 3
 	var METHODS = ['getPrivateChannelIds', 'getSortedChannels']
@@ -18,7 +18,7 @@
 
 	var storage
 	var listeners = []
-	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [], sortShapes: [], screens: [], strip: 0, lastOpen: '' }
+	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [], sortShapes: [], screens: [], voiceAnchor: false, strip: 0, lastOpen: '' }
 	var memo = {}
 
 	function finders() { return valenced.modules.finders }
@@ -598,6 +598,10 @@
 	function openChatMenu(id) { openSheet(MENU_KEY, ChatMenu, { id: id }) }
 
 	// ---- The pinned strip, above the DM tab ----------------------------------------------------------
+	var anchorSeenAt = 0
+	function stripBelow() {
+		try { return !storage || !storage.cache || storage.cache.stripBelow !== false } catch (e) { return true }
+	}
 	function stripEnabled() {
 		try { return !storage || !storage.cache || storage.cache.stripOn !== false } catch (e) { return true }
 	}
@@ -664,7 +668,7 @@
 			props.section ? h(RN.View, { style: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, backgroundColor: tint(color, 0.22) } }, h(Design.Text, { variant: 'text-xs/bold', style: { color: color } }, String(props.section.name).toUpperCase())) : null,
 		)
 	}
-	function PinnedStrip() {
+	function PinnedStrip(props) {
 		var React = valenced.react.React
 		var RN = valenced.react.ReactNative
 		var Design = valenced.discord.design.Design
@@ -674,7 +678,15 @@
 			listeners.push(update)
 			return function () { listeners = listeners.filter(function (l) { return l !== update }) }
 		}, [])
+		React.useEffect(function () {
+			if (props && props.anchored) return undefined
+			var timer = setTimeout(function () { tick[1](function (n) { return n + 1 }) }, 4300)
+			return function () { clearTimeout(timer) }
+		}, [tick[0]])
 		if (!stripEnabled()) return null
+		var below = stripBelow()
+		if (props && props.anchored) { if (!below) return null }
+		else if (below && Date.now() - anchorSeenAt < 4000) return null
 		var state = read()
 		var ordered = pinnedOrder(state.pins.slice())
 		if (!ordered.length) return null
@@ -687,7 +699,7 @@
 			if (ids.length) groups.push({ section: sec, ids: ids })
 		})
 		var topInset = 0
-		try { topInset = (RN.Platform.OS === 'android' && RN.StatusBar && RN.StatusBar.currentHeight) || 0 } catch (e) {}
+		try { if (!(props && props.anchored)) topInset = (RN.Platform.OS === 'android' && RN.StatusBar && RN.StatusBar.currentHeight) || 0 } catch (e) {}
 		var rows = []
 		groups.forEach(function (g) {
 			var folded = g.section && g.section.collapsed
@@ -706,9 +718,28 @@
 		var maxH = Math.round(RN.Dimensions.get('window').height * 0.36)
 		return h(
 			RN.View,
-			{ style: { paddingTop: topInset, paddingBottom: 6 } },
+			{ style: { paddingTop: props && props.anchored ? 4 : topInset, paddingBottom: 6 } },
 			h(RN.ScrollView, { style: { maxHeight: maxH }, nestedScrollEnabled: true, keyboardShouldPersistTaps: 'handled' }, rows),
 		)
+	}
+	/** The row of voice channel cards: the strip goes right under it. */
+	function wrapVoice(result) {
+		try {
+			var props = result && result.props
+			if (!props || !Array.isArray(props.data) || !props.data.length || typeof props.renderItem !== 'function') return result
+			var first = props.data[0]
+			if (!first || typeof first !== 'object' || first.kind !== 'voice') return result
+			if (props.__pinStrip) return result
+			var wasSeen = anchorSeenAt
+			anchorSeenAt = Date.now()
+			if (!status.voiceAnchor) { status.voiceAnchor = true; changed() }
+			if (!stripEnabled() || !stripBelow()) return result
+			var React = valenced.react.React
+			var RN = valenced.react.ReactNative
+			return React.createElement(RN.View, { key: result.key }, React.cloneElement(result, { __pinStrip: true }), React.createElement(PinnedStrip, { key: 'pin-strip-v', anchored: true }))
+		} catch (e) {
+			return result
+		}
 	}
 	/** Puts the strip above the whole Messages screen. */
 	function wrapMessages(result) {
@@ -996,7 +1027,7 @@
 	function installElementHooks(cleanup) {
 		var f = finders()
 		var runtime = f.lookupModule(f.filters.withProps('jsx', 'jsxs'))[0] || valenced.react.ReactJSXRuntime
-		function both(el) { return wrapMessages(decorateRow(decorateList(decorateMenu(el)))) }
+		function both(el) { return wrapMessages(wrapVoice(decorateRow(decorateList(decorateMenu(el))))) }
 		;['jsx', 'jsxs'].forEach(function (name) {
 			if (runtime && typeof runtime[name] === 'function') cleanup(valenced.patcher.after(runtime, name, both))
 		})
@@ -1083,7 +1114,8 @@
 					Design.TableRowGroup,
 					{ title: 'Status' },
 					h(Design.TableSwitchRow, { key: 'strip', label: 'Pinned strip above the DM tab', subLabel: 'Shows your pinned chats at the top of Messages, grouped in your sections. Tap to open, hold for options, tap a heading to fold.', value: stripEnabled(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripOn: !!v }); changed() } catch (e) {} } }),
-					h(Design.TableRow, { key: 'stripstatus', label: 'Pinned strip', subLabel: (status.strip ? 'Shown ' + status.strip + ' time(s)' : 'Not shown yet. Open the Messages tab.') + (status.lastOpen ? ' · last tap: ' + status.lastOpen : '') + ' · screens seen: ' + (status.screens.join(', ') || 'none') }),
+					h(Design.TableSwitchRow, { key: 'stripbelow', label: 'Put the strip under the voice channel cards', subLabel: 'When nobody is in a voice channel, it stays at the very top.', value: stripBelow(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripBelow: !!v }); changed() } catch (e) {} } }),
+					h(Design.TableRow, { key: 'stripstatus', label: 'Pinned strip', subLabel: (status.strip ? 'Shown ' + status.strip + ' time(s)' : 'Not shown yet. Open the Messages tab.') + (status.lastOpen ? ' · last tap: ' + status.lastOpen : '') + ' · under voice cards: ' + (status.voiceAnchor ? 'found' : 'not seen') + ' · screens seen: ' + (status.screens.join(', ') || 'none') }),
 					h(Design.TableRow, { key: 'store', label: 'DM list order', subLabel: status.store + (status.hooks.length ? ' · hooked: ' + status.hooks.join(', ') : ' · not hooked') + ' · reordered ' + status.reordered + ' time(s)' }),
 					h(Design.TableRow, { key: 'list', label: 'Section headers in the list', subLabel: status.headers ? 'Working (' + (status.headerLists + status.rowHeaders) + ' time(s))' : 'Not seen yet. Pin a chat into a section, then open the DM tab. Lists with chats seen: ' + status.lists }),
 					h(Design.TableRow, { key: 'lk', label: 'List props I reordered', subLabel: status.listKey.length ? status.listKey.join(', ') : 'none yet' }),
