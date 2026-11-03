@@ -369,7 +369,7 @@
         "Server data from mcstatus.io, mcsrvstat.us and minetools.eu (public status websites)"
       ],
       "channels": {
-        "latest": "1.4.0"
+        "latest": "1.4.1"
       },
       "versions": {
         "1.0.0": {
@@ -463,10 +463,10 @@
             }
           }
         },
-        "1.4.0": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.minecraft-servers@1.4.0.zip",
-          "sha256": "95eb8706b63ddbf716ea77cc0db3bed884a3499450cb5fd3b9ce0e5690832666",
-          "size": 22220,
+        "1.4.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.minecraft-servers@1.4.1.zip",
+          "sha256": "c651117fa37b5258fedf262dafa44c2a8d1ca5ac1d89b7d7a6cdfc517855c690",
+          "size": 22602,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -509,7 +509,7 @@
         "PinDMs for Vencord and BetterDiscord (the idea; code written from scratch for Valenced)"
       ],
       "channels": {
-        "latest": "1.15.3"
+        "latest": "1.15.4"
       },
       "versions": {
         "1.0.0": {
@@ -1006,10 +1006,10 @@
             }
           }
         },
-        "1.15.3": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.pin-dms@1.15.3.zip",
-          "sha256": "942871a9fba1055df56fdb03c2b81465ee143fbc2476c61501474ad4cb86de4b",
-          "size": 23759,
+        "1.15.4": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.pin-dms@1.15.4.zip",
+          "sha256": "7bd7e5104ced3ec9bbedbe2cbf708d91e08e10379fbdc5aeaf75ffeedca3d8e8",
+          "size": 24115,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
