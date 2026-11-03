@@ -18,7 +18,7 @@
 
 	var storage
 	var listeners = []
-	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [] }
+	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [], sortShapes: [] }
 	var memo = {}
 
 	function finders() { return valenced.modules.finders }
@@ -98,7 +98,7 @@
 			var v = entry[keys[i]]
 			if (typeof v === 'string' && looksLikeChat(v)) return v
 		}
-		var inner = ['channel', 'item', 'data', 'row', 'dm']
+		var inner = ['channel', 'item', 'data', 'row', 'dm', 'value']
 		for (var j = 0; j < inner.length; j++) {
 			if (entry[inner[j]] && typeof entry[inner[j]] === 'object') {
 				var found = idOf(entry[inner[j]], depth + 1)
@@ -293,6 +293,21 @@
 	function sortFixEnabled() {
 		try { return !storage || !storage.cache || storage.cache.sortFix !== false } catch (e) { return true }
 	}
+	/** Diagnostics: long arrays being sorted that hold a chat somewhere I do not look. */
+	function noteSort(arr) {
+		try {
+			if (status.sortShapes.length >= 3 || arr.length > 400) return
+			var first = arr[0]
+			if (!first || typeof first !== 'object') return
+			var text = JSON.stringify(first, function (k, v) { return typeof v === 'function' ? undefined : v }) || ''
+			var m = text.slice(0, 2500).match(/\d{17,20}/g) || []
+			var hit = m.filter(function (id) { return isDm(id) })[0]
+			if (!hit) return
+			var line = 'x' + arr.length + ' {' + Object.keys(first).slice(0, 6).join('/') + '}'
+			if (status.sortShapes.indexOf(line) < 0) { status.sortShapes.push(line); changed() }
+		} catch (e) {}
+	}
+
 	function fixSorted(arr) {
 		try {
 			if (!Array.isArray(arr) || arr.length < 8 || !sortFixEnabled()) return arr
@@ -300,7 +315,7 @@
 			if (!state.pins.length) return arr
 			var probe = 0
 			for (var i = 0; i < 3; i++) { if (idOf(arr[i], 0)) probe++ }
-			if (probe < 3) return arr
+			if (probe < 3) { noteSort(arr); return arr }
 			var ids = arr.map(function (e) { return idOf(e, 0) })
 			var known = ids.filter(Boolean)
 			if (known.length < arr.length * 0.8) return arr
@@ -944,6 +959,7 @@
 					h(Design.TableRow, { key: 'store', label: 'DM list order', subLabel: status.store + (status.hooks.length ? ' · hooked: ' + status.hooks.join(', ') : ' · not hooked') + ' · reordered ' + status.reordered + ' time(s)' }),
 					h(Design.TableRow, { key: 'list', label: 'Section headers in the list', subLabel: status.headers ? 'Working (' + (status.headerLists + status.rowHeaders) + ' time(s))' : 'Not seen yet. Pin a chat into a section, then open the DM tab. Lists with chats seen: ' + status.lists }),
 					h(Design.TableRow, { key: 'lk', label: 'List props I reordered', subLabel: status.listKey.length ? status.listKey.join(', ') : 'none yet' }),
+					status.sortShapes.length ? h(Design.TableRow, { key: 'sortshapes', label: 'Sorted lists that hold chats', subLabel: status.sortShapes.join(' | ') }) : null,
 					h(Design.TableRow, { key: 'pinm', label: 'Discord pin methods found', subLabel: status.pinMethods.length ? status.pinMethods.join(', ') : 'none' }),
 					h(Design.TableRow, { key: 'activity', label: 'Hook activity', subLabel: Object.keys(status.activity).length ? Object.keys(status.activity).map(function (m) { var a = status.activity[m]; return m + ': ' + a.calls + ' calls, ' + a.len + ' entries, ' + a.pins + ' pinned, moved ' + a.moved + (a.after ? ', ' + a.before + ' -> ' + a.after : '') }).join(' | ') : 'Nothing called yet. Open the Messages tab.' }),
 					status.rowLists.length ? h(Design.TableRow, { key: 'rowlists', label: 'Long lists I saw', subLabel: status.rowLists.join(' | ') }) : null,
