@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.14.1'
+	var VERSION = '1.14.2'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -20,7 +20,7 @@
 
 	var storage
 	var listeners = []
-	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [], sortShapes: [], screens: [], voiceAnchor: false, voiceCards: [], cards: [], detail: {}, order: [], fastList: '', hdRows: 0, strip: 0, lastOpen: '' }
+	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [], sortShapes: [], screens: [], voiceAnchor: false, voiceCards: [], cards: [], detail: {}, order: [], fastList: '', hdRows: 0, labelRows: 0, strip: 0, lastOpen: '' }
 	var memo = {}
 
 	function finders() { return valenced.modules.finders }
@@ -708,7 +708,7 @@
 		lines.push('pins: ' + state.pins.length + ', sections: ' + state.sections.length)
 		lines.push('hooked: ' + status.hooks.join(', '))
 		lines.push('strip: shown ' + status.strip + ', slot ' + (status.voiceAnchor || 'top') + ', last tap ' + (status.lastOpen || '-'))
-		lines.push('heading rows drawn: ' + status.hdRows + (status.error ? ', note: ' + status.error : ''))
+		lines.push('label rows drawn: ' + status.labelRows + ', heading rows drawn: ' + status.hdRows + (status.error ? ', note: ' + status.error : ''))
 		lines.push('list props reordered: ' + (status.listKey.join(', ') || 'none'))
 		Object.keys(status.activity).forEach(function (m) {
 			var a = status.activity[m]
@@ -982,6 +982,13 @@
 			changed()
 		} catch (e) {}
 	}
+	/** Adds top padding to a row, whatever form its style takes. The row's content (centred) moves down by half of it. */
+	function padStyle(style, pad) {
+		var t = { paddingTop: pad }
+		if (typeof style === 'function') return function (st) { var b = style(st); return Array.isArray(b) ? b.concat([t]) : [b, t] }
+		if (Array.isArray(style)) return style.concat([t])
+		return style ? [style, t] : t
+	}
 	/** Moves a row up by dy dp, whatever form its style takes. */
 	function shiftStyle(style, dy) {
 		if (!dy) return style
@@ -1050,8 +1057,8 @@
 		var label = (sec ? (sec.collapsed ? '▸ ' : '▾ ') : '') + String(name).toUpperCase() + (sec ? '  ' + count : '')
 		return h(
 			RN.Pressable,
-			{ onPress: sec ? function () { toggleFold(sec.id) } : undefined, onLongPress: sec ? function () { openEditSection(sec) } : undefined, hitSlop: { top: 8, bottom: 6, left: 8, right: 8 }, style: { position: 'absolute', top: 0, left: 16, right: 16, height: 12, flexDirection: 'row', alignItems: 'center', gap: 6 } },
-			h(Design.Text, { variant: 'text-xs/bold', style: { color: color, fontSize: 9, lineHeight: 11 } }, label),
+			{ onPress: sec ? function () { toggleFold(sec.id) } : undefined, onLongPress: sec ? function () { openEditSection(sec) } : undefined, hitSlop: { top: 8, bottom: 6, left: 8, right: 8 }, style: { position: 'absolute', top: 0, left: 16, right: 16, height: 10, flexDirection: 'row', alignItems: 'center', gap: 6 } },
+			h(Design.Text, { variant: 'text-xs/bold', style: { color: color, fontSize: 8, lineHeight: 9 } }, label),
 			h(RN.View, { style: { flex: 1, height: 1, backgroundColor: color, opacity: sec ? 0.5 : 0.3 } }),
 		)
 	}
@@ -1397,13 +1404,9 @@
 			}
 			if (lab) extra.push(React.createElement(CompactLabel, { key: 'pin-label', kind: lab }))
 			var kids = Array.isArray(props.children) ? props.children : [props.children]
-			if (lab && labelClear() > 0) {
-				kids = kids.map(function (child) {
-					if (!child || typeof child !== 'object' || !child.props || !child.type) return child
-					return React.cloneElement(child, { style: shiftStyle(child.props.style, -labelClear()) })
-				})
-			}
-			return React.cloneElement(result, {}, kids.concat(extra))
+			var patch = lab && labelClear() > 0 ? { style: padStyle(props.style, labelClear() * 2) } : {}
+			if (lab) status.labelRows++
+			return React.cloneElement(result, patch, kids.concat(extra))
 		} catch (e) {
 			return result
 		}
@@ -1645,7 +1648,7 @@
 				h(
 					Card,
 					null,
-					h(Design.Text, { variant: 'heading-lg/bold' }, 'Pin DMs'),
+					h(Design.Text, { variant: 'heading-lg/bold' }, 'Pin DMs ' + VERSION),
 					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, summary + '. Pinned chats sit at the top of Messages, in coloured sections you can fold.'),
 					h(
 						RN.View,
