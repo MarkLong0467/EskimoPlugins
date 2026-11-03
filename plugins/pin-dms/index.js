@@ -138,6 +138,40 @@
 		return out
 	}
 
+	/** Some stores give the DMs out as an object (id -> chat). Its key order is the order the list is drawn in. */
+	function pinnedObject(obj, method) {
+		try {
+			var state = read()
+			if (!state.pins.length || obj instanceof Map || obj instanceof Set) return obj
+			var keys = Object.keys(obj)
+			if (keys.length < 2 || !keys.slice(0, 5).every(function (k) { return /^\d{15,}$/.test(k) })) return obj
+			var a = status.activity[method] || (status.activity[method] = { calls: 0, moved: 0, len: 0, pins: 0 })
+			a.calls++
+			a.len = keys.length
+			var first = pinnedOrder(keys)
+			a.pins = first.length
+			if (!first.length) return obj
+			var key = method + '|' + JSON.stringify(state) + '|' + keys.join(',')
+			if (memo[method] && memo[method].key === key) return memo[method].result
+			var chosen = {}
+			first.forEach(function (id) { chosen[id] = 1 })
+			var ordered = first.concat(keys.filter(function (k) { return !chosen[k] }))
+			var same = ordered.every(function (k, i) { return k === keys[i] })
+			if (same) return obj
+			var out = {}
+			ordered.forEach(function (k) { out[k] = obj[k] })
+			memo[method] = { key: key, result: out }
+			a.moved++
+			a.before = keys.slice(0, 3).map(function (k) { return 's' + k.slice(-4) }).join(',')
+			a.after = ordered.slice(0, 3).map(function (k) { return 's' + k.slice(-4) }).join(',')
+			status.reordered++
+			changed()
+			return out
+		} catch (e) {
+			return obj
+		}
+	}
+
 	var lastIds = []
 	function labelOf(entry) {
 		try {
@@ -147,6 +181,7 @@
 		return typeof entry
 	}
 	function pinnedFirst(list, method) {
+		if (list && typeof list === 'object' && !Array.isArray(list)) return pinnedObject(list, method)
 		var out = pinnedFirstInner(list, method)
 		try { if (/getPrivateChannelIds/.test(method) && Array.isArray(out) && typeof out[0] === 'string') lastIds = out } catch (e) {}
 		try {
