@@ -5,6 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
+	var VERSION = '1.10.0'
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn: true, stripBelow2: false, hidePinned2: false }
 	var DM = 1
 	var GROUP_DM = 3
@@ -18,7 +19,7 @@
 
 	var storage
 	var listeners = []
-	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [], sortShapes: [], screens: [], voiceAnchor: false, voiceCards: [], cards: [], fastList: '', strip: 0, lastOpen: '' }
+	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [], sortShapes: [], screens: [], voiceAnchor: false, voiceCards: [], cards: [], detail: {}, order: [], fastList: '', strip: 0, lastOpen: '' }
 	var memo = {}
 
 	function finders() { return valenced.modules.finders }
@@ -639,6 +640,75 @@
 	}
 	function openChatMenu(id) { openSheet(MENU_KEY, ChatMenu, { id: id }) }
 
+	// ---- Diagnostics you can copy ------------------------------------------------------------------
+	function describe(v, depth) {
+		try {
+			if (v === null) return 'null'
+			if (v === undefined) return 'undef'
+			if (typeof v === 'string') return '"' + v.slice(0, 14) + '"'
+			if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+			if (typeof v === 'function') return 'fn' + (v.name ? ':' + v.name : '')
+			if (Array.isArray(v)) {
+				var first = v[0]
+				var inner = ''
+				if (first && typeof first === 'object' && !Array.isArray(first)) inner = '{' + Object.keys(first).slice(0, 8).join(',') + '}'
+				else if (first !== undefined) inner = describe(first, 2)
+				return 'list' + v.length + (inner ? '[' + inner + ']' : '')
+			}
+			if (typeof v === 'object') {
+				if (v.$$typeof) return 'element:' + (nameOf(v) || (typeof v.type === 'string' ? v.type : '?'))
+				var keys = Object.keys(v)
+				if (depth >= 1) return '{' + keys.slice(0, 8).join(',') + '}'
+				return '{' + keys.slice(0, 12).map(function (k) { return k + '=' + describe(v[k], 1) }).join(', ') + '}'
+			}
+			return typeof v
+		} catch (e) { return '?' }
+	}
+	var WATCH = { Messages: 1, MessagesHeader: 1, MessagesFastestList: 1, MessagesItemChannelFast: 1 }
+	var collecting = false
+	/** Remember what the pieces of the DM tab are given, and in what order they are made. */
+	function noteElements(el) {
+		try {
+			var name = nameOf(el)
+			if (!name) return
+			if (name === 'Messages') collecting = true
+			if (WATCH[name] && !status.detail[name]) {
+				var props = el.props || {}
+				status.detail[name] = Object.keys(props).slice(0, 30).map(function (k) { return k + ':' + describe(props[k], 0) }).join('; ')
+				changed()
+			}
+			if (collecting && status.order.length < 160 && status.order.indexOf(name) < 0) status.order.push(name)
+		} catch (e) {}
+	}
+	function buildReport() {
+		var lines = []
+		lines.push('Pin DMs report')
+		lines.push('version: ' + VERSION)
+		var state = read()
+		lines.push('pins: ' + state.pins.length + ', sections: ' + state.sections.length)
+		lines.push('hooked: ' + status.hooks.join(', '))
+		lines.push('strip: shown ' + status.strip + ', slot ' + (status.voiceAnchor || 'top') + ', last tap ' + (status.lastOpen || '-'))
+		lines.push('list props reordered: ' + (status.listKey.join(', ') || 'none'))
+		Object.keys(status.activity).forEach(function (m) {
+			var a = status.activity[m]
+			lines.push('activity ' + m + ': ' + a.calls + ' calls, ' + a.len + ' entries, ' + a.pins + ' pinned, moved ' + a.moved + (a.after ? ', ' + a.before + ' -> ' + a.after : ''))
+		})
+		Object.keys(status.detail).forEach(function (n) { lines.push('props of ' + n + ': ' + status.detail[n]) })
+		lines.push('screens: ' + status.screens.join(', '))
+		lines.push('voice-ish names: ' + status.cards.join(', '))
+		lines.push('voice candidates: ' + status.voiceCards.join(' | '))
+		lines.push('long lists: ' + status.rowLists.join(' | '))
+		lines.push('shapes: ' + status.shapes.join(' | '))
+		lines.push('creation order: ' + status.order.join(' > '))
+		return lines.join('\n')
+	}
+	function copyReport() {
+		try {
+			valenced.externals.ReactNativeClipboard.Clipboard.setString(buildReport())
+			toast('Report copied. Paste it in the chat.')
+		} catch (e) { toast('Could not copy') }
+	}
+
 	// ---- The pinned strip, above the DM tab ----------------------------------------------------------
 	var anchorSeenAt = 0
 	function stripBelow() {
@@ -1172,7 +1242,8 @@
 	function installElementHooks(cleanup) {
 		var f = finders()
 		var runtime = f.lookupModule(f.filters.withProps('jsx', 'jsxs'))[0] || valenced.react.ReactJSXRuntime
-		function both(el) { return wrapMessages(wrapHeader(wrapVoiceCard(decorateFast(decorateRow(decorateList(decorateMenu(el))))))) }
+		function both(el) { noteElements(el)
+			return wrapMessages(wrapHeader(wrapVoiceCard(decorateFast(decorateRow(decorateList(decorateMenu(el))))))) }
 		;['jsx', 'jsxs'].forEach(function (name) {
 			if (runtime && typeof runtime[name] === 'function') cleanup(valenced.patcher.after(runtime, name, both))
 		})
@@ -1258,6 +1329,7 @@
 				h(
 					Design.TableRowGroup,
 					{ title: 'Status' },
+					h(Design.TableRow, { key: 'copyreport', label: 'Copy diagnostic report', subLabel: 'Open the Messages tab first, then tap here and paste it in the chat. It lists what the DM tab is made of.', onPress: copyReport }),
 					h(Design.TableSwitchRow, { key: 'strip', label: 'Pinned strip above the DM tab', subLabel: 'Shows your pinned chats at the top of Messages, grouped in your sections. Tap to open, hold for options, tap a heading to fold.', value: stripEnabled(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripOn: !!v }); changed() } catch (e) {} } }),
 					h(Design.TableSwitchRow, { key: 'hidepinned', label: 'Hide pinned chats from the normal list', subLabel: 'Experimental. They only show in the strip, not twice. Off by default.', value: hideOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { hidePinned2: !!v }); refreshList() } catch (e) {} } }),
 					h(Design.TableSwitchRow, { key: 'stripbelow', label: 'Try to put the strip under the Messages header', subLabel: 'Experimental. Off by default, the strip stays at the very top.', value: stripBelow(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripBelow2: !!v }); changed() } catch (e) {} } }),
