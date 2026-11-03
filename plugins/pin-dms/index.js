@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.13.0'
+	var VERSION = '1.13.1'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -960,9 +960,9 @@
 			return typeof v === 'number' && v >= min && v <= max ? v : fallback
 		} catch (e) { return fallback }
 	}
-	function gapAbove() { return numSetting('hdAbove', 16, 4, 40) }
-	function gapBelow() { return numSetting('hdBelow', 12, 6, 30) }
-	function gapShift() { return Math.max(0, Math.min(40, Math.round(ROW + 2 * ROW_PAD - TEXT_H - gapAbove() - gapBelow()))) }
+	function gapAbove() { return numSetting('hdAbove2', 40, 11, 55) }
+	/** Rows cannot be drawn higher (the list clips them), so the shift is always 0. */
+	function gapShift() { return 0 }
 	function gapTop() { return Math.max(0, gapAbove() - ROW_PAD) }
 	function setGap(key, v, min, max) {
 		try {
@@ -974,7 +974,7 @@
 	}
 	function resetGaps() {
 		try {
-			Object.assign(storage.cache, { hdAbove: 16, hdBelow: 12 })
+			Object.assign(storage.cache, { hdAbove2: 40 })
 			fastCache = null
 			refreshList()
 			changed()
@@ -1574,11 +1574,10 @@
 				h(
 					Card,
 					null,
-					h(Design.Text, { variant: 'heading-md/bold' }, 'Heading spacing'),
+					h(Design.Text, { variant: 'heading-md/bold' }, 'Heading position'),
 					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'The picture shows a heading between two chats. Change the numbers and watch the gaps.'),
 					h(HeadingPreview, null),
-					h(Stepper, { label: 'Space above a heading', sub: 'Between the chat above and the heading.', value: gapAbove(), onMinus: function () { setGap('hdAbove', gapAbove() - 2, 4, 40) }, onPlus: function () { setGap('hdAbove', gapAbove() + 2, 4, 40) } }),
-					h(Stepper, { label: 'Space below a heading', sub: 'Between the heading and its chat.', value: gapBelow(), onMinus: function () { setGap('hdBelow', gapBelow() - 2, 6, 30) }, onPlus: function () { setGap('hdBelow', gapBelow() + 2, 6, 30) } }),
+					h(Stepper, { label: 'Heading position', sub: 'Plus puts more room above the heading and less below it. Minus does the opposite.', value: gapAbove(), onMinus: function () { setGap('hdAbove2', gapAbove() - 4, 11, 55) }, onPlus: function () { setGap('hdAbove2', gapAbove() + 4, 11, 55) } }),
 					h(Design.Button, { text: 'Reset spacing', variant: 'secondary', size: 'sm', onPress: resetGaps }),
 				),
 				h(
