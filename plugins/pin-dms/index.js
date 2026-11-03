@@ -18,7 +18,7 @@
 
 	var storage
 	var listeners = []
-	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [] }
+	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [] }
 	var memo = {}
 
 	function finders() { return valenced.modules.finders }
@@ -101,7 +101,21 @@
 		}
 		return undefined
 	}
-	function chatId(entry) { return idOf(entry, 0) }
+	var deepCache = typeof WeakMap === 'function' ? new WeakMap() : null
+	/** Last resort: a row that carries a chat id somewhere I do not look by name. */
+	function deepId(entry) {
+		if (!entry || typeof entry !== 'object' || !deepCache) return undefined
+		if (deepCache.has(entry)) return deepCache.get(entry)
+		var found
+		try {
+			var text = JSON.stringify(entry, function (k, v) { return typeof v === 'function' ? undefined : v }) || ''
+			var all = text.slice(0, 3000).match(/\d{17,20}/g) || []
+			for (var i = 0; i < all.length; i++) { if (isDm(all[i])) { found = all[i]; break } }
+		} catch (e) {}
+		deepCache.set(entry, found)
+		return found
+	}
+	function chatId(entry) { return idOf(entry, 0) || deepId(entry) }
 	function looksLikeChat(id) {
 		return /^\d{15,}$/.test(id) || isDm(id)
 	}
@@ -531,7 +545,7 @@
 			if (keys.length > 40) return
 			for (var i = 0; i < keys.length; i++) {
 				var v = props[keys[i]]
-				if (!Array.isArray(v) || v.length < 4 || scanned.has(v)) continue
+				if (keys[i] === 'children' || !Array.isArray(v) || v.length < 4 || scanned.has(v)) continue
 				scanned.add(v)
 				var first = v[0]
 				var text = typeof first === 'string' ? first : (first && typeof first === 'object') ? JSON.stringify(first, function (k, x) { return typeof x === 'function' ? undefined : x }).slice(0, 1500) : ''
@@ -544,6 +558,22 @@
 		} catch (e) {}
 	}
 
+	/** Diagnostics: what the entries of a long list look like. */
+	function noteRowList(el, props) {
+		try {
+			if (status.rowLists.length >= 4) return
+			var list = props.data
+			if (!Array.isArray(list) || list.length < 5 || typeof props.renderItem !== 'function') return
+			var tname = el && el.type && (el.type.displayName || el.type.name || '?')
+			var sample = list.slice(0, 2).map(function (e) {
+				if (!e || typeof e !== 'object') return typeof e + ':' + String(e).slice(0, 12)
+				return Object.keys(e).slice(0, 7).map(function (k) { var v = e[k]; return k + (typeof v === 'string' ? '=' + v.slice(0, 10) : typeof v === 'object' && v ? '{}' : '') }).join('/')
+			}).join(' ; ')
+			var line = tname + ' x' + list.length + ' [' + sample + ']'
+			if (status.rowLists.indexOf(line) < 0) { status.rowLists.push(line); changed() }
+		} catch (e) {}
+	}
+
 	/** Recognises the list the DM tab draws: it gets the pinned chats first, and the section headers. */
 	function decorateList(result) {
 		try {
@@ -552,7 +582,7 @@
 			var state = read()
 			if (!state.pins.length) return result
 			var key = listProp(props)
-			if (!key) { scanShapes(result, props); return result }
+			if (!key) { scanShapes(result, props); noteRowList(result, props); return result }
 			var list = props[key]
 			if (list.some(function (e) { return e && e.__pinHeader })) return result
 			var ids = list.map(chatId).filter(Boolean)
@@ -727,6 +757,7 @@
 					h(Design.TableRow, { key: 'store', label: 'DM list order', subLabel: status.store + (status.hooks.length ? ' · hooked: ' + status.hooks.join(', ') : ' · not hooked') + ' · reordered ' + status.reordered + ' time(s)' }),
 					h(Design.TableRow, { key: 'list', label: 'Section headers in the list', subLabel: status.headers ? 'Working (' + status.headerLists + ' time(s))' : 'Not seen yet. Pin a chat into a section, then open the DM tab. Lists with chats seen: ' + status.lists }),
 					h(Design.TableRow, { key: 'lk', label: 'List props I reordered', subLabel: status.listKey.length ? status.listKey.join(', ') : 'none yet' }),
+					status.rowLists.length ? h(Design.TableRow, { key: 'rowlists', label: 'Long lists I saw', subLabel: status.rowLists.join(' | ') }) : null,
 					status.shapes.length ? h(Design.TableRow, { key: 'shapes', label: 'Lists that hold your pinned chats', subLabel: status.shapes.join(' | ') + '. Send this to the developer.' }) : null,
 					status.unmatched.length ? h(Design.TableRow, { key: 'unmatched', label: 'A list holds your pinned chats in a place I do not know', subLabel: 'Row fields: ' + status.unmatched.join(' | ') + '. Send this to the developer.' }) : null,
 					h(Design.TableRow, { key: 'menu', label: 'Hold-down menu', subLabel: status.menus ? 'Added ' + status.menus + ' time(s)' : 'Not seen yet. Hold a DM in the list.' }),
