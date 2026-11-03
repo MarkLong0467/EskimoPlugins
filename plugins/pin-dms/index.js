@@ -18,7 +18,7 @@
 
 	var storage
 	var listeners = []
-	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [], sortShapes: [], screens: [], voiceAnchor: false, strip: 0, lastOpen: '' }
+	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [], sortShapes: [], screens: [], voiceAnchor: false, voiceCards: [], strip: 0, lastOpen: '' }
 	var memo = {}
 
 	function finders() { return valenced.modules.finders }
@@ -685,8 +685,12 @@
 		}, [tick[0]])
 		if (!stripEnabled()) return null
 		var below = stripBelow()
-		if (props && props.anchored) { if (!below) return null }
-		else if (below && Date.now() - anchorSeenAt < 4000) return null
+		if (props && props.anchored) {
+			if (!below) return null
+			var firstShow = !anchorSeenAt
+			anchorSeenAt = Date.now()
+			if (!status.voiceAnchor) { status.voiceAnchor = true; setTimeout(changed, 50) }
+		} else if (below && Date.now() - anchorSeenAt < 4000) return null
 		var state = read()
 		var ordered = pinnedOrder(state.pins.slice())
 		if (!ordered.length) return null
@@ -722,6 +726,27 @@
 			h(RN.ScrollView, { style: { maxHeight: maxH }, nestedScrollEnabled: true, keyboardShouldPersistTaps: 'handled' }, rows),
 		)
 	}
+	/** Diagnostics: elements that were given a voice channel, to find the voice channel card. */
+	function noteVoiceCard(result) {
+		try {
+			if (status.voiceCards.length >= 4) return
+			var props = result && result.props
+			var t = result && result.type
+			if (!props || !t || typeof t === 'string') return
+			var keys = Object.keys(props)
+			if (keys.length > 30) return
+			for (var i = 0; i < keys.length; i++) {
+				var v = props[keys[i]]
+				if (v && typeof v === 'object' && !Array.isArray(v) && (v.type === 2 || v.type === 13) && typeof v.id === 'string' && (v.guild_id || v.guildId)) {
+					var inner = t.type || t.render || t
+					var name = t.displayName || t.name || (inner && (inner.displayName || inner.name)) || '?'
+					var line = name + '.' + keys[i] + ' (' + keys.filter(function (k) { return k !== keys[i] }).slice(0, 6).join(',') + ')'
+					if (status.voiceCards.indexOf(line) < 0) { status.voiceCards.push(line); changed() }
+					return
+				}
+			}
+		} catch (e) {}
+	}
 	/** The row of voice channel cards: the strip goes right under it. */
 	function wrapVoice(result) {
 		try {
@@ -730,9 +755,6 @@
 			var first = props.data[0]
 			if (!first || typeof first !== 'object' || first.kind !== 'voice') return result
 			if (props.__pinStrip) return result
-			var wasSeen = anchorSeenAt
-			anchorSeenAt = Date.now()
-			if (!status.voiceAnchor) { status.voiceAnchor = true; changed() }
 			if (!stripEnabled() || !stripBelow()) return result
 			var React = valenced.react.React
 			var RN = valenced.react.ReactNative
@@ -1027,7 +1049,8 @@
 	function installElementHooks(cleanup) {
 		var f = finders()
 		var runtime = f.lookupModule(f.filters.withProps('jsx', 'jsxs'))[0] || valenced.react.ReactJSXRuntime
-		function both(el) { return wrapMessages(wrapVoice(decorateRow(decorateList(decorateMenu(el))))) }
+		function both(el) { noteVoiceCard(el)
+			return wrapMessages(wrapVoice(decorateRow(decorateList(decorateMenu(el))))) }
 		;['jsx', 'jsxs'].forEach(function (name) {
 			if (runtime && typeof runtime[name] === 'function') cleanup(valenced.patcher.after(runtime, name, both))
 		})
@@ -1115,7 +1138,7 @@
 					{ title: 'Status' },
 					h(Design.TableSwitchRow, { key: 'strip', label: 'Pinned strip above the DM tab', subLabel: 'Shows your pinned chats at the top of Messages, grouped in your sections. Tap to open, hold for options, tap a heading to fold.', value: stripEnabled(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripOn: !!v }); changed() } catch (e) {} } }),
 					h(Design.TableSwitchRow, { key: 'stripbelow', label: 'Put the strip under the voice channel cards', subLabel: 'When nobody is in a voice channel, it stays at the very top.', value: stripBelow(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripBelow: !!v }); changed() } catch (e) {} } }),
-					h(Design.TableRow, { key: 'stripstatus', label: 'Pinned strip', subLabel: (status.strip ? 'Shown ' + status.strip + ' time(s)' : 'Not shown yet. Open the Messages tab.') + (status.lastOpen ? ' · last tap: ' + status.lastOpen : '') + ' · under voice cards: ' + (status.voiceAnchor ? 'found' : 'not seen') + ' · screens seen: ' + (status.screens.join(', ') || 'none') }),
+					h(Design.TableRow, { key: 'stripstatus', label: 'Pinned strip', subLabel: (status.strip ? 'Shown ' + status.strip + ' time(s)' : 'Not shown yet. Open the Messages tab.') + (status.lastOpen ? ' · last tap: ' + status.lastOpen : '') + (status.voiceCards.length ? ' · voice card candidates: ' + status.voiceCards.join(' | ') : '') + ' · under voice cards: ' + (status.voiceAnchor ? 'found' : 'not seen') + ' · screens seen: ' + (status.screens.join(', ') || 'none') }),
 					h(Design.TableRow, { key: 'store', label: 'DM list order', subLabel: status.store + (status.hooks.length ? ' · hooked: ' + status.hooks.join(', ') : ' · not hooked') + ' · reordered ' + status.reordered + ' time(s)' }),
 					h(Design.TableRow, { key: 'list', label: 'Section headers in the list', subLabel: status.headers ? 'Working (' + (status.headerLists + status.rowHeaders) + ' time(s))' : 'Not seen yet. Pin a chat into a section, then open the DM tab. Lists with chats seen: ' + status.lists }),
 					h(Design.TableRow, { key: 'lk', label: 'List props I reordered', subLabel: status.listKey.length ? status.listKey.join(', ') : 'none yet' }),
