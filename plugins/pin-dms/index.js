@@ -18,7 +18,7 @@
 
 	var storage
 	var listeners = []
-	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0 }
+	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [] }
 	var memo = {}
 
 	function finders() { return valenced.modules.finders }
@@ -194,10 +194,56 @@
 	/** Methods of the stores that give out the list of DMs, in whatever form. */
 	var LIST_METHOD = /^(get)?(Mutable)?(Sorted)?(Private)?(DM)?Channels?(Ids)?$|^getSortedPrivateChannels$|^getPrivateChannelIds$|^getDMs?$/i
 
+	/** Discord keeps its own pinned DMs. Our pins go into that group, first, and out of the plain one. */
+	function pinAware(result, method) {
+		var state = read()
+		if (!Array.isArray(result) || !state.pins.length) return result
+		var mine = pinnedOrder(state.pins.slice())
+		if (!mine.length) return result
+		var a = status.activity[method] || (status.activity[method] = { calls: 0, moved: 0, len: 0, pins: 0 })
+		a.calls++
+		a.len = result.length
+		var out = result
+		var plainStrings = result.every(function (e) { return typeof e === 'string' })
+		var unpinned = /unpin/i.test(method)
+		if (unpinned) {
+			out = result.filter(function (e) { var id = idOf(e, 0); return !(id && state.pins.indexOf(id) >= 0) })
+		} else if (plainStrings) {
+			out = mine.concat(result.filter(function (e) { return mine.indexOf(e) < 0 }))
+		} else {
+			var cs = stores().ChannelStore
+			var objs = []
+			for (var i = 0; i < mine.length; i++) {
+				var present = result.filter(function (e) { return idOf(e, 0) === mine[i] })[0]
+				var obj = present || (cs && typeof cs.getChannel === 'function' ? cs.getChannel(mine[i]) : undefined)
+				if (!obj) return result
+				objs.push(obj)
+			}
+			out = objs.concat(result.filter(function (e) { var id = idOf(e, 0); return !(id && mine.indexOf(id) >= 0) }))
+		}
+		if (out !== result && out.length !== result.length && !unpinned && out.length !== result.length + mine.filter(function (id) { return !result.some(function (e) { return idOf(e, 0) === id }) }).length) return result
+		a.moved++
+		a.before = result.slice(0, 3).map(labelOf).join(',')
+		a.after = out.slice(0, 3).map(labelOf).join(',')
+		changed()
+		return out
+	}
+
 	function hookStore(store, label, cleanup) {
 		if (!store) return
 		methodNames(store).forEach(function (method) {
-			if (!LIST_METHOD.test(method.replace(/^get/, 'get')) || typeof store[method] !== 'function') return
+			if (typeof store[method] !== 'function') return
+			if (/pin/i.test(method) && !/^(_|constructor)/.test(method)) {
+				if (status.pinMethods.indexOf(label + '.' + method) < 0) status.pinMethods.push(label + '.' + method)
+				if (/^get/i.test(method) && !/^getPinn?ed?Channel$/i.test(method)) {
+					try {
+						cleanup(valenced.patcher.after(store, method, function (result) { try { return pinAware(result, label + '.' + method) } catch (e) { return result } }))
+						status.hooks.push(label + '.' + method)
+					} catch (e) {}
+				}
+				return
+			}
+			if (!LIST_METHOD.test(method.replace(/^get/, 'get'))) return
 			if (!/private|sorted|dm/i.test(method)) return
 			try {
 				cleanup(valenced.patcher.after(store, method, function (result) { try { return pinnedFirst(result, label + '.' + method) } catch (e) { return result } }))
@@ -819,6 +865,7 @@
 					h(Design.TableRow, { key: 'store', label: 'DM list order', subLabel: status.store + (status.hooks.length ? ' · hooked: ' + status.hooks.join(', ') : ' · not hooked') + ' · reordered ' + status.reordered + ' time(s)' }),
 					h(Design.TableRow, { key: 'list', label: 'Section headers in the list', subLabel: status.headers ? 'Working (' + (status.headerLists + status.rowHeaders) + ' time(s))' : 'Not seen yet. Pin a chat into a section, then open the DM tab. Lists with chats seen: ' + status.lists }),
 					h(Design.TableRow, { key: 'lk', label: 'List props I reordered', subLabel: status.listKey.length ? status.listKey.join(', ') : 'none yet' }),
+					h(Design.TableRow, { key: 'pinm', label: 'Discord pin methods found', subLabel: status.pinMethods.length ? status.pinMethods.join(', ') : 'none' }),
 					h(Design.TableRow, { key: 'activity', label: 'Hook activity', subLabel: Object.keys(status.activity).length ? Object.keys(status.activity).map(function (m) { var a = status.activity[m]; return m + ': ' + a.calls + ' calls, ' + a.len + ' entries, ' + a.pins + ' pinned, moved ' + a.moved + (a.after ? ', ' + a.before + ' -> ' + a.after : '') }).join(' | ') : 'Nothing called yet. Open the Messages tab.' }),
 					status.rowLists.length ? h(Design.TableRow, { key: 'rowlists', label: 'Long lists I saw', subLabel: status.rowLists.join(' | ') }) : null,
 					status.shapes.length ? h(Design.TableRow, { key: 'shapes', label: 'Lists that hold your pinned chats', subLabel: status.shapes.join(' | ') + '. Send this to the developer.' }) : null,
