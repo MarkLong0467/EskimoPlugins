@@ -122,6 +122,39 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 	check('with no pins the list is left alone', el3.props.data === data)
 }
 
+// 4c. Section headings inside the real list
+{
+	const secs = '[{"id":"s1","name":"Boys","color":"#00d4ff"},{"id":"s2","name":"Girls","color":"#ff69b4"}]'
+	const asg = JSON.stringify({ [LONG.c2]: 's1', [LONG.c4]: 's2' })
+	const mk = () => Object.keys(LONG).map((k) => ({ channelId: LONG[k], lastMessageId: '1', isFavorite: false, isRequest: false }))
+	function MessagesFastestList() {}
+	function MessagesItemChannelFast() {}
+	const a = load({ sectionsJson: secs, assignJson: asg })
+	const el = a.runtime.jsx(MessagesFastestList, { data: { channels: mk(), sections: [0, 1, 6] } })
+	const ids = el.props.data.channels.map((c) => SHORT[c.channelId] || c.channelId.replace('pin-head:', 'H:'))
+	check('a heading row goes in front of each section, then the rest', ids.join() === 'H:s1,c2,H:s2,c4,H:rest,c1,c3,c5,g1', ids.join())
+	check('the row count of the chat section grows by the headings', el.props.data.sections.join() === '0,1,9', el.props.data.sections.join())
+	const hrow = a.runtime.jsx(MessagesItemChannelFast, { channelId: 'pin-head:s1', row: 0 })
+	check('the list asking for a heading row gets the heading', hrow.type.name === 'ListHeader')
+	a.setCur('hd'); const ht = texts(expand(hrow.type(hrow.props)))
+	check('the heading shows the section name and count', ht.join('').indexOf('BOYS') >= 0 && ht.join('').indexOf('1') >= 0, ht.join('|'))
+	const normal = a.runtime.jsx(MessagesItemChannelFast, { channelId: LONG.c1, row: 3 })
+	check('a normal chat row is left alone', normal.type === MessagesItemChannelFast)
+	const folded = load({ sectionsJson: secs.replace('"color":"#00d4ff"', '"color":"#00d4ff","collapsed":true'), assignJson: asg })
+	const el2 = folded.runtime.jsx(MessagesFastestList, { data: { channels: mk(), sections: [0, 1, 6] } })
+	const ids2 = el2.props.data.channels.map((c) => SHORT[c.channelId] || c.channelId.replace('pin-head:', 'H:'))
+	check('a folded section keeps its heading and hides its chats', ids2.join() === 'H:s1,H:s2,c4,H:rest,c1,c3,c5,g1' && el2.props.data.sections.join() === '0,1,8', ids2.join() + ' / ' + el2.props.data.sections.join())
+	const odd = load({ sectionsJson: secs, assignJson: asg })
+	const el3 = odd.runtime.jsx(MessagesFastestList, { data: { channels: mk(), sections: [0, 1, 99] } })
+	check('if the section sizes do not match, no headings are added (still pinned first)', el3.props.data.channels.length === 6 && short(el3.props.data.channels.map((c) => c.channelId)).startsWith('c2,c4'), el3.props.data.channels.length)
+	const off = load({ sectionsJson: secs, assignJson: asg, hdOff: true })
+	const el4 = off.runtime.jsx(MessagesFastestList, { data: { channels: mk(), sections: [0, 1, 6] } })
+	check('headings can be switched off', el4.props.data.channels.length === 6)
+	const crashed = load({ sectionsJson: secs, assignJson: asg, hdTrial: true })
+	const el5 = crashed.runtime.jsx(MessagesFastestList, { data: { channels: mk(), sections: [0, 1, 6] } })
+	check('if the app died while headings were new, they come back off', el5.props.data.channels.length === 6 && crashed.data.cache.hdOff === true)
+}
+
 // 5. The list pieces and the report
 {
 	const a = load({ hidePinned2: true })

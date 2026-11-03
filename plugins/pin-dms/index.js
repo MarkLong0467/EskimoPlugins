@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.11.1'
+	var VERSION = '1.12.0'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -20,7 +20,7 @@
 
 	var storage
 	var listeners = []
-	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [], sortShapes: [], screens: [], voiceAnchor: false, voiceCards: [], cards: [], detail: {}, order: [], fastList: '', strip: 0, lastOpen: '' }
+	var status = { store: 'not found', hooks: [], menus: 0, list: 'not seen yet', headers: false, error: '', reordered: 0, lists: 0, headerLists: 0, unmatched: [], shapes: [], listKey: [], rowLists: [], activity: {}, rowHeaders: 0, pinMethods: [], sortShapes: [], screens: [], voiceAnchor: false, voiceCards: [], cards: [], detail: {}, order: [], fastList: '', hdRows: 0, strip: 0, lastOpen: '' }
 	var memo = {}
 
 	function finders() { return valenced.modules.finders }
@@ -469,6 +469,7 @@
 		if (!section) return
 		section.collapsed = !section.collapsed
 		commit(state)
+		try { refreshList() } catch (e) {}
 	}
 
 	// ---- Names -----------------------------------------------------------------------------------
@@ -699,6 +700,7 @@
 		lines.push('pins: ' + state.pins.length + ', sections: ' + state.sections.length)
 		lines.push('hooked: ' + status.hooks.join(', '))
 		lines.push('strip: shown ' + status.strip + ', slot ' + (status.voiceAnchor || 'top') + ', last tap ' + (status.lastOpen || '-'))
+		lines.push('heading rows drawn: ' + status.hdRows + (status.error ? ', note: ' + status.error : ''))
 		lines.push('list props reordered: ' + (status.listKey.join(', ') || 'none'))
 		Object.keys(status.activity).forEach(function (m) {
 			var a = status.activity[m]
@@ -888,6 +890,84 @@
 		var inner = t.type || t.render || t
 		return t.displayName || t.name || (inner && (inner.displayName || inner.name)) || ''
 	}
+	// ---- Section headings inside the real list ---------------------------------------------------
+	function hdOn() {
+		try { return !storage || !storage.cache || storage.cache.hdOff !== true } catch (e) { return true }
+	}
+	var hdArmed = false
+	/** If the app dies while headings are new, the next start turns them off by itself. */
+	function armHeadingTrial() {
+		if (hdArmed) return
+		hdArmed = true
+		try {
+			Object.assign(storage.cache, { hdTrial: true })
+			setTimeout(function () { try { Object.assign(storage.cache, { hdTrial: false }) } catch (e) {} }, 6000)
+		} catch (e) {}
+	}
+	function headerEntry(kind) {
+		return { channelId: 'pin-head:' + kind, lastMessageId: '0', isFavorite: false, isRequest: false, __pinHeader: true }
+	}
+	/** Pinned chats first, with a heading row in front of each section. Returns null when it cannot be done safely. */
+	function withListHeaders(list, d) {
+		var state = read()
+		if (!state.sections.length || !hdOn() || !Array.isArray(d.sections)) return null
+		var at = -1
+		for (var i = 0; i < d.sections.length; i++) { if (d.sections[i] === d.channels.length && typeof d.sections[i] === 'number') { at = i; break } }
+		if (at < 0) return null
+		var out = []
+		var shown = {}
+		var restShown = false
+		var anyPinned = false
+		var sectioned = list.some(function (e) { var id = chatId(e); return id && state.pins.indexOf(id) >= 0 && sectionOf(state, id) })
+		var loose = false
+		list.forEach(function (entry) {
+			var id = chatId(entry)
+			var pinned = !!id && state.pins.indexOf(id) >= 0
+			if (pinned) {
+				anyPinned = true
+				var sec = sectionOf(state, id)
+				if (sec) {
+					if (!shown[sec.id]) { shown[sec.id] = true; out.push(headerEntry(sec.id)) }
+					if (sec.collapsed) return
+				} else if (sectioned && !loose) { loose = true; out.push(headerEntry('loose')) }
+			} else if (id && anyPinned && !restShown) { restShown = true; out.push(headerEntry('rest')) }
+			out.push(entry)
+		})
+		if (out.length === list.length) return null
+		var sections = d.sections.slice()
+		sections[at] = sections[at] + (out.length - d.channels.length)
+		return { channels: out, sections: sections }
+	}
+	function ListHeader(props) {
+		var RN = valenced.react.ReactNative
+		var Design = valenced.discord.design.Design
+		var state = read()
+		var kind = props.kind
+		var sec = state.sections.filter(function (x) { return x.id === kind })[0]
+		var name = sec ? sec.name : kind === 'loose' ? 'Pinned' : 'Direct messages'
+		var color = sec ? sec.color : '#80848e'
+		var count = sec ? state.pins.filter(function (id) { return state.assign[id] === sec.id }).length : 0
+		var label = (sec ? (sec.collapsed ? '▸ ' : '▾ ') : '') + String(name).toUpperCase() + (sec ? '  ' + count : '')
+		return h(
+			RN.Pressable,
+			{ onPress: sec ? function () { toggleFold(sec.id) } : undefined, onLongPress: sec ? function () { openEditSection(sec) } : undefined, style: { height: 55, flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingHorizontal: 16, paddingBottom: 6 } },
+			h(Design.Text, { variant: 'text-xs/bold', style: { color: color } }, label),
+			h(RN.View, { style: { flex: 1, height: 1.5, marginBottom: 6, borderRadius: 1, backgroundColor: color, opacity: sec ? 0.55 : 0.3 } }),
+		)
+	}
+	/** The row the list asks for a heading: draw the heading instead of a chat. */
+	function decorateHeaderRow(result) {
+		try {
+			if (nameOf(result) !== 'MessagesItemChannelFast') return result
+			var id = result.props && result.props.channelId
+			if (typeof id !== 'string' || id.indexOf('pin-head:') !== 0) return result
+			status.hdRows++
+			return valenced.react.React.createElement(ListHeader, { key: result.key, kind: id.slice(9) })
+		} catch (e) {
+			return result
+		}
+	}
+
 	/** The real DM list ("MessagesFastestList"): note what it is given, and put the pinned chats first in any list it holds. */
 	var fastCache = null
 	function decorateFast(result) {
@@ -913,12 +993,16 @@
 				var stateKey = JSON.stringify(state)
 				if (!(fastCache && fastCache.orig === d.channels && fastCache.key === stateKey)) {
 					var orderedCh = reorderRows(d.channels)
-					fastCache = { orig: d.channels, key: stateKey, data: orderedCh === d.channels ? d : Object.assign({}, d, { channels: orderedCh }), moved: orderedCh !== d.channels }
+					var withHd = null
+					try { withHd = withListHeaders(orderedCh, d) } catch (e) { withHd = null }
+					if (withHd) armHeadingTrial()
+					fastCache = { orig: d.channels, key: stateKey, data: withHd ? Object.assign({}, d, withHd) : orderedCh === d.channels ? d : Object.assign({}, d, { channels: orderedCh }), moved: !!withHd || orderedCh !== d.channels, headings: !!withHd }
 				}
 				if (fastCache.moved) {
 					next.data = fastCache.data
 					any = true
 					if (status.listKey.indexOf('fast.data.channels') < 0) { status.listKey.push('fast.data.channels'); changed() }
+					if (fastCache.headings && status.listKey.indexOf('headings') < 0) { status.listKey.push('headings'); changed() }
 				}
 			}
 			keys.forEach(function (k) {
@@ -1160,6 +1244,7 @@
 			var Design = valenced.discord.design.Design
 			status.rowHeaders++
 			if (!status.headers) { status.headers = true; status.list = 'found, tags added'; changed() }
+			var withHeadings = hdOn() && status.listKey.indexOf('headings') >= 0
 			var stripe = React.createElement(RN.View, { key: 'pin-stripe', pointerEvents: 'none', style: { position: 'absolute', left: 0, top: 8, bottom: 8, width: 4, borderRadius: 2, backgroundColor: section.color } })
 			var tag = React.createElement(
 				RN.View,
@@ -1168,7 +1253,7 @@
 			)
 			if (!Array.isArray(props.children) && typeof props.children === 'function') return result
 			var kids = Array.isArray(props.children) ? props.children : [props.children]
-			return React.cloneElement(result, {}, kids.concat([stripe, tag]))
+			return React.cloneElement(result, {}, kids.concat(withHeadings ? [stripe] : [stripe, tag]))
 		} catch (e) {
 			return result
 		}
@@ -1271,6 +1356,8 @@
 		function both(el) {
 			if (globalThis.__pinDmsInstance !== INSTANCE) return el
 			noteElements(el)
+			var hd = decorateHeaderRow(el)
+			if (hd !== el) return hd
 			return wrapMessages(wrapHeader(wrapVoiceCard(decorateFast(decorateRow(decorateList(decorateMenu(el))))))) }
 		;['jsx', 'jsxs'].forEach(function (name) {
 			if (runtime && typeof runtime[name] === 'function') cleanup(valenced.patcher.after(runtime, name, both))
@@ -1358,6 +1445,7 @@
 					Design.TableRowGroup,
 					{ title: 'Status' },
 					h(Design.TableRow, { key: 'copyreport', label: 'Copy diagnostic report', subLabel: 'Open the Messages tab first, then tap here and paste it in the chat. It lists what the DM tab is made of.', onPress: copyReport }),
+					h(Design.TableSwitchRow, { key: 'headings', label: 'Section headings in the list', subLabel: 'Puts a heading row (with fold) in front of each section of pinned chats. If the app ever fails to start with it, it turns itself off.', value: hdOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { hdOff: !v, hdTrial: false }); fastCache = null; refreshList() } catch (e) {} } }),
 					h(Design.TableSwitchRow, { key: 'strip', label: 'Pinned strip above the DM tab', subLabel: 'Optional. Your pinned chats already sit at the top of the list, so this repeats them in a panel with section headings. Off by default.', value: stripEnabled(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripOn2: !!v }); changed() } catch (e) {} } }),
 					h(Design.TableSwitchRow, { key: 'hidepinned', label: 'Hide pinned chats from the normal list', subLabel: 'Experimental. They only show in the strip, not twice. Off by default.', value: hideOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { hidePinned2: !!v }); refreshList() } catch (e) {} } }),
 					h(Design.TableSwitchRow, { key: 'stripbelow', label: 'Try to put the strip under the Messages header', subLabel: 'Experimental. Off by default, the strip stays at the very top.', value: stripBelow(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripBelow2: !!v }); changed() } catch (e) {} } }),
@@ -1384,6 +1472,9 @@
 		start: function (api) {
 			globalThis.__pinDmsInstance = INSTANCE
 			storage = api.jsonStorage
+			try {
+				if (storage.cache && storage.cache.hdTrial === true) { Object.assign(storage.cache, { hdOff: true, hdTrial: false }); status.error = 'Section headings were turned off: the app did not start with them.' }
+			} catch (e) {}
 			function attempt(label, step) { try { step() } catch (e) { status.error = label + ': ' + String((e && e.message) || e).slice(0, 70) } }
 			attempt('store', function () { installStoreHooks(api.cleanup) })
 			attempt('elements', function () { installElementHooks(api.cleanup) })
