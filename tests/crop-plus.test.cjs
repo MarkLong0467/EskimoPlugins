@@ -118,7 +118,7 @@ const sheets = async (app, n) => { for (let i = 0; i < 100 && app.state.sheets.l
 		check('"Crop smaller" opens the cropper again on the new picture', await (async () => { for (let i = 0; i < 100 && app.state.calls.length < 2; i += 1) await sleep(10); return app.state.calls.length === 2 })())
 		const second = app.state.calls[1]
 		check('...with that picture as the path and its own shape', second.path === 'file:///cache/crop1.jpg' && second.width === 1000 && second.height === 800, JSON.stringify({ p: second.path, w: second.width, h: second.height }))
-		check('...and Discord’s colours and texts kept', second.cropperToolbarTitle === 'Crop')
+		check('...and Discord’s colours kept (only the title says which crop it is)', second.cropperChooseColor === '#fff' && second.cropperToolbarTitle === 'Crop 2 · 1000 × 800')
 		check('a sheet opens again for the second crop', await sheets(app, 2))
 		tree = await app.sheetTree()
 		check('...showing the new size and a "go back" button', has(tree, '500 × 400') && has(tree, 'Go back to 1000 × 800'))
@@ -246,6 +246,25 @@ const sheets = async (app, n) => { for (let i = 0; i < 100 && app.state.sheets.l
 		check('the targets go down to 16 px and the limit up to 15 crops', findAll(auto.screen(), (n) => n.type === 'Pressable' && texts(n).includes('16px')).length === 1 && findAll(auto.screen(), (n) => n.type === 'Pressable' && texts(n).includes('15')).length === 1)
 	}
 
+	// 5d. Titles and the tip
+	{
+		const app = load({ mode: 'auto', targetPx: 100 }, { results: [result(1), result(2), result(3), result(4), result(1), result(2), result(3), result(4)] })
+		await app.picker.openCropper(discordOptions())
+		check('the first crop keeps Discord\u2019s own title', app.state.calls[0].cropperToolbarTitle === 'Crop')
+		check('later crops say which crop it is and how big the picture is', app.state.calls[1].cropperToolbarTitle === 'Crop 2 · 1000 × 800' && app.state.calls[2].cropperToolbarTitle === 'Crop 3 · 500 × 400', app.state.calls.map((c) => c.cropperToolbarTitle).join(' | '))
+		check('a tip is shown once, naming the check mark, the X and pinching', app.state.toasts.filter((x) => /pinch to zoom in first/.test(x)).length === 1 && app.state.toasts.some((x) => /tap the check mark/.test(x) && /Tap the X/.test(x)))
+		await app.picker.openCropper(discordOptions())
+		check('...and not again in the same run', app.state.toasts.filter((x) => /pinch to zoom in first/.test(x)).length === 1)
+		const quiet = load({ tips: false, titles: false, mode: 'auto', targetPx: 2000, maxPasses: 3 })
+		await quiet.picker.openCropper(discordOptions())
+		check('both can be turned off', !quiet.state.toasts.some((x) => /pinch/.test(x)) && quiet.state.calls[0].cropperToolbarTitle === 'Crop')
+		const ask = load({ mode: 'ask' })
+		const p = ask.picker.openCropper(discordOptions())
+		await sheets(ask, 1)
+		check('in "ask" mode the tip speaks of the sheet', ask.state.toasts.some((x) => /A sheet then offers to crop smaller/.test(x)))
+		press(await ask.sheetTree(), 'Use this one'); await p
+	}
+
 	// 6. Options
 	{
 		const shapes = { '1:1': [1000, 1000], '4:3': [4000, 3000], '16:9': [16000, 9000], '9:16': [9000, 16000] }
@@ -308,7 +327,7 @@ const sheets = async (app, n) => { for (let i = 0; i < 100 && app.state.sheets.l
 	{
 		const app = load()
 		let tree = app.screen()
-		check('the screen shows the state and how to use it', has(tree, 'Crop Plus 1.2.0') && has(tree, 'On') && has(tree, 'choose Edit image'))
+		check('the screen shows the state and how to use it', has(tree, 'Crop Plus 1.3.0') && has(tree, 'On') && has(tree, 'choose Edit image'))
 		findAll(tree, (n) => n.props && n.props.title === 'Where it works')[0].props.onChange('everywhere')
 		check('the scope is saved', app.data.cache.scope === 'everywhere')
 		findAll(app.screen(), (n) => n.props && n.props.title === 'Starting shape of the frame')[0].props.onChange('1:1')
@@ -331,7 +350,7 @@ const sheets = async (app, n) => { for (let i = 0; i < 100 && app.state.sheets.l
 		check('after a crop the self-check says so and shows the options', has(done.screen(), '✓ A crop has been done') && has(done.screen(), 'Options the cropper got last time') && has(done.screen(), '"path":"file:///photos/a.jpg"'))
 		check('...without Discord’s colours and texts', !has(done.screen(), 'cropperChooseColor'))
 		press(done.screen(), 'Copy report')
-		check('the report lists settings, hooks, counts and passes', /Crop Plus report/.test(global.copied) && /version: 1\.2\.0/.test(global.copied) && /cropper found; patched: openCropper/.test(global.copied) && /crops 1, passes 1/.test(global.copied) && /last passes: 1000 × 800/.test(global.copied), global.copied)
+		check('the report lists settings, hooks, counts and passes', /Crop Plus report/.test(global.copied) && /version: 1\.3\.0/.test(global.copied) && /cropper found; patched: openCropper/.test(global.copied) && /crops 1, passes 1/.test(global.copied) && /last passes: 1000 × 800/.test(global.copied), global.copied)
 		const none = load({}, { late: true })
 		press(none.screen(), 'Self-check')
 		check('without the cropper the self-check says so and the state says waiting', has(none.screen(), '✗ Found the cropper') && has(none.screen(), 'Waiting for the cropper'))

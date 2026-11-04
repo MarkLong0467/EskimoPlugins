@@ -27,7 +27,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.2.0'
+	const VERSION = '1.3.0'
 	const INSTANCE = {}
 	const SHEET_KEY = 'MARKLONG_CROP_PLUS_ASK'
 	const CANCELLED = 'E_PICKER_CANCELLED'
@@ -92,6 +92,8 @@
 		maxHeight: 0,
 		quality: 100, // JPEG quality of the result, in percent
 		cleanTemp: true, // delete the pictures of earlier passes when done
+		titles: true, // the cropper's title says which crop this is and how big the picture is
+		tips: true, // a short tip when the first crop of the day opens
 	}
 
 	/** What "Smallest crop" sets: crop again and again, on its own, until the picture is tiny. */
@@ -140,9 +142,10 @@
 	 * `previous` is the result of an earlier pass when this is a later one: then the picture to crop is that result
 	 * and the starting shape follows its size instead of the original's.
 	 */
-	function tuneOptions(options, previous) {
+	function tuneOptions(options, previous, pass) {
 		const next = { ...options }
 		if (previous) { next.path = previous.path; next.uri = undefined; next.width = previous.width || undefined; next.height = previous.height || undefined }
+		if (previous && pass && setting('titles')) next.cropperToolbarTitle = `Crop ${pass} · ${dims(previous)}`
 		if (setting('freeStyle')) next.freeStyleCropEnabled = true
 		const ratio = setting('ratio')
 		if (ratio === 'free') { next.width = undefined; next.height = undefined }
@@ -190,7 +193,8 @@
 		let crop = true // false after "go back": the sheet is shown again for the earlier result
 		for (;;) {
 			if (crop) {
-				const result = await onePass(holder, original, tuneOptions(options, stack.length ? stack[stack.length - 1] : null))
+				if (!stack.length) showTip()
+				const result = await onePass(holder, original, tuneOptions(options, stack.length ? stack[stack.length - 1] : null, stack.length + 1))
 				if (!result) {
 					// Cancelled. On the first pass that is a real cancel. Later it means "keep what I had".
 					if (!stack.length) { stats.cancelled += 1; addLog('Crop cancelled'); throw cancelError() }
@@ -226,6 +230,16 @@
 		if (setting('cleanTemp')) cleanAll(holder, stack, final)
 		addLog(`Crop done: ${stack.length} pass${stack.length === 1 ? '' : 'es'}, ${dims(final)} ${sizeText(final.size)}`.trim())
 		return final
+	}
+
+	let tipShown = false
+	/** Said once per start of Discord, when the first crop opens. */
+	function showTip() {
+		if (tipShown || !setting('tips') || !setting('again')) return
+		tipShown = true
+		toast(setting('mode') === 'auto'
+			? 'Crop Plus: pick an area and tap the check mark. The cropper opens again on the result. Tap the X when it is small enough. Tip: pinch to zoom in first.'
+			: 'Crop Plus: pick an area and tap the check mark. A sheet then offers to crop smaller. Tip: pinch to zoom in first.')
 	}
 
 	/** True when the sheet should be shown after this pass. */
@@ -392,6 +406,8 @@
 				h(Design.TableRowGroup, { key: 'extra', title: 'The sheet' },
 					switchRow('undoStack', 'Allow going back one crop', 'Shows "Go back to ..." from the second crop on'),
 					switchRow('cleanTemp', 'Delete the pictures of earlier crops', 'When you are done, only the last one is kept'),
+					switchRow('titles', 'Show the crop number in the title', 'The cropper\u2019s title says "Crop 2 · 500 × 400" from the second crop on'),
+					switchRow('tips', 'Show a tip when the cropper opens', 'Once each time Discord starts'),
 				),
 				h(Radio, { key: 'ratio', title: 'Starting shape of the frame', value: setting('ratio'), onChange: (v) => saveSettings({ ratio: v }), items: RATIOS }),
 				h(Design.TableRowGroup, { key: 'look', title: 'The cropper' },
@@ -411,7 +427,7 @@
 					...log.slice(0, 6).map((l, i) => h(Design.TableRow, { key: `l${i}`, label: `${l.ok ? '✓' : '✗'} ${l.text}`, subLabel: new Date(l.at).toLocaleTimeString() })),
 				),
 				h(Design.TableRowGroup, { key: 'good', title: 'Good to know' },
-					h(Design.TableRow, { key: 'g0', label: 'The frame cannot get smaller', subLabel: 'Discord\u2019s cropper has a smallest frame (about 100 dp) that no plugin can change. What helps: pinch to zoom into the picture (or use the Scale tab) so the frame covers less, and crop again.' }),
+					h(Design.TableRow, { key: 'g0', label: 'The frame cannot get smaller', subLabel: 'Discord\u2019s cropper has a smallest frame (about 100 dp) that no plugin can change. What helps: pinch to zoom into the picture so the frame covers less, then tap the check mark. Crop Plus opens the cropper again on the result. The X on the first crop cancels everything; on later crops it keeps the last result.' }),
 					h(Design.TableRow, { key: 'g1', label: 'Why crop again', subLabel: 'Discord’s cropper has a smallest frame and a biggest zoom. Cropping the result again starts from a smaller picture, so the passes add up.' }),
 					h(Design.TableRow, { key: 'g2', label: 'Quality', subLabel: 'Each pass saves the picture again. Keep the quality at 100% unless you need a small file.' }),
 				),
