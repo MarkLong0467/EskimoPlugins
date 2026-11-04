@@ -1,0 +1,11 @@
+{
+	"format": 1,
+	"id": "marklong.chat-animator",
+	"name": "Chat Animator",
+	"description": "Keeps animated profile pictures and avatar decorations (ears) playing in chats. Works inside Discord's native chat, which normal plugins cannot reach.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [],
+	"version": "1.0.0",
+	"dependencies": { "valenced.api": { "version": ">=1 <2" }, "discord": { "version": "*" } },
+	"dist": { "script": "index.js", "android": { "path": "plugin.jar", "class": "marklong.chatanimator.ChatAnimator" } }
+}

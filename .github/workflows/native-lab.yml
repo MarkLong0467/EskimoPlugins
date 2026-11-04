@@ -19,13 +19,16 @@ jobs:
         working-directory: valenced-src
         run: ./gradlew :core:publishToMavenLocal :android:api:publishToMavenLocal -x test --no-daemon
       - name: Build the lab plugins
-        run: ./valenced-src/gradlew -p lab :avatar-lab:dexJar --no-daemon
+        run: ./valenced-src/gradlew -p lab :avatar-lab:dexJar :chat-animator:dexJar --no-daemon
       - name: Package
         run: |
-          mkdir -p out && cd lab/avatar-lab
-          cp build/outputs/plugin/plugin.jar . 
-          v=$(sed -nE 's/.*"version": "([^"]+)".*/\1/p' manifest.json | head -1)
-          zip -qX "../../out/marklong.avatar-lab@$v.zip" manifest.json index.js plugin.jar
+          mkdir -p out
+          for d in lab/avatar-lab lab/chat-animator; do
+            cp "$d/build/outputs/plugin/plugin.jar" "$d/plugin.jar"
+            id=$(sed -nE 's/.*"id": "([^"]+)".*/\1/p' "$d/manifest.json" | head -1)
+            v=$(sed -nE 's/.*"version": "([^"]+)".*/\1/p' "$d/manifest.json" | head -1)
+            (cd "$d" && zip -qX "../../out/$id@$v.zip" manifest.json index.js plugin.jar)
+          done
       - uses: actions/upload-artifact@v4
         with: { name: lab-zips, path: out/*.zip }
       - name: Publish the zips on the lab-builds branch

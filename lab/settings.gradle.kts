@@ -11,3 +11,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "native-lab"
 include(":avatar-lab")
+include(":chat-animator")
