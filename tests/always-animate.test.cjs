@@ -55,6 +55,8 @@ function load(settings = {}, options = {}) {
 				filters: { withProps: (...n) => n.join(), withName: (n) => `name:${n}` },
 				getModules: (f, cb) => { subs.push({ f, cb }); return () => {} },
 				lookupModule: (f) => {
+					if (options.viaCallbackOnly && f !== 'jsx,jsxs') return []
+					if (typeof f === 'function') return []
 					if (f === 'name:createMessageContent') return options.noChat ? [] : [options.chatOnDefault ? { default: chatModule } : chatModule]
 					if (f === 'jsx,jsxs') return [runtime]
 					if (f === 'getUserAvatarURL,getGuildIconURL') return avatarModule ? [avatarModule] : []
@@ -180,14 +182,42 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	check('if the chat rows are not found the plugin still starts and says so', /chat: on; not found/.test((() => { findAll(expand(lost.plugin.SettingsComponent({ api: { jsonStorage: lost.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress(); return global.copied })()), global.copied)
 	const late = load({}, { noChat: true })
 	check('a chat module that loads later is picked up', late.subs.some((x) => x.f === 'name:createMessageContent'))
-	late.subs[0].cb(late.chatModule)
-	late.subs[0].cb(late.chatModule)
+	const chatSub = late.subs.find((x) => x.f === 'name:createMessageContent')
+	chatSub.cb(late.chatModule)
+	chatSub.cb(late.chatModule)
 	const twice = late.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64` })
 	check('...and wrapped only once', (twice.avatarURL.match(/animated=true/g) || []).length === 1, twice.avatarURL)
 	const def = load({}, { chatOnDefault: true })
 	check('the chat function is found on a default export too', /animated=true/.test(def.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp` }).avatarURL))
 	findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()
 	check('the report counts chat rows', /chat: on; createMessageContent \(the chat rows\); Discord used it \d+ time\(s\), changed \d+/.test(global.copied) && !/chat: on; createMessageContent \(the chat rows\); Discord used it 0 /.test(global.copied), global.copied)
+}
+
+// 2e. Modules that Discord loads after the plugin started
+{
+	const app = load({}, { viaCallbackOnly: true })
+	const hash = 'a_0123456789abcdef0123456789abcdef'
+	const stillUrl = () => app.avatarModule.getUserAvatarURL(user(true), false, 64)
+	check('nothing is hooked before the modules exist, and the settings say "not found"', /\.webp\?/.test(stillUrl()) && /pictures: on; not found/.test((() => { findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress(); return global.copied })()))
+	const sub = (key) => app.subs.find((x) => x.f === key)
+	check('the plugin subscribed to what it needs', !!sub('getUserAvatarURL,getGuildIconURL') && !!sub('AnimateEmoji,AnimateStickers,GifAutoPlay') && !!sub('name:createMessageContent') && app.subs.some((x) => typeof x.f === 'function'))
+	sub('getUserAvatarURL,getGuildIconURL').cb(app.avatarModule)
+	check('the picture functions are hooked when they load', /\.gif\?|animated=true/.test(stillUrl()) || !/\.webp\?size=64$/.test(stillUrl()))
+	const url = stillUrl()
+	sub('getUserAvatarURL,getGuildIconURL').cb(app.avatarModule)
+	check('...and reported twice they are wrapped only once', stillUrl() === url && app.log.filter(([name]) => name === 'getUserAvatarURL').length >= 1)
+	sub('AnimateEmoji,AnimateStickers,GifAutoPlay').cb(app.accessibility)
+	check('the three settings are hooked when they load', app.accessibility.AnimateEmoji.getSetting() === true && app.accessibility.AnimateStickers.getSetting() === true && app.accessibility.GifAutoPlay.getSetting() === true)
+	sub('AnimateEmoji,AnimateStickers,GifAutoPlay').cb(app.accessibility)
+	const funcSub = app.subs.find((x) => typeof x.f === 'function')
+	check('the chat function is also recognised by what the module exports', funcSub.f({ default: function createMessageContent() {} }) === true && funcSub.f({ default: function other() {} }) === false && funcSub.f(null) === false && funcSub.f({ default: { default: function createMessageContent() {} } }) === true)
+	funcSub.cb(app.chatModule)
+	check('...and hooked when it loads that way', /animated=true/.test(app.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64` }).avatarURL))
+	findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === 'Run the self-check')[0].props.onPress()
+	check('the self-check passes once they are hooked', /AvatarUtils \(\d+ place/.test((() => { findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress(); return global.copied })()), global.copied)
+	const again = load({}, { viaCallbackOnly: true })
+	findAll(expand(again.plugin.SettingsComponent({ api: { jsonStorage: again.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()
+	check('without any module the report still says what failed', /problems|check - A profile picture, asked for as "still": FAIL .*AvatarUtils was not found/.test(global.copied), global.copied)
 }
 
 // 2c. Drawing the pictures on screen again

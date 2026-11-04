@@ -21,7 +21,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.2.0'
+	const VERSION = '1.2.1'
 
 	// ---------------------------------------------------------------------------------------------------
 	// Small helpers
@@ -102,6 +102,25 @@
 	}
 
 	// ---------------------------------------------------------------------------------------------------
+	// Finding Discord's code. `getModules` reports the modules that match now and the ones loaded later (many are
+	// loaded only when a screen first needs them, which can be after this plugin started); a plain lookup covers
+	// the ones that were loaded before. Everything that is hooked is hooked only once.
+	// ---------------------------------------------------------------------------------------------------
+	const watchers = []
+	function watchModules(cleanup, makeFilter, attach) {
+		const finders = valenced.modules.finders
+		const run = (mod) => { try { attach(mod) } catch (e) { reportProblem('hook', e) } }
+		let filter
+		try { filter = makeFilter(finders.filters) } catch (e) { reportProblem('filter', e); return }
+		try { if (typeof finders.getModules === 'function') cleanup(finders.getModules(filter, run)) } catch (e) { reportProblem('watch', e) }
+		const again = () => { try { finders.lookupModule(filter).forEach(run) } catch (e) {} }
+		again()
+		watchers.push(again)
+	}
+	/** Looks again for everything that has not been found yet. Hooks that are already in place are skipped. */
+	function lookAgain() { watchers.slice().forEach((again) => { try { again() } catch (e) {} }) }
+
+	// ---------------------------------------------------------------------------------------------------
 	// 3. Pictures: AvatarUtils
 	// ---------------------------------------------------------------------------------------------------
 	/**
@@ -180,16 +199,17 @@
 		})
 		return holders
 	}
+	const avatarHolders = [] // every AvatarUtils object that was found, for the self-check
 	function allowPictureAnimations(cleanup) {
-		const finders = valenced.modules.finders
-		const modules = finders.lookupModule(finders.filters.withProps('getUserAvatarURL', 'getGuildIconURL'))
-		const holders = holdersOf(modules)
-		if (!holders.length) { found.pictures = 'not found'; return }
-		let patched = 0
-		holders.forEach((holder) => {
-			Object.keys(PICTURE_FUNCTIONS).forEach((name) => { if (allowAnimationIn(holder, name, PICTURE_FUNCTIONS[name], cleanup)) patched += 1 })
+		watchModules(cleanup, (filters) => filters.withProps('getUserAvatarURL', 'getGuildIconURL'), (mod) => {
+			holdersOf([mod]).forEach((holder) => {
+				if (!avatarHolders.includes(holder)) avatarHolders.push(holder)
+				Object.keys(PICTURE_FUNCTIONS).forEach((name) => allowAnimationIn(holder, name, PICTURE_FUNCTIONS[name], cleanup))
+			})
+			const wrapped = avatarHolders.reduce((total, holder) => total + Object.keys(PICTURE_FUNCTIONS).filter((name) => holder[name] && holder[name].__alwaysAnimate).length, 0)
+			found.pictures = `AvatarUtils (${avatarHolders.length} place${avatarHolders.length === 1 ? '' : 's'}, ${wrapped} functions)`
 		})
-		found.pictures = `AvatarUtils (${holders.length} place${holders.length === 1 ? '' : 's'}, ${patched} functions)`
+		if (!found.pictures) found.pictures = 'not found'
 	}
 
 	// ---------------------------------------------------------------------------------------------------
@@ -201,24 +221,30 @@
 		{ name: 'AnimateStickers', feature: 'stickers' },
 		{ name: 'GifAutoPlay', feature: 'gifs' },
 	]
+	const accessibilityRoots = []
+	const patchedSettings = new WeakSet()
 	function allowAccessibilityAnimations(cleanup) {
-		const finders = valenced.modules.finders
-		const userSettings = finders.lookupModule(finders.filters.withProps('AnimateEmoji', 'AnimateStickers', 'GifAutoPlay'))[0]
-		const root = userSettings && (userSettings.AnimateEmoji ? userSettings : userSettings.default)
-		if (!root) { ACCESSIBILITY_SETTINGS.forEach((s) => { found[s.feature] = 'not found' }); return }
-		ACCESSIBILITY_SETTINGS.forEach(({ name, feature }) => {
-			const target = root[name]
-			if (!target) { found[feature] = 'not found'; return }
-			const methods = ['getSetting', 'useSetting'].filter((method) => typeof target[method] === 'function')
-			methods.forEach((method) => {
-				cleanup(valenced.patcher.after(target, method, (result) => {
-					if (!setting(feature)) return result
-					countSeen(feature, result !== true)
-					return true
-				}))
+		watchModules(cleanup, (filters) => filters.withProps('AnimateEmoji', 'AnimateStickers', 'GifAutoPlay'), (mod) => {
+			const root = mod && (mod.AnimateEmoji ? mod : mod.default)
+			if (!root) return
+			if (!accessibilityRoots.includes(root)) accessibilityRoots.push(root)
+			ACCESSIBILITY_SETTINGS.forEach(({ name, feature }) => {
+				const target = root[name]
+				if (!target) { found[feature] = found[feature] || 'not found'; return }
+				if (patchedSettings.has(target)) return
+				patchedSettings.add(target)
+				const methods = ['getSetting', 'useSetting'].filter((method) => typeof target[method] === 'function')
+				methods.forEach((method) => {
+					cleanup(valenced.patcher.after(target, method, (result) => {
+						if (!setting(feature)) return result
+						countSeen(feature, result !== true)
+						return true
+					}))
+				})
+				found[feature] = `UserSettings.${name} (${methods.join(', ')})`
 			})
-			found[feature] = `UserSettings.${name} (${methods.join(', ')})`
 		})
+		ACCESSIBILITY_SETTINGS.forEach(({ feature }) => { if (!found[feature]) found[feature] = 'not found' })
 	}
 
 	// ---------------------------------------------------------------------------------------------------
@@ -279,20 +305,19 @@
 		return row
 	}
 	function hookChatRows(cleanup) {
-		const finders = valenced.modules.finders
 		const patched = new WeakSet()
 		const attach = (mod) => {
 			;[mod, mod && mod.default].forEach((holder) => {
-				if (!holder || typeof holder !== 'object' && typeof holder !== 'function') return
+				if (!holder || (typeof holder !== 'object' && typeof holder !== 'function')) return
 				if (typeof holder.default !== 'function' || patched.has(holder) || (holder.default.name && holder.default.name !== 'createMessageContent')) return
 				patched.add(holder)
 				cleanup(valenced.patcher.after(holder, 'default', (result) => { if (!setting('chat')) return result; try { return animateChatRow(result) } catch (e) { reportProblem('chat row', e); return result } }))
 				found.chat = 'createMessageContent (the chat rows)'
 			})
 		}
-		const run = (mod) => { try { attach(mod) } catch (e) { reportProblem('chat rows', e) } }
-		try { if (typeof finders.getModules === 'function') cleanup(finders.getModules(finders.filters.withName('createMessageContent'), run)) } catch (e) { reportProblem('watch chat rows', e) }
-		try { finders.lookupModule(finders.filters.withName('createMessageContent')).forEach(run) } catch (e) {}
+		watchModules(cleanup, (filters) => filters.withName('createMessageContent'), attach)
+		// A second way to find it, by looking at what each module exports (the function is its default export)
+		watchModules(cleanup, () => (exports) => !!(exports && ((exports.default && typeof exports.default === 'function' && exports.default.name === 'createMessageContent') || (exports.default && exports.default.default && exports.default.default.name === 'createMessageContent'))), attach)
 		if (!found.chat) found.chat = 'not found'
 	}
 
@@ -378,7 +403,8 @@
 	function runSelfCheckNow() {
 		const results = []
 		const finders = valenced.modules.finders
-		const utils = holdersOf(finders.lookupModule(finders.filters.withProps('getUserAvatarURL', 'getGuildIconURL')))[0]
+		lookAgain()
+		const utils = avatarHolders[0]
 		const check = (label, make) => {
 			if (!utils) { results.push({ label, ok: false, detail: 'AvatarUtils was not found' }); return }
 			try {
@@ -394,8 +420,7 @@
 	}
 	function settingChecks() {
 		const finders = valenced.modules.finders
-		const mod = finders.lookupModule(finders.filters.withProps('AnimateEmoji', 'AnimateStickers', 'GifAutoPlay'))[0]
-		const root = mod && (mod.AnimateEmoji ? mod : mod.default)
+		const root = accessibilityRoots[0]
 		return ACCESSIBILITY_SETTINGS.map(({ name, feature }) => {
 			const label = `Setting "${name}" reads`
 			if (!root || !root[name] || typeof root[name].getSetting !== 'function') return { label, ok: false, detail: 'not found' }
@@ -529,7 +554,9 @@
 			attempt('chat rows', () => hookChatRows(api.cleanup))
 			// The server list and other screens were drawn before the plugin was in place: draw them again.
 			const timers = [1500, 5000].map((ms) => setTimeout(refreshPictures, ms))
-			api.cleanup(() => { screenListeners = []; timers.forEach(clearTimeout); clearTimeout(refreshTimer) })
+			// What was not found yet is looked for again a few times, and the pictures drawn again when it turns up.
+			const looks = [1500, 4000, 10000, 25000].map((ms) => setTimeout(() => { const before = JSON.stringify(found); lookAgain(); if (JSON.stringify(found) !== before) scheduleRefresh() }, ms))
+			api.cleanup(() => { screenListeners = []; timers.concat(looks).forEach(clearTimeout); clearTimeout(refreshTimer); watchers.length = 0 })
 		},
 	})
 	return exports
