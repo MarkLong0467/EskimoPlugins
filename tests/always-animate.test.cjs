@@ -246,6 +246,11 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	radio.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64`, avatarDecorationURL: 'https://cdn.discordapp.com/avatar-decoration-presets/a_abc.png?size=96&passthrough=false' })
 	findAll(expand(radio.plugin.SettingsComponent({ api: { jsonStorage: radio.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()
 	check('the report shows the format and a sample of what was sent to the chat', /chat picture format: gif; chat sample: cdn\.discordapp\.com\/avatars\/1\/a_0123456789abcdef0123456789abcdef\.gif\?size=64 \| .*passthrough=true/.test(global.copied), global.copied)
+	const counts = load()
+	counts.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64`, avatarDecorationURL: 'https://cdn.discordapp.com/media/v1/collectibles-shop/1/static' })
+	counts.chatModule.default({ avatarURL: 'https://cdn.discordapp.com/avatars/2/0123456789abcdef0123456789abcdef.webp?size=64' })
+	findAll(expand(counts.plugin.SettingsComponent({ api: { jsonStorage: counts.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()
+	check('the report counts chat rows, animated profile pictures and decorations', /chat rows seen 2: with an animated profile picture 1, with a decoration 1; animated picture sample: cdn\.discordapp\.com\/avatars\/1\/a_/.test(global.copied), global.copied)
 	const off = load({ chat: false })
 	check('with the chat switch off the format choice is hidden', !findAll(expand(off.plugin.SettingsComponent({ api: { jsonStorage: off.json } })), (n) => n.props && n.props.title === 'Chat: kind of animated picture').length)
 }

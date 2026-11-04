@@ -21,7 +21,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.3.0'
+	const VERSION = '1.3.1'
 
 	// ---------------------------------------------------------------------------------------------------
 	// Small helpers
@@ -298,6 +298,8 @@
 	 */
 	const chatSeen = new WeakSet()
 	let chatSample = '' // the first address pair that was changed, for the report
+	let chatAvatarSample = '' // the first animated profile picture address that went to the chat
+	const chatCounts = { rows: 0, animatedAvatars: 0, decorations: 0 }
 	function animateChatRow(row) {
 		if (!row || typeof row !== 'object') return row
 		let changed = false
@@ -307,6 +309,13 @@
 			if (next !== row.avatarURL) { row.avatarURL = next; changed = true }
 		}
 		if (typeof row.avatarDecorationURL === 'string') { const next = animatedDecoration(row.avatarDecorationURL); if (next !== row.avatarDecorationURL) { row.avatarDecorationURL = next; changed = true } }
+		if (!chatSeen.has(row)) {
+			const hasDecoration = typeof row.avatarDecorationURL === 'string' && row.avatarDecorationURL
+			const animatedAvatar = typeof row.avatarURL === 'string' && /\/a_[0-9a-f]{6,}\./i.test(row.avatarURL)
+			chatCounts.rows += 1
+			if (animatedAvatar) { chatCounts.animatedAvatars += 1; if (!chatAvatarSample) chatAvatarSample = String(row.avatarURL).replace(/^https?:\/\//, '').slice(0, 90) }
+			if (hasDecoration) chatCounts.decorations += 1
+		}
 		if (changed && !chatSample) chatSample = `${String(row.avatarURL || '').replace(/^https?:\/\//, '').slice(0, 80)} | ${String(row.avatarDecorationURL || '').replace(/^https?:\/\//, '').slice(-60)}`
 		if (changed || !chatSeen.has(row)) { chatSeen.add(row); countSeen('chat', changed) }
 		return row
@@ -463,6 +472,7 @@
 	function buildReport() {
 		const lines = ['Always Animate report', `version: ${VERSION}`]
 		lines.push(`chat picture format: ${setting('chatFormat')}; chat sample: ${chatSample || 'none yet'}`)
+		lines.push(`chat rows seen ${chatCounts.rows}: with an animated profile picture ${chatCounts.animatedAvatars}, with a decoration ${chatCounts.decorations}; animated picture sample: ${chatAvatarSample || 'none yet'}`)
 		lines.push(`pictures drawn again: ${refreshed.count}x${refreshed.at ? `, last ${new Date(refreshed.at).toLocaleTimeString()}` : ''}`)
 		FEATURES.forEach((f) => lines.push(`${f.key}: ${setting(f.key) ? 'on' : 'off'}; ${found[f.key] || 'not hooked'}; Discord used it ${seen[f.key]} time(s), changed ${forced[f.key]}`))
 		const top = Object.keys(perFunction).sort((a, b) => perFunction[b].seen - perFunction[a].seen).slice(0, 8)
