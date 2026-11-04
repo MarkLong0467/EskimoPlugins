@@ -27,8 +27,13 @@
 	 * background sync). Only then does the server leave the names out. Equicord's ShowHiddenChannels turns the
 	 * experiment's `enableObfuscation` and `enableIntegrityCheck` off. This plugin does the same: it answers "no"
 	 * where the app asks, and tells the native module `setUseChannelObfuscation(false)`. The login that already
-	 * happened keeps its obfuscated channels, so it takes a full restart of Discord (twice the first time, because
-	 * the native fast connect uses the value saved by the last run).
+	 * happened keeps its obfuscated channels. Both login paths (the JavaScript socket and the native fast connect,
+	 * `modules/gateway/native/fast_connect.tsx`) build the message with
+	 * `GatewayCapabilities.getClientCapabilities({ useChannelObfuscation })`, which adds one bit (32768) to the
+	 * capabilities number. The plugin makes that function always get `false`. To log in again without a restart,
+	 * the socket is told its session is invalid (`GatewaySocket._handleInvalidSession(false)`), which makes it send
+	 * a fresh IDENTIFY; Discord then sends every server again, now with the names. This is done once on its own
+	 * after the switch is on, and the settings have a button for it.
 	 *
 	 * Names. Discord's servers now send channels you may not see "obfuscated" (`ChannelFlags.OBFUSCATED`,
 	 * `records/ChannelRecord.tsx`): the name, topic and permission settings are left out, and the app writes
@@ -43,8 +48,9 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.2.0'
+	const VERSION = '1.2.1'
 	const INSTANCE = {}
+	const AUTO_RECONNECT_MS = 4000
 	const VIEW_CHANNEL = 1024 // Permission bit 1 << 10
 
 	// ---------------------------------------------------------------------------------------------------
@@ -104,6 +110,7 @@
 		onlyWords: '', // when filled in, only channels whose name has one of these words are shown
 		skipNsfw: false,
 		tap: 'info', // 'info': info sheet. 'try': let Discord try to open it. 'nothing'
+		reconnectedAt: 0, // when the plugin last made Discord log in again for the names (0 = never)
 		realNames: true, // ask Discord for the real names of hidden channels (like Equicord). Needs a restart of Discord
 		labelMode: 'template', // 'template': make a name for channels Discord hides the name of. 'discord': leave "No Access"
 		labelTemplate: 'Hidden {kind} {n}', // {kind} {n} {created} {year} {id}
@@ -219,8 +226,8 @@
 	// ---------------------------------------------------------------------------------------------------
 	// 3. Hooks
 	// ---------------------------------------------------------------------------------------------------
-	const hooks = { gated: 'not found', transition: 'not found', preload: 'not found', rows: 0, list: 'not found', names: 'not found', native: 'not found', patched: [], problems: [] }
-	const stats = { asked: 0, shown: new Set(), taps: 0, decorated: 0, refreshes: 0, listUpdates: 0 }
+	const hooks = { gated: 'not found', transition: 'not found', preload: 'not found', rows: 0, list: 'not found', names: 'not found', capabilities: 'not found', native: 'not found', patched: [], problems: [] }
+	const stats = { asked: 0, shown: new Set(), taps: 0, decorated: 0, refreshes: 0, listUpdates: 0, capabilities: 0, reconnects: 0 }
 	const log = []
 	function addLog(text, ok = true) {
 		log.unshift({ at: Date.now(), text, ok })
@@ -271,9 +278,9 @@
 	const OBFUSCATION_SWITCHES = ['isChannelMetadataObfuscationEnabled', 'useIsChannelMetadataObfuscationEnabled', 'isChannelMetadataIntegrityCheckEnabled']
 	const objectsWith = (mod, name) => (mod ? [mod, mod.default] : []).filter((m, i, all) => m && typeof m === 'object' && typeof m[name] === 'function' && all.indexOf(m) === i)
 	function hookRealNames(cleanup) {
-		const mod = findModule('isChannelMetadataObfuscationEnabled', 'useIsChannelMetadataObfuscationEnabled')
 		let count = 0
 		OBFUSCATION_SWITCHES.forEach((name) => {
+			const mod = findModule(name)
 			objectsWith(mod, name).forEach((holder) => {
 				try {
 					cleanup(valenced.patcher.instead(holder, name, function (args, original) {
@@ -285,8 +292,42 @@
 			})
 		})
 		if (count) { hooks.names = `${count} of ${OBFUSCATION_SWITCHES.length} switches answered no`; hooks.patched.push('PrivateChannelHidingExperiment switches') }
+		hookCapabilities(cleanup)
 		tellNativeModule()
 	}
+	/** The one place both logins build their capabilities from: the obfuscation bit is never asked for. */
+	function hookCapabilities(cleanup) {
+		const mod = findModule('getClientCapabilities')
+		let count = 0
+		objectsWith(mod, 'getClientCapabilities').forEach((holder) => {
+			try {
+				cleanup(valenced.patcher.instead(holder, 'getClientCapabilities', function (args, original) {
+					if (setting('realNames') && args[0] && typeof args[0] === 'object' && args[0].useChannelObfuscation) {
+						stats.capabilities += 1
+						return Reflect.apply(original, this, [{ ...args[0], useChannelObfuscation: false }, ...args.slice(1)])
+					}
+					return Reflect.apply(original, this, args)
+				}))
+				count += 1
+			} catch (e) { problem('capabilities', e) }
+		})
+		if (count) { hooks.capabilities = 'found'; hooks.patched.push('GatewayCapabilities.getClientCapabilities') }
+	}
+
+	/** Makes the gateway log in again (a fresh IDENTIFY on the open connection), so the server sends the names now. */
+	function reconnectNow(reason) {
+		try {
+			const connection = store('GatewayConnectionStore')
+			const socket = connection && typeof connection.getSocket === 'function' ? connection.getSocket() : null
+			if (!socket || typeof socket._handleInvalidSession !== 'function') { addLog('Could not log in again: the gateway socket was not found', false); return false }
+			socket._handleInvalidSession(false)
+			stats.reconnects += 1
+			saveSettings({ reconnectedAt: Date.now() }, false)
+			addLog(`Logged in to Discord again (${reason})`)
+			return true
+		} catch (e) { problem('log in again', e); return false }
+	}
+
 	/** The native fast-connect module keeps the flag for the next start. */
 	function tellNativeModule() {
 		if (!setting('realNames')) return
@@ -880,6 +921,7 @@
 		const [, setRedraws] = React.useState(0)
 		const [view, setView] = React.useState('main')
 		const [checks, setChecks] = React.useState(null)
+		const [pendingReconnect, setPendingReconnect] = React.useState(false)
 		React.useEffect(() => {
 			const redraw = () => setRedraws((n) => n + 1)
 			screenListeners.push(redraw)
@@ -907,6 +949,14 @@
 			h(Design.TableRowGroup, { key: 'general', title: 'General' },
 				switchRow('enabled', 'Show hidden channels', 'The main switch'),
 				h(Design.TableSwitchRow, { key: 'realNames', label: 'Ask Discord for the real names', subLabel: 'Like Equicord: the app stops telling the server it can hide names. Close Discord completely and open it again (twice the first time)', value: !!setting('realNames'), onValueChange: (value) => { saveSettings({ realNames: !!value }, false); if (value) tellNativeModule(); toast(value ? 'Close Discord completely and open it again to get the real names' : 'Back to Discord\u2019s normal behaviour after a restart') } }),
+			),
+			h(Design.TableRowGroup, { key: 'namesNow', title: 'Real names' },
+				h(Design.TableRow, { key: 'reconnect', label: pendingReconnect ? 'Tap again to log in again' : 'Get the real names now', subLabel: 'Makes Discord log in again so the server sends the names. Discord reloads for a few seconds. No restart needed.', onPress: () => {
+					if (!pendingReconnect) { setPendingReconnect(true); setTimeout(() => setPendingReconnect(false), 4000); return }
+					setPendingReconnect(false)
+					if (reconnectNow('you asked')) toast('Logging in again. The names should appear in a few seconds.')
+					else toast('Could not log in again. Close Discord completely and open it again instead.')
+				} }),
 			),
 			h(Radio, { key: 'tap', title: 'When I tap a hidden channel', value: setting('tap'), onChange: (v) => saveSettings({ tap: v }, false), items: [
 				{ v: 'info', l: 'Open an info sheet', s: 'Topic, dates, who is let in (recommended)' },
@@ -984,7 +1034,8 @@
 		let canWorks = false
 		try { canWorks = typeof store('PermissionStore').can(BigInt(VIEW_CHANNEL), getChannel(store('SelectedChannelStore').getChannelId())) === 'boolean' } catch (e) {}
 		add(canWorks, 'Can read your permissions', canWorks ? 'PermissionStore.can works' : 'Open a server channel first, then run this again')
-		add(!!setting('realNames') && hooks.names !== 'not found', 'Asking for real names', !setting('realNames') ? 'Turned off in the settings' : hooks.names === 'not found' ? 'The experiment switches were not found' : `${hooks.names}; native flag: ${hooks.native}`)
+		const asks = hooks.names !== 'not found' || hooks.capabilities === 'found'
+		add(!!setting('realNames') && asks, 'Asking for real names', !setting('realNames') ? 'Turned off in the settings' : !asks ? 'Neither the capabilities function nor the experiment switches were found' : `capabilities: ${hooks.capabilities}${stats.capabilities ? ` (changed ${stats.capabilities} login)` : ''}; switches: ${hooks.names}; native flag: ${hooks.native}; logged in again: ${stats.reconnects}x`)
 		const here = currentGuildId()
 		if (here) {
 			const counts = hiddenIn(here)
@@ -1010,7 +1061,7 @@
 			`words: block [${r.blockWords.join(', ')}] only [${r.onlyWords.join(', ')}]; skip NSFW ${r.skipNsfw}`,
 			`names: ${setting('labelMode')} "${setting('labelTemplate')}"; categories ${setting('nameCategories')} "${setting('categoryTemplate')}"`,
 			`tap: ${setting('tap')}; marker: ${setting('marker')} ${setting('markerPosition')}; dim ${setting('dim')}`,
-			`real names: ${setting('realNames') ? 'asked for' : 'off'}; switches: ${hooks.names}; native flag: ${hooks.native}`,
+			`real names: ${setting('realNames') ? 'asked for' : 'off'}; capabilities: ${hooks.capabilities} (changed ${stats.capabilities}); switches: ${hooks.names}; native flag: ${hooks.native}; logged in again ${stats.reconnects}x, last ${setting('reconnectedAt') ? new Date(setting('reconnectedAt')).toLocaleTimeString() : 'never'}`,
 			`hooks: gated ${hooks.gated}; transition ${hooks.transition}; preload ${hooks.preload}; list rebuild ${hooks.list}`,
 			`patched: ${hooks.patched.join(', ') || '-'}`,
 			`asked ${stats.asked}, shown ${stats.shown.size}, rows drawn ${stats.decorated}, taps caught ${stats.taps}, refreshes ${stats.refreshes}, list rows changed ${stats.listUpdates}`,
@@ -1039,6 +1090,11 @@
 			attempt('rows', () => hookRows(api.cleanup))
 			attempt('real names', () => hookRealNames(api.cleanup))
 			;[1500, 6000].forEach((ms) => lateTimers.push(setTimeout(tellNativeModule, ms))) // after the app has set it itself
+			// Once, on its own: log in again so the names arrive without a restart
+			lateTimers.push(setTimeout(() => {
+				if (globalThis.__showHiddenChannelsInstance !== INSTANCE) return
+				if (setting('realNames') && hooks.capabilities === 'found' && !setting('reconnectedAt')) reconnectNow('the first time, to get the real names')
+			}, AUTO_RECONNECT_MS))
 			attempt('list store', () => hookListStore(api.cleanup))
 			attempt('list rebuild', () => { if (listStore() || listStates()) hooks.list = 'found' })
 			setTimeout(refreshList, 800) // so channel lists that were already built are drawn again with the hook in place

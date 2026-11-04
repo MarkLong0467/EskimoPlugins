@@ -104,6 +104,10 @@ function load(settings = {}, options = {}) {
 	state.originalAsked = []
 	const experiment = { isChannelMetadataObfuscationEnabled: (where) => { state.originalAsked.push(where); return true }, useIsChannelMetadataObfuscationEnabled: (where) => { state.originalAsked.push(`hook ${where}`); return true }, isChannelMetadataIntegrityCheckEnabled: () => true }
 	state.nativeCalls = []
+	state.identifies = 0
+	const capabilitiesModule = { getClientCapabilities: (o) => (o.useChannelObfuscation ? 1767423 : 1734655) }
+	state.socket = { _handleInvalidSession: (d) => { state.identifies += 1; state.lastInvalid = d } }
+	flux.GatewayConnectionStore = { getSocket: () => (options.noSocket ? null : state.socket) }
 	const nativeModule = { setUseChannelObfuscation: (v) => { state.nativeCalls.push(v) } }
 	const statesModule = { default: { clear: () => { state.cleared += 1 } }, ChannelListSections: {}, SECTION_INDEX_RECENTS: 3 }
 	if (options.noStates) statesModule.default = {}
@@ -129,7 +133,8 @@ function load(settings = {}, options = {}) {
 				return all.filter((m) => { try { return f(m) } catch (e) { return false } })
 			}
 			if (f === 'transitionToChannel,transitionToThread' || f === 'transitionToChannel') return options.noTransition || options.routeOnly || options.transitionOnDefault || !state.loaded ? [] : [transitionModule]
-			if (f === 'isChannelMetadataObfuscationEnabled,useIsChannelMetadataObfuscationEnabled') return options.noExperiment ? [] : [options.experimentOnDefault ? { default: experiment } : experiment]
+			if (['isChannelMetadataObfuscationEnabled', 'useIsChannelMetadataObfuscationEnabled', 'isChannelMetadataIntegrityCheckEnabled'].includes(f)) return options.noExperiment ? [] : [options.experimentOnDefault ? { default: experiment } : experiment]
+			if (f === 'getClientCapabilities') return options.noCapabilities ? [] : [capabilitiesModule]
 			if (f === 'setUseChannelObfuscation') return options.nativeByFinder ? [{ default: nativeModule }] : []
 			if (f === 'transitionTo,replaceWith') return options.routeOnly && state.loaded ? [routerModule] : []
 			if (f === 'preload,ensurePrivateChannel') return options.preloadOnDefault || !state.loaded ? [] : [preloadModule]
@@ -146,7 +151,7 @@ function load(settings = {}, options = {}) {
 	plugin.start({ cleanup: (fn) => fn, jsonStorage: json })
 	const screen = () => expandAt({ type: plugin.SettingsComponent, props: { api: { jsonStorage: json } } }, 'root')
 	const asked = (id) => originalGated.isChannelGatedAndVisible(channels[id].guild_id, id)
-	return { plugin, data, json, runtime, state, channels, visible, flux, screen, asked, transitionModule, routerModule, preloadModule, experiment, nativeModule }
+	return { plugin, data, json, runtime, state, channels, visible, flux, screen, asked, transitionModule, routerModule, preloadModule, experiment, nativeModule, capabilitiesModule }
 }
 const H = '200000000000000002' // staff-chat, hidden, in category MODS
 const V = '200000000000000003' // secret voice
@@ -230,7 +235,15 @@ const OC = '300000000000000009' // hidden category, name left out
 		check('the switches are found on a default export too', onDefault.experiment.isChannelMetadataObfuscationEnabled('x') === false)
 		const viaFinder = load({}, { nativeByFinder: true })
 		check('the native module is also found by a module search', viaFinder.state.nativeCalls[0] === false)
-		const lost = load({}, { noExperiment: true, noNative: true })
+		check('both logins build their capabilities through one function: the obfuscation bit is never asked for', app.capabilitiesModule.getClientCapabilities({ useChannelObfuscation: true }) === 1734655)
+		check('...and a login that did not ask for it is unchanged', app.capabilitiesModule.getClientCapabilities({ useChannelObfuscation: false }) === 1734655)
+		check('...the object Discord passed in is not changed', (() => { const o = { useChannelObfuscation: true }; app.capabilitiesModule.getClientCapabilities(o); return o.useChannelObfuscation === true })())
+		check('with the switch off the bit is left alone', off.capabilitiesModule.getClientCapabilities({ useChannelObfuscation: true }) === 1767423)
+		const capsOnly = load({}, { noExperiment: true })
+		check('the capabilities hook works even if the experiment switches are not found', capsOnly.capabilitiesModule.getClientCapabilities({ useChannelObfuscation: true }) === 1734655)
+		press(capsOnly.screen(), 'Self-check')
+		check('...and the self-check is happy with that', has(capsOnly.screen(), '✓ Asking for real names'))
+		const lost = load({}, { noExperiment: true, noNative: true, noCapabilities: true })
 		check('if the switches are not found the plugin still starts', !!lost.plugin)
 		press(lost.screen(), 'Self-check')
 		check('...and the self-check says so', has(lost.screen(), '✗ Asking for real names'))
@@ -238,7 +251,25 @@ const OC = '300000000000000009' // hidden category, name left out
 		press(fine.screen(), 'Self-check')
 		check('the self-check shows it on a working setup', has(fine.screen(), '✓ Asking for real names') && has(fine.screen(), '3 of 3 switches answered no'), texts(fine.screen()).filter((x) => /switches|real names/i.test(x)).join('|'))
 		press(fine.screen(), 'Copy report')
-		check('the report has the real-names line', /real names: asked for; switches: 3 of 3 switches answered no; native flag: set to off/.test(global.copied), global.copied)
+		check('the report has the real-names line', /real names: asked for; capabilities: found \(changed 0\); switches: 3 of 3 switches answered no; native flag: set to off; logged in again 0x/.test(global.copied), global.copied)
+		const reconnect = load()
+		press(reconnect.screen(), 'Get the real names now')
+		check('the "get the real names now" button asks to be tapped twice', reconnect.state.identifies === 0 && has(reconnect.screen(), 'Tap again to log in again'))
+		press(reconnect.screen(), 'Tap again to log in again')
+		check('...then makes the socket log in again with a fresh IDENTIFY', reconnect.state.identifies === 1 && reconnect.state.lastInvalid === false && reconnect.state.toasts.some((x) => /Logging in again/.test(x)))
+		check('...and remembers when', reconnect.data.cache.reconnectedAt > 0)
+		const nosock = load({}, { noSocket: true })
+		press(nosock.screen(), 'Get the real names now'); press(nosock.screen(), 'Tap again to log in again')
+		check('without a socket it says to restart instead', nosock.state.toasts.some((x) => /Close Discord completely/.test(x)))
+		const auto = load()
+		await sleep(4300)
+		check('on its own, once, the plugin makes Discord log in again after it starts', auto.state.identifies === 1, auto.state.identifies)
+		const doneBefore = load({ reconnectedAt: 12345 })
+		await sleep(4300)
+		check('...but not again once it has done so', doneBefore.state.identifies === 0)
+		const noreal = load({ realNames: false })
+		await sleep(4300)
+		check('...and not when the switch is off', noreal.state.identifies === 0)
 		const toggle = load({ realNames: false })
 		findAll(toggle.screen(), (n) => n.props && n.props.label === 'Ask Discord for the real names')[0].props.onValueChange(true)
 		check('turning the switch on in the settings saves it, sets the flag and says to restart', toggle.data.cache.realNames === true && toggle.state.nativeCalls.includes(false) && toggle.state.toasts.some((x) => /Close Discord completely/.test(x)))
@@ -498,7 +529,7 @@ const OC = '300000000000000009' // hidden category, name left out
 		const t = texts(app.screen()).join('|')
 		check('the self-check passes on a working setup', /✓ Found Discord’s "gated channel" question/.test(t) && /✓ Found the channel opener/.test(t) && /✓ Can rebuild the channel list/.test(t) && /✓ Can read your permissions/.test(t) && /✓ Alpha has hidden channels/.test(t) && /✓ Discord asked about hidden channels/.test(t) && /✓ Marked rows were drawn/.test(t), t)
 		press(app.screen(), 'Copy report')
-		check('the report lists settings, hooks and counts', /Show Hidden Channels report/.test(global.copied) && /version: 1\.2\.0/.test(global.copied) && /hooks: gated found; transition found; preload found; list rebuild found/.test(global.copied) && /taps caught 1/.test(global.copied) && /this server: Alpha/.test(global.copied), global.copied)
+		check('the report lists settings, hooks and counts', /Show Hidden Channels report/.test(global.copied) && /version: 1\.2\.1/.test(global.copied) && /hooks: gated found; transition found; preload found; list rebuild found/.test(global.copied) && /taps caught 1/.test(global.copied) && /this server: Alpha/.test(global.copied), global.copied)
 		const fresh = load()
 		press(fresh.screen(), 'Self-check')
 		check('before anything was drawn the self-check says what to do', /✗ Discord asked about hidden channels/.test(texts(fresh.screen()).join('|')))
