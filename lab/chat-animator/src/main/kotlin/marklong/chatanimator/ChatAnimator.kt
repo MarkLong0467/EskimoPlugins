@@ -38,7 +38,7 @@ private val animatedSeen = AtomicInteger()
 private val sweeps = AtomicInteger()
 private val binds = AtomicInteger()
 
-@Volatile private var enabled = true
+@Volatile private var animEnabled = true
 @Volatile private var earMode = 0
 private val earsSeen = Collections.synchronizedSet(LinkedHashSet<String>())
 private val earsOut = Collections.synchronizedSet(LinkedHashSet<String>())
@@ -53,7 +53,7 @@ private lateinit var cfgFile: File
 private lateinit var guardFile: File
 
 private fun saveCfg() {
-    runCatching { cfgFile.writeText("enabled=$enabled\nintervalMs=$intervalMs\nearMode=$earMode\n") }
+    runCatching { cfgFile.writeText("enabled=$animEnabled\nintervalMs=$intervalMs\nearMode=$earMode\n") }
 }
 
 private fun loadCfg() {
@@ -61,7 +61,7 @@ private fun loadCfg() {
         if (cfgFile.isFile) cfgFile.readLines().forEach { line ->
             val (k, v) = line.split("=", limit = 2).let { it[0] to it.getOrElse(1) { "" } }
             when (k) {
-                "enabled" -> enabled = v != "false"
+                "enabled" -> animEnabled = v != "false"
                 "intervalMs" -> intervalMs = (v.toLongOrNull() ?: 400L).coerceIn(200L, 3000L)
                 "earMode" -> earMode = (v.toIntOrNull() ?: 0).coerceIn(0, 3)
             }
@@ -195,7 +195,7 @@ private fun begin(scope: PluginScope) {
 }
 
 private fun state(): String = listOf(
-    "enabled=$enabled", "running=$running", "guardTripped=$guardTripped", "intervalMs=$intervalMs",
+    "enabled=$animEnabled", "running=$running", "guardTripped=$guardTripped", "intervalMs=$intervalMs",
     "restarts=${restarts.get()}", "animated=${animatedSeen.get()}", "binds=${binds.get()}", "sweeps=${sweeps.get()}",
     "earMode=$earMode", "earsSeen=${synchronized(earsSeen) { earsSeen.joinToString(" | ") }}", "earsOut=${synchronized(earsOut) { earsOut.joinToString(" | ") }}",
     "attached=$attachedNow", "hook=${hookNote.replace(';', ',')}", "error=${lastError.replace(';', ',')}",
@@ -215,8 +215,8 @@ val chatAnimator = plugin {
             val value = args.getOrNull(1)?.toString().orEmpty()
             when (key) {
                 "enabled" -> {
-                    enabled = value == "true"; saveCfg()
-                    if (enabled) { guardTripped = false; handler.post { begin(scope) } } else running = false
+                    animEnabled = value == "true"; saveCfg()
+                    if (animEnabled) { guardTripped = false; handler.post { begin(scope) } } else running = false
                 }
                 "intervalMs" -> { intervalMs = (value.toLongOrNull() ?: 400L).coerceIn(200L, 3000L); saveCfg() }
                 "earMode" -> { earMode = (value.toIntOrNull() ?: 0).coerceIn(0, 3); earsOut.clear(); saveCfg() }
@@ -226,7 +226,7 @@ val chatAnimator = plugin {
         }
 
         // Start a few seconds after launch, unless the last start did not survive.
-        if (enabled && !guardTripped) handler.postDelayed({ begin(scope) }, 4_000L)
+        if (animEnabled && !guardTripped) handler.postDelayed({ begin(scope) }, 4_000L)
     }
     stop {
         running = false
