@@ -424,7 +424,7 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	check('the screen shows all ten switches', ['Pictures', 'Emoji', 'Stickers', 'GIFs', 'Status emoji', 'Still pictures of animated things', 'Chat: pictures and decorations next to messages', 'Animated decorations (APNG)', 'Ignore "Reduce motion"', 'Everything else (advanced)'].every((t) => shown.includes(t)), shown.slice(0, 300))
 	check('each switch says what it covers and whether it was found', /AvatarUtils \(\d+ places?, \d+ functions\)/.test(shown) && /UserSettings\.AnimateEmoji/.test(shown), shown.slice(0, 400))
 	const switches = findAll(tree, (n) => n.type === 'TableSwitchRow' && n.props.label)
-	check('there are ten feature switches, two chat row switches and three native switches', switches.length === 15, String(switches.length))
+	check('there are ten feature switches, two chat row switches and two native switches', switches.length === 14, String(switches.length))
 	switches.find((s) => s.props.label === 'GIFs').props.onValueChange(false)
 	check('a switch saves', a.data.cache.gifs === false)
 	const reportApp = load()

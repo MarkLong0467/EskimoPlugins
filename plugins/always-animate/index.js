@@ -21,7 +21,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '2.1.0'
+	const VERSION = '2.3.0'
 
 	// ---------------------------------------------------------------------------------------------------
 	// Small helpers
@@ -655,10 +655,6 @@
 		if (nat.error && !Object.keys(i).length) return [`native chat part: ${nat.error}`]
 		return [
 			`native chat part: ${i.enabled === 'false' ? 'off' : i.running === 'true' ? 'running' : 'waiting'}; guard tripped ${i.guardTripped}; animated pictures seen ${i.animated}, restarted ${i.restarts}x; chat messages seen ${i.binds}, on screen ${i.attached}; hook: ${i.hook}${i.error ? `; error ${i.error}` : ''}`,
-			`native ears: ${i.ears === 'false' ? 'off' : 'on'}; ${i.earViews} ear views seen, ${i.earViewsAnimated} played by Discord's loader; drawn by this plugin: ${i.earOverlays} now, ${i.earDecoded} pictures decoded; ${i.earApng || '-'}`,
-			`native ear addresses: ${i.earsSeen || '-'}`,
-			`native ear addresses after the mode: ${i.earsOut || '-'}`,
-			`native ear files: ${i.earFiles || '-'}`,
 		]
 	}
 
@@ -752,7 +748,6 @@
 			const on = i.enabled !== 'false'
 			const saver = Number(i.intervalMs || 400) >= 1000
 			const status = nat.error && !Object.keys(i).length ? nat.error : !on ? 'Off' : i.running === 'true' ? `On. Keeping ${i.animated || 0} animated pictures playing` : 'Waiting to start (a few seconds after Discord opens)'
-			const mode = String(i.earMode || '0')
 			return h(RN.View, { key: 'native', style: { gap: 10 } },
 				h(Design.Text, { variant: 'text-sm/semibold', color: 'text-muted' }, 'CHAT PHOTOS (NATIVE PART)'),
 				h(Design.TableRowGroup, { title: '' },
@@ -761,10 +756,7 @@
 					h(Design.TableSwitchRow, { key: 'nsaver', label: 'Battery saver', subLabel: 'Checks once a second instead of about twice a second', value: saver, onValueChange: (v) => nativeSet('intervalMs', v ? 1000 : 400) })),
 				i.guardTripped === 'true' && h(RN.View, { key: 'nguard', style: { gap: 8 } },
 					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'The last start did not finish before Discord closed, so it waited.'),
-					h(Design.Button, { text: 'Start now', variant: 'primary', size: 'sm', onPress: () => nativeSet('start', true) })),
-				h(Design.TableRowGroup, { key: 'nears', title: '' },
-					h(Design.TableSwitchRow, { key: 'nearson', label: 'Animate ears (avatar decorations) in chat', subLabel: 'Ears are animated PNGs, which Discord\'s chat cannot play. This downloads each one and draws it over the still ear', value: i.ears !== 'false', onValueChange: (v) => { nativeSet('ears', !!v); toast('Open the chat again') } }),
-					i.earApng ? h(Design.TableRow, { key: 'nearinfo', label: 'Ears', subLabel: `${i.earOverlays || 0} animated now. ${i.earApng}` }) : null))
+					h(Design.Button, { text: 'Start now', variant: 'primary', size: 'sm', onPress: () => nativeSet('start', true) })))
 		}
 		const working = FEATURES.filter((f) => setting(f.key) && forced[f.key] > 0).length
 
