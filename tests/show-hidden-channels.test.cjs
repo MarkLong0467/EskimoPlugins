@@ -98,7 +98,9 @@ function load(settings = {}, options = {}) {
 	if (options.noListStore) delete flux.ChannelListStore.getGuildWithoutChangingGuildActionRows
 	if (!options.noGated) flux.GatedChannelStore = originalGated
 	const transitionModule = { transitionToChannel: (id, opts) => { state.originalCalls.push(['transition', id]); return 'opened' }, transitionToThread() {} }
+	const routerModule = { transitionTo: (route) => { state.originalCalls.push(['route', route]); return 'routed' }, replaceWith() {}, back() {} }
 	const preloadModule = { preload: (g, id) => { state.preloads.push(id) }, ensurePrivateChannel() {} }
+	state.loaded = !options.late
 	const statesModule = { default: { clear: () => { state.cleared += 1 } }, ChannelListSections: {}, SECTION_INDEX_RECENTS: 3 }
 	if (options.noStates) statesModule.default = {}
 	const runtime = { jsx: (type, props, key) => ({ type, props: props || {}, key }), jsxs: (type, props, key) => ({ type, props: props || {}, key }) }
@@ -116,22 +118,29 @@ function load(settings = {}, options = {}) {
 		},
 		modules: { finders: { filters: { withProps: (...n) => n.join() }, lookupModule: (f) => {
 			if (f === 'jsx,jsxs') return [runtime]
-			if (f === 'transitionToChannel,transitionToThread') return options.noTransition ? [] : [transitionModule]
-			if (f === 'preload,ensurePrivateChannel') return [preloadModule]
+			if (typeof f === 'function') { // a custom filter: modules that keep the functions on their default export
+				const all = []
+				if (options.preloadOnDefault && state.loaded) all.push({ default: preloadModule })
+				if (options.transitionOnDefault && state.loaded) all.push({ default: transitionModule })
+				return all.filter((m) => { try { return f(m) } catch (e) { return false } })
+			}
+			if (f === 'transitionToChannel,transitionToThread' || f === 'transitionToChannel') return options.noTransition || options.routeOnly || options.transitionOnDefault || !state.loaded ? [] : [transitionModule]
+			if (f === 'transitionTo,replaceWith') return options.routeOnly && state.loaded ? [routerModule] : []
+			if (f === 'preload,ensurePrivateChannel') return options.preloadOnDefault || !state.loaded ? [] : [preloadModule]
 			if (f === 'ChannelListSections,SECTION_INDEX_RECENTS' || f === 'clearGuildId,nonPositionalChannelIdUpdate') return options.noStates ? [] : [statesModule]
 			if (f === 'isChannelGatedAndVisible,isChannelGated') return options.gatedByFinder ? [originalGated] : []
 			return []
 		} } },
 	}
 	global.plugin = (d) => d
-	const data = { cache: { ...settings } }
+	const data = { cache: { marker: 'lock', ...settings } } // the tests use the lock; the real default is no marker
 	const json = { get cache() { return data.cache }, use() { return data.cache }, set(patch) { Object.assign(data.cache, patch) } }
 	const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'show-hidden-channels', 'index.js'), 'utf8')
 	const plugin = new Function('valenced', 'plugin', `return ${source}`)(global.valenced, global.plugin).default
 	plugin.start({ cleanup: (fn) => fn, jsonStorage: json })
 	const screen = () => expandAt({ type: plugin.SettingsComponent, props: { api: { jsonStorage: json } } }, 'root')
 	const asked = (id) => originalGated.isChannelGatedAndVisible(channels[id].guild_id, id)
-	return { plugin, data, json, runtime, state, channels, visible, flux, screen, asked, transitionModule, preloadModule }
+	return { plugin, data, json, runtime, state, channels, visible, flux, screen, asked, transitionModule, routerModule, preloadModule }
 }
 const H = '200000000000000002' // staff-chat, hidden, in category MODS
 const V = '200000000000000003' // secret voice
@@ -201,9 +210,39 @@ const OC = '300000000000000009' // hidden category, name left out
 		check('without the opener, the self-check says so', has(lost.screen(), '✗ Found the channel opener'))
 	}
 
+	// 3b. Modules that load late, and the route fallback
+	{
+		const late = load({}, { late: true })
+		check('modules that are not loaded yet do not stop the plugin', late.plugin && late.asked(H) === true)
+		check('...a tap goes to Discord for now', late.transitionModule.transitionToChannel(H) === 'opened')
+		late.state.loaded = true
+		late.runtime.jsx({ type: { name: 'TextChannel' } }, { channel: late.channels[H] })
+		check('drawing a revealed row looks for them again, and finds them', late.transitionModule.transitionToChannel(H) === undefined && late.state.openedSheets.length === 1)
+		late.preloadModule.preload(G1, H)
+		check('...also the preloader', late.state.preloads.length === 0)
+		const again = load({}, { late: true })
+		press(again.screen(), 'Self-check')
+		check('the self-check says the opener is missing while it is not loaded', has(again.screen(), '✗ Found the channel opener'))
+		again.state.loaded = true
+		press(again.screen(), 'Self-check')
+		check('...and looks again when it runs', has(again.screen(), '✓ Found the channel opener'))
+		const route = load({}, { routeOnly: true, late: true })
+		route.state.loaded = true
+		press(route.screen(), 'Self-check')
+		check('without transitionToChannel the route function is used', has(route.screen(), 'by route'))
+		check('a route to a hidden channel opens the info sheet', route.routerModule.transitionTo('/channels/' + G1 + '/' + H) === undefined && route.state.openedSheets.length === 1)
+		check('other routes go through', route.routerModule.transitionTo('/channels/' + G1 + '/200000000000000001') === 'routed' && route.routerModule.transitionTo('/settings') === 'routed')
+		const onDefault = load({}, { late: true, preloadOnDefault: true, transitionOnDefault: true })
+		onDefault.state.loaded = true
+		press(onDefault.screen(), 'Self-check')
+		check('functions kept on a default export are found too', onDefault.transitionModule.transitionToChannel(H) === undefined)
+		onDefault.preloadModule.preload(G1, H)
+		check('...also the preloader', onDefault.state.preloads.length === 0)
+	}
+
 	// 4. Rows
 	{
-		const app = load()
+		const app = load({ marker: 'lock' })
 		const row = (id, name = 'TextChannel', extra = {}) => { const T = { type: { name } }; const el = app.runtime.jsx(T, { channel: app.channels[id], muted: false, ...extra }); return el }
 		const hidden = row(H)
 		check('a hidden row gets the lock before the name', hidden.props.channel.name === '🔒 staff-chat', hidden.props.channel.name)
@@ -233,6 +272,12 @@ const OC = '300000000000000009' // hidden category, name left out
 		check('the eye marker works', eye.runtime.jsx({ type: { name: 'TextChannel' } }, { channel: eye.channels[H] }).props.channel.name.startsWith('👁'))
 		const off = load({ enabled: false })
 		check('with the plugin off rows are left alone', off.runtime.jsx({ type: { name: 'TextChannel' } }, { channel: off.channels[H] }).props.channel === off.channels[H])
+	}
+
+	{
+		const fresh = load({ marker: undefined })
+		const row = fresh.runtime.jsx({ type: { name: 'TextChannel' } }, { channel: fresh.channels[O1] }).props.channel
+		check('by default there is no extra marker (Discord already draws a lock)', row.name === 'Hidden text 1', row.name)
 	}
 
 	// 4b. Channels whose name Discord left out ("No Access")
@@ -416,7 +461,7 @@ const OC = '300000000000000009' // hidden category, name left out
 		const t = texts(app.screen()).join('|')
 		check('the self-check passes on a working setup', /✓ Found Discord’s "gated channel" question/.test(t) && /✓ Found the channel opener/.test(t) && /✓ Can rebuild the channel list/.test(t) && /✓ Can read your permissions/.test(t) && /✓ Alpha has hidden channels/.test(t) && /✓ Discord asked about hidden channels/.test(t) && /✓ Marked rows were drawn/.test(t), t)
 		press(app.screen(), 'Copy report')
-		check('the report lists settings, hooks and counts', /Show Hidden Channels report/.test(global.copied) && /version: 1\.1\.1/.test(global.copied) && /hooks: gated found; transition found; preload found; list rebuild found/.test(global.copied) && /taps caught 1/.test(global.copied) && /this server: Alpha/.test(global.copied), global.copied)
+		check('the report lists settings, hooks and counts', /Show Hidden Channels report/.test(global.copied) && /version: 1\.1\.2/.test(global.copied) && /hooks: gated found; transition found; preload found; list rebuild found/.test(global.copied) && /taps caught 1/.test(global.copied) && /this server: Alpha/.test(global.copied), global.copied)
 		const fresh = load()
 		press(fresh.screen(), 'Self-check')
 		check('before anything was drawn the self-check says what to do', /✗ Discord asked about hidden channels/.test(texts(fresh.screen()).join('|')))

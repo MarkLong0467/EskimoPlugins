@@ -33,7 +33,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.1.1'
+	const VERSION = '1.1.2'
 	const INSTANCE = {}
 	const VIEW_CHANNEL = 1024 // Permission bit 1 << 10
 
@@ -98,7 +98,7 @@
 		labelTemplate: 'Hidden {kind} {n}', // {kind} {n} {created} {year} {id}
 		categoryTemplate: 'Hidden category {n}',
 		nameCategories: true,
-		marker: 'lock', // 'lock', 'forbidden', 'eye', 'key', 'custom', 'none'
+		marker: 'none', // 'lock', 'forbidden', 'eye', 'key', 'custom', 'none'. Discord already draws a lock next to hidden channels
 		markerCustom: '🔒',
 		markerPosition: 'before', // 'before' or 'after' the name
 		dim: true, // draw revealed channels like muted ones
@@ -246,29 +246,56 @@
 
 	function findModule(...names) {
 		const finders = valenced.modules.finders
-		return finders.lookupModule(finders.filters.withProps(...names))[0] || null
+		const direct = finders.lookupModule(finders.filters.withProps(...names))[0]
+		if (direct) return direct
+		try { // a module that keeps the functions on its default export
+			const onDefault = finders.lookupModule((exports) => !!exports && !!exports.default && typeof exports.default === 'object' && names.every((name) => name in exports.default))[0]
+			if (onDefault) return onDefault
+		} catch (e) {}
+		return null
 	}
 
-	/** A tap on a revealed text channel: show the info sheet (or whatever the settings say) instead of opening it. */
+	/** The channel a route points at: "/channels/<server>/<channel>". */
+	const channelOfRoute = (route) => { const m = String(route || '').match(/channels\/(?:@me|\d+)\/(\d{15,20})/); return m ? m[1] : null }
+
+	/**
+	 * A tap on a revealed text channel: show the info sheet (or whatever the settings say) instead of opening it.
+	 * `transitionToChannel` is looked for first. Its module may not be loaded yet when the plugin starts, so this is
+	 * tried again later (`tryLateHooks`). The route function `transitionTo` is the fallback.
+	 */
 	function hookTransition(cleanup) {
-		const mod = findModule('transitionToChannel', 'transitionToThread')
-		if (!mod) return
-		const holders = [mod, mod.default].filter((m, i, all) => m && typeof m === 'object' && typeof m.transitionToChannel === 'function' && all.indexOf(m) === i)
+		const answer = (channel, args, original, self) => {
+			stats.taps += 1
+			const how = setting('tap')
+			if (how === 'info') { openInfo(channel.id); return { done: true } }
+			if (how === 'nothing') return { done: true }
+			return { done: false }
+		}
+		const mod = findModule('transitionToChannel', 'transitionToThread') || findModule('transitionToChannel')
+		const holders = mod ? [mod, mod.default].filter((m, i, all) => m && typeof m === 'object' && typeof m.transitionToChannel === 'function' && all.indexOf(m) === i) : []
 		holders.forEach((holder) => {
 			cleanup(valenced.patcher.instead(holder, 'transitionToChannel', function (args, original) {
 				try {
 					const channel = getChannel(args[0])
-					if (channel && isRevealed(channel)) {
-						stats.taps += 1
-						const how = setting('tap')
-						if (how === 'info') { openInfo(channel.id); return undefined }
-						if (how === 'nothing') return undefined
-					}
+					if (channel && isRevealed(channel) && answer(channel).done) return undefined
 				} catch (e) {}
 				return Reflect.apply(original, this, args)
 			}))
 		})
-		if (holders.length) { hooks.transition = 'found'; hooks.patched.push('transitionToChannel') }
+		if (holders.length) { hooks.transition = 'found'; hooks.patched.push('transitionToChannel'); return }
+		const router = findModule('transitionTo', 'replaceWith')
+		const routeHolders = router ? [router, router.default].filter((m, i, all) => m && typeof m === 'object' && typeof m.transitionTo === 'function' && all.indexOf(m) === i) : []
+		routeHolders.forEach((holder) => {
+			cleanup(valenced.patcher.instead(holder, 'transitionTo', function (args, original) {
+				try {
+					const id = channelOfRoute(args[0])
+					const channel = id && getChannel(id)
+					if (channel && isRevealed(channel) && answer(channel).done) return undefined
+				} catch (e) {}
+				return Reflect.apply(original, this, args)
+			}))
+		})
+		if (routeHolders.length) { hooks.transition = 'found (by route)'; hooks.patched.push('router transitionTo') }
 	}
 
 	/** Discord loads the messages of a channel when you touch it. For a revealed channel that would only fail. */
@@ -282,6 +309,21 @@
 		}))
 		hooks.preload = 'found'
 		hooks.patched.push('ChannelActionCreators.preload')
+	}
+
+	// Some of Discord's modules are only loaded when a screen first needs them, which can be after this plugin
+	// started. They are looked for again a few times, and whenever a revealed row is drawn.
+	let hookCleanup
+	let lastLateTry = 0
+	const lateTimers = []
+	function tryLateHooks(force) {
+		if (hooks.transition !== 'not found' && hooks.preload !== 'not found') return
+		if (!force && Date.now() - lastLateTry < 1500) return
+		lastLateTry = Date.now()
+		if (!hookCleanup) return
+		if (hooks.transition === 'not found') { try { hookTransition(hookCleanup) } catch (e) { problem('channel opener', e) } }
+		if (hooks.preload === 'not found') { try { hookPreload(hookCleanup) } catch (e) { problem('preloader', e) } }
+		if (hooks.transition !== 'not found' && hooks.preload !== 'not found') addLog('Found the channel opener and preloader')
 	}
 
 	// The marker and the dimmed look: Discord draws a row from a `channel` prop. Revealed channels get a copy
@@ -366,6 +408,7 @@
 				}
 				if (!ROW_COMPONENTS.has(kind)) return element
 				if (!rules().enabled || !isRevealed(channel)) return element
+				tryLateHooks()
 				hooks.rows += 1
 				stats.decorated += 1
 				const React = valenced.react.React
@@ -884,8 +927,9 @@
 		const out = []
 		const add = (ok, label, detail) => out.push({ ok, label, detail })
 		add(hooks.gated === 'found', 'Found Discord’s "gated channel" question', hooks.gated === 'found' ? 'GatedChannelStore.isChannelGatedAndVisible is wrapped' : 'Without it no channel can be shown')
-		add(hooks.transition === 'found', 'Found the channel opener', hooks.transition === 'found' ? 'Taps on text channels are caught' : 'A tap would try to open the channel')
-		add(hooks.preload === 'found', 'Found the message preloader', hooks.preload === 'found' ? 'Revealed channels are not preloaded' : 'Optional: some failed requests may happen')
+		tryLateHooks(true)
+		add(hooks.transition !== 'not found', 'Found the channel opener', hooks.transition !== 'not found' ? `Taps on text channels are caught (${hooks.transition})` : 'A tap would try to open the channel. Scroll the channel list, then run this again')
+		add(hooks.preload !== 'not found', 'Found the message preloader', hooks.preload !== 'not found' ? 'Revealed channels are not preloaded' : 'Optional: some failed requests may happen')
 		add(!!listStore() || !!listStates(), 'Can rebuild the channel list', listStore() || listStates() ? 'Rule changes show at once' : 'Switch server after changing a rule')
 		let canWorks = false
 		try { canWorks = typeof store('PermissionStore').can(BigInt(VIEW_CHANNEL), getChannel(store('SelectedChannelStore').getChannelId())) === 'boolean' } catch (e) {}
@@ -936,14 +980,18 @@
 			cache.rules = null
 			const attempt = (what, step) => { try { step() } catch (e) { problem(what, e) } }
 			attempt('gated question', () => hookGatedQuestion(api.cleanup))
+			hookCleanup = api.cleanup
 			attempt('channel opener', () => hookTransition(api.cleanup))
 			attempt('preloader', () => hookPreload(api.cleanup))
+			;[1500, 4000, 10000, 25000].forEach((ms) => lateTimers.push(setTimeout(() => tryLateHooks(true), ms)))
 			attempt('rows', () => hookRows(api.cleanup))
 			attempt('list store', () => hookListStore(api.cleanup))
 			attempt('list rebuild', () => { if (listStore() || listStates()) hooks.list = 'found' })
 			setTimeout(refreshList, 800) // so channel lists that were already built are drawn again with the hook in place
 			api.cleanup(() => {
 				clearTimeout(refreshTimer)
+				lateTimers.forEach(clearTimeout)
+				hookCleanup = undefined
 				screenListeners = []
 				if (globalThis.__showHiddenChannelsInstance === INSTANCE) globalThis.__showHiddenChannelsInstance = undefined
 				setTimeout(refreshList, 100)
