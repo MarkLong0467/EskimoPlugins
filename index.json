@@ -1404,6 +1404,33 @@
       "channels": {
         "latest": "1.0.1"
       }
+    },
+    "marklong.status-presets": {
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.status-presets@1.0.0.zip",
+          "sha256": "c49353222a76ac4d2131658a030812d6e14ac26de65131ad2abfc8ec9dfdc6e7",
+          "size": 11470,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "name": "Status Presets",
+      "description": "Save your online status and custom status (text, emoji and an end time) as presets and switch with one tap, from the plugin settings or from your account sheet. Includes Undo and a self-check.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "contributors": [
+        "StatusPresets for Equicord (the idea; code written from scratch for Valenced)",
+        "Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
+      ],
+      "channels": {
+        "latest": "1.0.0"
+      }
     }
   }
 }
