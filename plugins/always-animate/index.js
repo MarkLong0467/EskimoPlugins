@@ -21,7 +21,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.2.2'
+	const VERSION = '1.3.0'
 
 	// ---------------------------------------------------------------------------------------------------
 	// Small helpers
@@ -60,7 +60,7 @@
 		{ key: 'addresses', on: true, title: 'Still pictures of animated things', blurb: 'A safety net: when a screen is about to show the still version of an animated server icon, profile picture or banner, it gets the animated one. This catches what the other switches miss, for example the server list.' },
 		{ key: 'everything', on: false, title: 'Everything else (advanced)', blurb: 'Switches on every `animate` or `canAnimate` property Discord gives its screens. This can animate things Discord keeps still on purpose.' },
 	]
-	const defaults = Object.fromEntries(FEATURES.map((f) => [f.key, f.on]))
+	const defaults = { ...Object.fromEntries(FEATURES.map((f) => [f.key, f.on])), chatFormat: 'webp' }
 
 	let storage
 	let screenListeners = []
@@ -297,11 +297,17 @@
 	 * last place to make both animated.
 	 */
 	const chatSeen = new WeakSet()
+	let chatSample = '' // the first address pair that was changed, for the report
 	function animateChatRow(row) {
 		if (!row || typeof row !== 'object') return row
 		let changed = false
-		if (typeof row.avatarURL === 'string') { const next = animatedAddress(row.avatarURL); if (next !== row.avatarURL) { row.avatarURL = next; changed = true } }
+		if (typeof row.avatarURL === 'string') {
+			let next = animatedAddress(row.avatarURL)
+			if (setting('chatFormat') === 'gif') next = asGif(next)
+			if (next !== row.avatarURL) { row.avatarURL = next; changed = true }
+		}
 		if (typeof row.avatarDecorationURL === 'string') { const next = animatedDecoration(row.avatarDecorationURL); if (next !== row.avatarDecorationURL) { row.avatarDecorationURL = next; changed = true } }
+		if (changed && !chatSample) chatSample = `${String(row.avatarURL || '').replace(/^https?:\/\//, '').slice(0, 80)} | ${String(row.avatarDecorationURL || '').replace(/^https?:\/\//, '').slice(-60)}`
 		if (changed || !chatSeen.has(row)) { chatSeen.add(row); countSeen('chat', changed) }
 		return row
 	}
@@ -333,6 +339,15 @@
 			})
 		})
 		if (!found.chat) found.chat = 'not found'
+	}
+
+	/** The same animated picture as a .gif address: the chat may play that kind where it ignores animated webp. */
+	function asGif(uri) {
+		if (typeof uri !== 'string' || uri.indexOf('/a_') < 0) return uri
+		const m = uri.match(/(\/a_[0-9a-f]{6,})\.(png|jpe?g|webp)(\?[^#]*)?$/i)
+		if (!m) return uri
+		const query = (m[3] || '').replace(/([?&])animated=true&?/, '$1').replace(/[?&]$/, '')
+		return `${uri.slice(0, m.index)}${m[1]}.gif${query}`
 	}
 
 	/** Rewrites the `source` of an image element when it points at the still version of an animated picture. */
@@ -447,6 +462,7 @@
 
 	function buildReport() {
 		const lines = ['Always Animate report', `version: ${VERSION}`]
+		lines.push(`chat picture format: ${setting('chatFormat')}; chat sample: ${chatSample || 'none yet'}`)
 		lines.push(`pictures drawn again: ${refreshed.count}x${refreshed.at ? `, last ${new Date(refreshed.at).toLocaleTimeString()}` : ''}`)
 		FEATURES.forEach((f) => lines.push(`${f.key}: ${setting(f.key) ? 'on' : 'off'}; ${found[f.key] || 'not hooked'}; Discord used it ${seen[f.key]} time(s), changed ${forced[f.key]}`))
 		const top = Object.keys(perFunction).sort((a, b) => perFunction[b].seen - perFunction[a].seen).slice(0, 8)
@@ -473,6 +489,10 @@
 		const { View } = valenced.react.ReactNative
 		const { Text } = valenced.discord.design.Design
 		return h(View, { style: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999, backgroundColor: `${color}33` } }, h(Text, { variant: 'text-xs/bold', style: { color } }, text))
+	}
+	function Radio({ title, value, items, onChange }) {
+		const Design = valenced.discord.design.Design
+		return h(Design.TableRadioGroup, { title, value, onChange }, items.map((item) => h(Design.TableRadioRow, { key: String(item.v), label: item.l, subLabel: item.s, value: item.v })))
 	}
 	const GREEN = '#23a55a'
 	const RED = '#f23f43'
@@ -540,6 +560,10 @@
 				h(RN.View, { style: { gap: 4 } },
 					h(Design.Text, { variant: 'text-sm/semibold', color: 'text-muted' }, 'WHAT ANIMATES'),
 					h(Design.TableRowGroup, { title: '' }, ...FEATURES.slice(0, 7).map(featureRow))),
+				setting('chat') && h(Radio, { key: 'chatFormat', title: 'Chat: kind of animated picture', value: setting('chatFormat'), onChange: (v) => { saveSettings({ chatFormat: v }); scheduleRefresh() }, items: [
+					{ v: 'webp', l: 'Animated webp', s: 'What Discord uses for animated pictures' },
+					{ v: 'gif', l: 'GIF', s: 'Try this if the chat does not play the webp. Only for profile pictures' },
+				] }),
 				h(Design.TableRowGroup, { title: 'Advanced' }, featureRow(FEATURES[7])),
 				h(
 					Design.TableRowGroup,

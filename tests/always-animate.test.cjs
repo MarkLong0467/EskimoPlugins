@@ -226,6 +226,30 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	check('without any module the report still says what failed', /problems|check - A profile picture, asked for as "still": FAIL .*AvatarUtils was not found/.test(global.copied), global.copied)
 }
 
+// 2f. Chat picture format and the report sample
+{
+	const hash = 'a_0123456789abcdef0123456789abcdef'
+	const gif = load({ chatFormat: 'gif' })
+	const row = gif.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64` })
+	check('with "GIF" chosen a chat picture gets a .gif address, with no webp parameter', row.avatarURL === `https://cdn.discordapp.com/avatars/1/${hash}.gif?size=64`, row.avatarURL)
+	const png = gif.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.png` })
+	check('...also from a png without a query', png.avatarURL === `https://cdn.discordapp.com/avatars/1/${hash}.gif`, png.avatarURL)
+	const still = gif.chatModule.default({ avatarURL: 'https://cdn.discordapp.com/avatars/1/0123456789abcdef0123456789abcdef.webp?size=64' })
+	check('...a picture that is not animated stays as it is', still.avatarURL.endsWith('.webp?size=64'))
+	check('...and the decoration is not changed by the picture format', gif.chatModule.default({ avatarDecorationURL: 'https://cdn.discordapp.com/avatar-decoration-presets/a_abc.png?size=96&passthrough=false' }).avatarDecorationURL.includes('passthrough=true'))
+	const webp = load()
+	check('by default it is the animated webp', /\.webp\?size=64&animated=true/.test(webp.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64` }).avatarURL))
+	const radio = load()
+	findAll(expand(radio.plugin.SettingsComponent({ api: { jsonStorage: radio.json } })), (n) => n.props && n.props.title === 'Chat: kind of animated picture')[0].props.onChange('gif')
+	check('the screen can switch the format', radio.data.cache.chatFormat === 'gif')
+	findAll(expand(radio.plugin.SettingsComponent({ api: { jsonStorage: radio.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()
+	radio.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64`, avatarDecorationURL: 'https://cdn.discordapp.com/avatar-decoration-presets/a_abc.png?size=96&passthrough=false' })
+	findAll(expand(radio.plugin.SettingsComponent({ api: { jsonStorage: radio.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()
+	check('the report shows the format and a sample of what was sent to the chat', /chat picture format: gif; chat sample: cdn\.discordapp\.com\/avatars\/1\/a_0123456789abcdef0123456789abcdef\.gif\?size=64 \| .*passthrough=true/.test(global.copied), global.copied)
+	const off = load({ chat: false })
+	check('with the chat switch off the format choice is hidden', !findAll(expand(off.plugin.SettingsComponent({ api: { jsonStorage: off.json } })), (n) => n.props && n.props.title === 'Chat: kind of animated picture').length)
+}
+
 // 2c. Drawing the pictures on screen again
 {
 	const app = load()
