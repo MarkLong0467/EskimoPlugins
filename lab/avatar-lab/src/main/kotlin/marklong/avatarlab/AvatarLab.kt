@@ -106,6 +106,32 @@ private fun inspect(scope: PluginScope): String {
     return sb.toString()
 }
 
+
+private val GETTERS = listOf(
+    "Lcom/discord/chat/bridge/Message;->getAvatarURL\$chat_androidRelease()Ljava/lang/String;",
+    "Lcom/discord/chat/bridge/Message;->getAvatarDecorationURL()Ljava/lang/String;",
+    "Lcom/discord/chat/bridge/Message;->getGifAutoPlay()Ljava/lang/Boolean;",
+    "Lcom/discord/chat/bridge/Message;->getAvatarURLs()Ljava/util/List;",
+)
+
+/** Which methods read the avatar fields of the native row, and what do they call? */
+private fun scanReaders(scope: PluginScope): String =
+    scope.dexFinder.findValue("avatar-lab:readers1", { s: String -> s }, { it }) {
+        val out = StringBuilder()
+        for (getter in GETTERS) {
+            val callers = findMethod { matcher { addInvoke(getter) } }
+            out.append("# readers of ${getter.substringAfter("->").substringBefore("(")} (${callers.size})\n")
+            callers.take(25).forEach { m ->
+                out.append(m.className).append('.').append(m.methodName).append('\n')
+                val calls = m.invokes.map { it.className.substringAfterLast('.') + "." + it.methodName }
+                    .filterNot { it.startsWith("Intrinsics.") || it.startsWith("Object.") || it.startsWith("String") }
+                    .distinct().take(30)
+                if (calls.isNotEmpty()) out.append("    calls: ").append(calls.joinToString(", ")).append('\n')
+            }
+        }
+        out.toString()
+    } ?: "no result"
+
 /** Does nothing at startup. Everything runs only when a button is tapped, so a bad step can't stop Discord from opening. */
 val avatarLab = plugin {
     start {
@@ -113,6 +139,7 @@ val avatarLab = plugin {
         var names = "not asked"
         var rows = "not asked"
         var inspected = "not asked"
+        var readers = "not asked"
         registerNativeMethod("marklong.avatar-lab.report") {
             buildString {
                 append("## hooks\n")
@@ -120,13 +147,17 @@ val avatarLab = plugin {
                 hits.entries.sortedBy { it.key }.forEach { append("  ${it.key}: ${it.value.get()}\n") }
                 append("## who called\n")
                 callers.entries.sortedBy { it.key }.forEach { append("  ${it.key}: ${it.value.joinToString(" | ")}\n") }
-                append("\n## inspect\n").append(inspected).append('\n')
+                append("\n## readers\n").append(readers).append("\n## inspect\n").append(inspected).append('\n')
                 append("\n## names\n").append(names).append("\n\n## rows\n").append(rows)
             }
         }
         registerNativeMethod("marklong.avatar-lab.inspect") {
             inspected = runCatching { inspect(this) }.getOrElse { "error: ${it::class.java.name}: ${it.message}" }
             "inspect done (${inspected.length} chars)"
+        }
+        registerNativeAsyncMethod("marklong.avatar-lab.readers") {
+            readers = runCatching { scanReaders(this) }.getOrElse { "error: ${it::class.java.name}: ${it.message}" }
+            "readers done (${readers.length} chars)"
         }
         registerNativeMethod("marklong.avatar-lab.watch") {
             if (callers.isEmpty() && hits.keys.none { it.startsWith("AnimatedDrawable2") }) {
