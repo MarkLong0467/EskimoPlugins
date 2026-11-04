@@ -21,7 +21,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.1.0'
+	const VERSION = '1.2.0'
 
 	// ---------------------------------------------------------------------------------------------------
 	// Small helpers
@@ -56,6 +56,7 @@
 		{ key: 'stickers', on: true, title: 'Stickers', blurb: 'Animated stickers, as if "Animate stickers" were on.' },
 		{ key: 'gifs', on: true, title: 'GIFs', blurb: 'GIFs play by themselves, as if "Play GIFs automatically" were on.' },
 		{ key: 'statusEmoji', on: true, title: 'Status emoji', blurb: 'The emoji of a custom status.' },
+		{ key: 'chat', on: true, title: 'Chat: pictures and decorations next to messages', blurb: 'The profile picture and avatar decoration beside each message. Discord builds these from plain addresses, so they are fixed on the way to the chat.' },
 		{ key: 'addresses', on: true, title: 'Still pictures of animated things', blurb: 'A safety net: when a screen is about to show the still version of an animated server icon, profile picture or banner, it gets the animated one. This catches what the other switches miss, for example the server list.' },
 		{ key: 'everything', on: false, title: 'Everything else (advanced)', blurb: 'Switches on every `animate` or `canAnimate` property Discord gives its screens. This can animate things Discord keeps still on purpose.' },
 	]
@@ -257,6 +258,44 @@
 		const head = uri.slice(0, m.index) + m[1]
 		return m[2].toLowerCase() === 'webp' ? `${head}.webp${query ? `${query}&animated=true` : '?animated=true'}` : `${head}.gif${query}`
 	}
+	// Decorations: a preset decoration is .../avatar-decoration-presets/<asset>.png?size=..&passthrough=false and
+	// passthrough=true is the animated one. A shop decoration ends in /static or /animated.
+	function animatedDecoration(uri) {
+		if (typeof uri !== 'string') return uri
+		if (uri.indexOf('avatar-decoration-presets') >= 0 && /[?&]passthrough=false/.test(uri)) return uri.replace(/([?&]passthrough=)false/, '$1true')
+		return uri.replace(/(\/media\/v1\/collectibles-shop\/[^?#]*\/)static(?=[?#]|$)/, '$1animated')
+	}
+	/**
+	 * Discord's chat is drawn natively from a row of plain data: `createMessageContent` returns it, with the address
+	 * of the author's picture (`avatarURL`) and decoration (`avatarDecorationURL`) already worked out. This is the
+	 * last place to make both animated.
+	 */
+	function animateChatRow(row) {
+		if (!row || typeof row !== 'object') return row
+		let changed = false
+		if (typeof row.avatarURL === 'string') { const next = animatedAddress(row.avatarURL); if (next !== row.avatarURL) { row.avatarURL = next; changed = true } }
+		if (typeof row.avatarDecorationURL === 'string') { const next = animatedDecoration(row.avatarDecorationURL); if (next !== row.avatarDecorationURL) { row.avatarDecorationURL = next; changed = true } }
+		countSeen('chat', changed)
+		return row
+	}
+	function hookChatRows(cleanup) {
+		const finders = valenced.modules.finders
+		const patched = new WeakSet()
+		const attach = (mod) => {
+			;[mod, mod && mod.default].forEach((holder) => {
+				if (!holder || typeof holder !== 'object' && typeof holder !== 'function') return
+				if (typeof holder.default !== 'function' || patched.has(holder) || (holder.default.name && holder.default.name !== 'createMessageContent')) return
+				patched.add(holder)
+				cleanup(valenced.patcher.after(holder, 'default', (result) => { if (!setting('chat')) return result; try { return animateChatRow(result) } catch (e) { reportProblem('chat row', e); return result } }))
+				found.chat = 'createMessageContent (the chat rows)'
+			})
+		}
+		const run = (mod) => { try { attach(mod) } catch (e) { reportProblem('chat rows', e) } }
+		try { if (typeof finders.getModules === 'function') cleanup(finders.getModules(finders.filters.withName('createMessageContent'), run)) } catch (e) { reportProblem('watch chat rows', e) }
+		try { finders.lookupModule(finders.filters.withName('createMessageContent')).forEach(run) } catch (e) {}
+		if (!found.chat) found.chat = 'not found'
+	}
+
 	/** Rewrites the `source` of an image element when it points at the still version of an animated picture. */
 	function animateAddresses(element) {
 		const props = element.props
@@ -281,7 +320,7 @@
 		let count = 0
 		try {
 			const stores = valenced.discord.flux.Stores
-			;['GuildStore', 'GuildMemberStore', 'UserStore'].forEach((name) => {
+			;['GuildStore', 'GuildMemberStore', 'UserStore', 'MessageStore'].forEach((name) => {
 				const store = stores && stores[name]
 				if (store && typeof store.emitChange === 'function') { store.emitChange(); count += 1 }
 			})
@@ -291,7 +330,7 @@
 		return count
 	}
 	const refreshed = { count: 0, at: 0 }
-	const PICTURE_SWITCHES = ['pictures', 'addresses', 'everything']
+	const PICTURE_SWITCHES = ['pictures', 'addresses', 'chat', 'everything']
 	let refreshTimer
 	/** After a switch changed, the pictures on screen are drawn again once things have settled. */
 	function scheduleRefresh() {
@@ -461,8 +500,8 @@
 				),
 				h(RN.View, { style: { gap: 4 } },
 					h(Design.Text, { variant: 'text-sm/semibold', color: 'text-muted' }, 'WHAT ANIMATES'),
-					h(Design.TableRowGroup, { title: '' }, ...FEATURES.slice(0, 6).map(featureRow))),
-				h(Design.TableRowGroup, { title: 'Advanced' }, featureRow(FEATURES[6])),
+					h(Design.TableRowGroup, { title: '' }, ...FEATURES.slice(0, 7).map(featureRow))),
+				h(Design.TableRowGroup, { title: 'Advanced' }, featureRow(FEATURES[7])),
 				h(
 					Design.TableRowGroup,
 					{ title: 'Good to know' },
@@ -487,6 +526,7 @@
 			attempt('pictures', () => allowPictureAnimations(api.cleanup))
 			attempt('emoji, stickers and GIFs', () => allowAccessibilityAnimations(api.cleanup))
 			attempt('status emoji', () => animateElements(api.cleanup))
+			attempt('chat rows', () => hookChatRows(api.cleanup))
 			// The server list and other screens were drawn before the plugin was in place: draw them again.
 			const timers = [1500, 5000].map((ms) => setTimeout(refreshPictures, ms))
 			api.cleanup(() => { screenListeners = []; timers.forEach(clearTimeout); clearTimeout(refreshTimer) })

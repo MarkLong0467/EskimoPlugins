@@ -35,6 +35,8 @@ function load(settings = {}, options = {}) {
 	const runtime = { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) }
 	const toasts = []
 	const emitted = []
+	const subs = []
+	const chatModule = { default: function createMessageContent(input) { return { id: 'row', ...(input || {}) } } }
 	const React = {
 		useState: (initial) => { const state = [initial]; return [initial, (v) => { state[0] = v }] },
 		useEffect: () => {},
@@ -43,15 +45,17 @@ function load(settings = {}, options = {}) {
 	global.valenced = {
 		react: { React, ReactNative: { View: 'V', ScrollView: 'S' }, ReactJSXRuntime: runtime },
 		externals: { ReactNativeClipboard: { Clipboard: { setString: (text) => { global.copied = text } } } },
-		discord: { actions: { ToastActionCreators: { open: (k, o) => toasts.push(o.text) } }, design: { Design: new Proxy({}, { get: (_, key) => key }) }, flux: { Stores: options.noStores ? {} : { GuildStore: { emitChange: () => emitted.push('GuildStore') }, GuildMemberStore: { emitChange: () => emitted.push('GuildMemberStore') }, UserStore: { emitChange: () => emitted.push('UserStore') } } } },
+		discord: { actions: { ToastActionCreators: { open: (k, o) => toasts.push(o.text) } }, design: { Design: new Proxy({}, { get: (_, key) => key }) }, flux: { Stores: options.noStores ? {} : { GuildStore: { emitChange: () => emitted.push('GuildStore') }, GuildMemberStore: { emitChange: () => emitted.push('GuildMemberStore') }, UserStore: { emitChange: () => emitted.push('UserStore') }, MessageStore: { emitChange: () => emitted.push('MessageStore') } } } },
 		patcher: {
 			after: (object, key, fn) => { const original = object[key]; object[key] = function (...a) { const r = original.apply(this, a); const x = fn.call(this, r); return x === undefined ? r : x }; return () => { object[key] = original } },
 			instead: (object, key, fn) => { const original = object[key]; object[key] = function (...a) { return fn.call(this, a, original) }; return () => { object[key] = original } },
 		},
 		modules: {
 			finders: {
-				filters: { withProps: (...n) => n.join() },
+				filters: { withProps: (...n) => n.join(), withName: (n) => `name:${n}` },
+				getModules: (f, cb) => { subs.push({ f, cb }); return () => {} },
 				lookupModule: (f) => {
+					if (f === 'name:createMessageContent') return options.noChat ? [] : [options.chatOnDefault ? { default: chatModule } : chatModule]
 					if (f === 'jsx,jsxs') return [runtime]
 					if (f === 'getUserAvatarURL,getGuildIconURL') return avatarModule ? [avatarModule] : []
 					if (f === 'AnimateEmoji,AnimateStickers,GifAutoPlay') return options.noSettings ? [] : [accessibility]
@@ -66,7 +70,7 @@ function load(settings = {}, options = {}) {
 	const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'always-animate', 'index.js'), 'utf8')
 	const plugin = new Function('valenced', 'plugin', `return ${source}`)(global.valenced, global.plugin).default
 	plugin.start({ cleanup: (fn) => fn, jsonStorage: json })
-	return { plugin, data, json, runtime, log, avatarUtils, avatarModule, accessibility, toasts, emitted }
+	return { plugin, data, json, runtime, log, avatarUtils, avatarModule, accessibility, toasts, emitted, subs, chatModule }
 }
 const user = (animated) => ({ id: '123456789012345678', avatar: `${animated ? 'a_' : ''}0123456789abcdef`, discriminator: '0' })
 const texts = (node, out = []) => {
@@ -149,12 +153,49 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	check('with the switch off nothing is rewritten', off.runtime.jsx(Image, { source: { uri: icon } }).props.source.uri === icon)
 }
 
+// 2d. Chat rows
+{
+	const app = load()
+	const hash = 'a_0123456789abcdef0123456789abcdef'
+	const make = (over = {}) => app.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64`, avatarDecorationURL: 'https://cdn.discordapp.com/avatar-decoration-presets/a_abc.png?size=96&passthrough=false', ...over })
+	const row = make()
+	check('the author\u2019s still picture in a chat row becomes the animated one', row.avatarURL.endsWith('&animated=true'), row.avatarURL)
+	check('...and a preset decoration gets passthrough=true', /passthrough=true/.test(row.avatarDecorationURL) && !/passthrough=false/.test(row.avatarDecorationURL), row.avatarDecorationURL)
+	const shop = make({ avatarDecorationURL: 'https://cdn.discordapp.com/media/v1/collectibles-shop/1234/9876/static' })
+	check('a shop decoration goes from /static to /animated', shop.avatarDecorationURL === 'https://cdn.discordapp.com/media/v1/collectibles-shop/1234/9876/animated', shop.avatarDecorationURL)
+	const shop2 = make({ avatarDecorationURL: 'https://cdn.discordapp.com/media/v1/collectibles-shop/1234/static' })
+	check('...also without an asset id', shop2.avatarDecorationURL.endsWith('/1234/animated'))
+	const done = make({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64&animated=true`, avatarDecorationURL: 'https://cdn.discordapp.com/media/v1/collectibles-shop/1234/animated' })
+	check('already animated addresses are left alone', done.avatarURL.endsWith('size=64&animated=true') && done.avatarDecorationURL.endsWith('/animated'))
+	const plain = make({ avatarURL: 'https://cdn.discordapp.com/avatars/1/0123456789abcdef0123456789abcdef.webp?size=64' })
+	check('a picture that is not animated is left alone', plain.avatarURL === 'https://cdn.discordapp.com/avatars/1/0123456789abcdef0123456789abcdef.webp?size=64')
+	const none = make({ avatarDecorationURL: null, avatarURL: undefined })
+	check('a row without decoration or picture is fine', none.avatarDecorationURL === null && none.avatarURL === undefined)
+	check('other parts of the row are kept', make({ username: 'x', content: 'hi' }).username === 'x')
+	check('a row that is not an object is returned as it is', app.chatModule.default(undefined).id === 'row')
+	const off = load({ chat: false })
+	const offRow = off.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64` })
+	check('with the switch off the row is left alone', !/animated=true/.test(offRow.avatarURL))
+	const lost = load({}, { noChat: true })
+	check('if the chat rows are not found the plugin still starts and says so', /chat: on; not found/.test((() => { findAll(expand(lost.plugin.SettingsComponent({ api: { jsonStorage: lost.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress(); return global.copied })()), global.copied)
+	const late = load({}, { noChat: true })
+	check('a chat module that loads later is picked up', late.subs.some((x) => x.f === 'name:createMessageContent'))
+	late.subs[0].cb(late.chatModule)
+	late.subs[0].cb(late.chatModule)
+	const twice = late.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64` })
+	check('...and wrapped only once', (twice.avatarURL.match(/animated=true/g) || []).length === 1, twice.avatarURL)
+	const def = load({}, { chatOnDefault: true })
+	check('the chat function is found on a default export too', /animated=true/.test(def.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp` }).avatarURL))
+	findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()
+	check('the report counts chat rows', /chat: on; createMessageContent \(the chat rows\); Discord used it \d+ time\(s\), changed \d+/.test(global.copied) && !/chat: on; createMessageContent \(the chat rows\); Discord used it 0 /.test(global.copied), global.copied)
+}
+
 // 2c. Drawing the pictures on screen again
 {
 	const app = load()
 	const screenFind = (label) => findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === label)[0]
 	screenFind('Refresh the pictures on screen').props.onPress()
-	check('the button makes the stores that draw pictures announce a change', app.emitted.join() === 'GuildStore,GuildMemberStore,UserStore' && app.toasts.some((x) => /drawn again/.test(x)))
+	check('the button makes the stores that draw pictures announce a change', app.emitted.join() === 'GuildStore,GuildMemberStore,UserStore,MessageStore' && app.toasts.some((x) => /drawn again/.test(x)))
 	const lost = load({}, { noStores: true })
 	findAll(expand(lost.plugin.SettingsComponent({ api: { jsonStorage: lost.json } })), (n) => n.props && n.props.text === 'Refresh the pictures on screen')[0].props.onPress()
 	check('without the stores it says so', lost.toasts.some((x) => /Could not refresh/.test(x)))
@@ -199,10 +240,10 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	const screen = (settings) => { const a = load(settings); return { a, tree: expand(a.plugin.SettingsComponent({ api: { jsonStorage: a.json } })) } }
 	const { a, tree } = screen({})
 	const shown = texts(tree).join('|')
-	check('the screen shows all seven switches', ['Pictures', 'Emoji', 'Stickers', 'GIFs', 'Status emoji', 'Still pictures of animated things', 'Everything else (advanced)'].every((t) => shown.includes(t)), shown.slice(0, 300))
+	check('the screen shows all eight switches', ['Pictures', 'Emoji', 'Stickers', 'GIFs', 'Status emoji', 'Still pictures of animated things', 'Chat: pictures and decorations next to messages', 'Everything else (advanced)'].every((t) => shown.includes(t)), shown.slice(0, 300))
 	check('each switch says what it covers and whether it was found', /AvatarUtils \(\d+ places?, \d+ functions\)/.test(shown) && /UserSettings\.AnimateEmoji/.test(shown), shown.slice(0, 400))
 	const switches = findAll(tree, (n) => n.type === 'TableSwitchRow' && n.props.label)
-	check('there are seven switches', switches.length === 7, String(switches.length))
+	check('there are eight switches', switches.length === 8, String(switches.length))
 	switches.find((s) => s.props.label === 'GIFs').props.onValueChange(false)
 	check('a switch saves', a.data.cache.gifs === false)
 	const reportApp = load()
