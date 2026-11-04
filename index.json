@@ -1459,17 +1459,30 @@
               "version": "*"
             }
           }
+        },
+        "1.1.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.show-hidden-channels@1.1.0.zip",
+          "sha256": "c13eb678e0b50ab9e7b2998830bd2a7a79cc662b588a8ad28df50ecc2c2e4dcd",
+          "size": 16356,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
         }
       },
       "name": "Show Hidden Channels",
-      "description": "Shows the channels you are not allowed to open, marked with a lock. Tap one for an info sheet (topic, dates, who is let in). Allow or block servers, channels, categories, kinds of channel and words, with a self-check.",
+      "description": "Shows the channels you are not allowed to open, marked with a lock and named by a template where Discord hides the real name. Tap one for an info sheet (topic, dates, who is let in). Allow or block servers, channels, categories, kinds of channel and words, with a self-check.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "contributors": [
         "ShowHiddenChannels for Vencord, Equicord and Aliucord (the idea; code written from scratch for Valenced)",
         "Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
       ],
       "channels": {
-        "latest": "1.0.0"
+        "latest": "1.1.0"
       }
     }
   }
