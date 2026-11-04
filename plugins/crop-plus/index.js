@@ -27,7 +27,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.0.0'
+	const VERSION = '1.1.0'
 	const INSTANCE = {}
 	const SHEET_KEY = 'MARKLONG_CROP_PLUS_ASK'
 	const CANCELLED = 'E_PICKER_CANCELLED'
@@ -71,11 +71,14 @@
 	const SIDES = [0, 128, 256, 512, 1024, 1600, 2048]
 	const QUALITIES = [100, 95, 90, 80, 70, 60]
 	const PASSES = [2, 3, 4, 6, 10]
+	const TARGETS = [64, 128, 256, 512, 1024]
 
 	const defaults = {
 		enabled: true,
 		scope: 'attachments', // 'attachments': only the "Edit image" crop of a chat picture. 'everywhere': every crop, also profile pictures and icons
 		again: true, // offer to crop again after each crop
+		mode: 'ask', // 'ask': a sheet after each crop. 'auto': open the cropper again at once until the picture is small enough
+		targetPx: 256, // 'auto' stops when the longest side is at most this many pixels
 		askAbove: 0, // only ask when the longest side of the result is bigger than this many pixels (0 = always ask)
 		maxPasses: 6, // how many crops in a row at most
 		undoStack: true, // the sheet may go back to the pass before
@@ -196,6 +199,16 @@
 				stack.push(result)
 				lastResults.push(`${dims(result)} ${sizeText(result.size)}`.trim())
 				if (Number(setting('quality')) < 100 || Number(setting('maxWidth')) > 0 || Number(setting('maxHeight')) > 0) stats.shrunk += 1
+			}
+			if (crop && setting('again') && setting('mode') === 'auto') {
+				// No sheet: open the cropper again at once until the picture is small enough. Cancelling the cropper keeps the last result.
+				const last = stack[stack.length - 1]
+				const longest = Math.max(Number(last.width) || 0, Number(last.height) || 0)
+				if (longest > 0 && longest <= (Number(setting('targetPx')) || 256)) { addLog(`Small enough: ${dims(last)}`); break }
+				if (stack.length >= limit) { addLog(`Stopped after ${limit} crops (the limit in the settings)`); break }
+				toast(`Crop ${stack.length + 1}: now ${dims(last)}. Pick a smaller part, or Cancel to keep this.`)
+				await sleep(450)
+				continue
 			}
 			if (crop && !wantsAnother(stack[stack.length - 1], stack.length, limit)) break
 			const choice = await askAgain(stack)
@@ -356,8 +369,13 @@
 						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Copy report', variant: 'secondary', size: 'sm', onPress: () => copyReport() })))),
 				h(Design.TableRowGroup, { key: 'general', title: 'General' },
 					switchRow('enabled', 'Crop Plus', 'The main switch'),
-					switchRow('again', 'Offer to crop again', 'A sheet after each crop: crop smaller, use this one, go back or cancel'),
+					switchRow('again', 'Crop again', 'After each crop, crop the result again so the passes add up'),
 				),
+				setting('again') && h(Radio, { key: 'mode', title: 'How it goes on', value: setting('mode'), onChange: (v) => saveSettings({ mode: v }), items: [
+					{ v: 'ask', l: 'Ask me after each crop', s: 'A sheet: crop smaller, use this one, go back or cancel' },
+					{ v: 'auto', l: 'Keep going until it is small', s: 'The cropper opens again at once. Tap Cancel in it to keep the last result' },
+				] }),
+				setting('again') && setting('mode') === 'auto' && h(Picker, { key: 'target', title: 'Stop when the longest side is at most', value: setting('targetPx'), options: TARGETS, format: (v) => `${v}px`, onPick: (v) => saveSettings({ targetPx: v }) }),
 				h(Radio, { key: 'scope', title: 'Where it works', value: setting('scope'), onChange: (v) => saveSettings({ scope: v }), items: [
 					{ v: 'attachments', l: 'Pictures you send', s: 'The Edit image crop of an attachment' },
 					{ v: 'everywhere', l: 'Every crop', s: 'Also profile pictures, server icons and so on' },
@@ -386,6 +404,7 @@
 					...log.slice(0, 6).map((l, i) => h(Design.TableRow, { key: `l${i}`, label: `${l.ok ? '✓' : '✗'} ${l.text}`, subLabel: new Date(l.at).toLocaleTimeString() })),
 				),
 				h(Design.TableRowGroup, { key: 'good', title: 'Good to know' },
+					h(Design.TableRow, { key: 'g0', label: 'The frame cannot get smaller', subLabel: 'Discord\u2019s cropper has a smallest frame (about 100 dp) that no plugin can change. What helps: pinch to zoom into the picture (or use the Scale tab) so the frame covers less, and crop again.' }),
 					h(Design.TableRow, { key: 'g1', label: 'Why crop again', subLabel: 'Discord’s cropper has a smallest frame and a biggest zoom. Cropping the result again starts from a smaller picture, so the passes add up.' }),
 					h(Design.TableRow, { key: 'g2', label: 'Quality', subLabel: 'Each pass saves the picture again. Keep the quality at 100% unless you need a small file.' }),
 				),
@@ -410,7 +429,7 @@
 		return [
 			'Crop Plus report',
 			`version: ${VERSION}`,
-			`enabled: ${setting('enabled')}; scope: ${setting('scope')}; offer again: ${setting('again')}; most passes: ${setting('maxPasses')}; ask above: ${setting('askAbove')}`,
+			`enabled: ${setting('enabled')}; scope: ${setting('scope')}; offer again: ${setting('again')} (${setting('mode')}, target ${setting('targetPx')}px); most passes: ${setting('maxPasses')}; ask above: ${setting('askAbove')}`,
 			`shape: ${setting('ratio')}; free ${setting('freeStyle')}; grid ${setting('guidelines')}; frame ${setting('frame')}; rotation ${setting('rotation')}; bottom controls ${setting('bottomControls')}`,
 			`shrink: ${setting('maxWidth') || '-'} x ${setting('maxHeight') || '-'}; quality ${setting('quality')}%; clean ${setting('cleanTemp')}`,
 			`hooks: cropper ${hooks.cropper}; patched: ${hooks.patched.join(', ') || '-'}`,

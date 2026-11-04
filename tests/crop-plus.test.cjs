@@ -201,6 +201,35 @@ const sheets = async (app, n) => { for (let i = 0; i < 100 && app.state.sheets.l
 		check('a sheet that is closed without a choice counts as "use this one"', closed.path === 'file:///cache/crop1.jpg' && dismissed.state.calls.length === 1)
 	}
 
+	// 5b. Automatic mode
+	{
+		const app = load({ mode: 'auto', targetPx: 300, maxPasses: 6 }, { results: [result(1), result(2), result(3), result(4)] })
+		const got = await app.picker.openCropper(discordOptions())
+		check('in automatic mode the cropper opens again at once, with no sheet', app.state.sheets.length === 0 && app.state.calls.length >= 3)
+		check('...until the longest side is at most the target (1000, 500, 333, 250)', got.path === 'file:///cache/crop4.jpg' && app.state.calls.length === 4, `${app.state.calls.length} calls, ${got.path}`)
+		check('...each pass crops the picture the one before made', app.state.calls[1].path === 'file:///cache/crop1.jpg' && app.state.calls[3].path === 'file:///cache/crop3.jpg')
+		check('...and says what to do', app.state.toasts.some((x) => /Pick a smaller part, or Cancel/.test(x)))
+		const stop = load({ mode: 'auto', targetPx: 64 }, { results: [result(1), result(2), 'cancel'] })
+		const kept = await stop.picker.openCropper(discordOptions())
+		check('cancelling a pass in automatic mode keeps the last result', kept.path === 'file:///cache/crop2.jpg')
+		const limit = load({ mode: 'auto', targetPx: 64, maxPasses: 2 }, { results: [result(1), result(2), result(3)] })
+		const lim = await limit.picker.openCropper(discordOptions())
+		check('the limit on crops in a row stops automatic mode', lim.path === 'file:///cache/crop2.jpg' && limit.state.calls.length === 2)
+		const small = load({ mode: 'auto', targetPx: 2000 })
+		const one = await small.picker.openCropper(discordOptions())
+		check('a first crop that is already small enough is returned at once', one.path === 'file:///cache/crop1.jpg' && small.state.calls.length === 1)
+		const nothing = load({ mode: 'auto', again: false })
+		await nothing.picker.openCropper(discordOptions())
+		check('with "crop again" off, automatic mode does nothing', nothing.state.calls.length === 1)
+		const screen = load({ mode: 'auto' }).screen()
+		check('the screen shows the mode and the target only when they matter', has(screen, 'Keep going until it is small') && has(screen, 'Stop when the longest side is at most'))
+		const ask = load({ mode: 'ask' }).screen()
+		check('...and no target in "ask" mode', !has(ask, 'Stop when the longest side is at most') && has(ask, 'The frame cannot get smaller'))
+		const radio = load()
+		findAll(radio.screen(), (n) => n.props && n.props.title === 'How it goes on')[0].props.onChange('auto')
+		check('the mode is saved', radio.data.cache.mode === 'auto')
+	}
+
 	// 6. Options
 	{
 		const shapes = { '1:1': [1000, 1000], '4:3': [4000, 3000], '16:9': [16000, 9000], '9:16': [9000, 16000] }
@@ -263,7 +292,7 @@ const sheets = async (app, n) => { for (let i = 0; i < 100 && app.state.sheets.l
 	{
 		const app = load()
 		let tree = app.screen()
-		check('the screen shows the state and how to use it', has(tree, 'Crop Plus 1.0.0') && has(tree, 'On') && has(tree, 'choose Edit image'))
+		check('the screen shows the state and how to use it', has(tree, 'Crop Plus 1.1.0') && has(tree, 'On') && has(tree, 'choose Edit image'))
 		findAll(tree, (n) => n.props && n.props.title === 'Where it works')[0].props.onChange('everywhere')
 		check('the scope is saved', app.data.cache.scope === 'everywhere')
 		findAll(app.screen(), (n) => n.props && n.props.title === 'Starting shape of the frame')[0].props.onChange('1:1')
@@ -286,7 +315,7 @@ const sheets = async (app, n) => { for (let i = 0; i < 100 && app.state.sheets.l
 		check('after a crop the self-check says so and shows the options', has(done.screen(), '✓ A crop has been done') && has(done.screen(), 'Options the cropper got last time') && has(done.screen(), '"path":"file:///photos/a.jpg"'))
 		check('...without Discord’s colours and texts', !has(done.screen(), 'cropperChooseColor'))
 		press(done.screen(), 'Copy report')
-		check('the report lists settings, hooks, counts and passes', /Crop Plus report/.test(global.copied) && /version: 1\.0\.0/.test(global.copied) && /cropper found; patched: openCropper/.test(global.copied) && /crops 1, passes 1/.test(global.copied) && /last passes: 1000 × 800/.test(global.copied), global.copied)
+		check('the report lists settings, hooks, counts and passes', /Crop Plus report/.test(global.copied) && /version: 1\.1\.0/.test(global.copied) && /cropper found; patched: openCropper/.test(global.copied) && /crops 1, passes 1/.test(global.copied) && /last passes: 1000 × 800/.test(global.copied), global.copied)
 		const none = load({}, { late: true })
 		press(none.screen(), 'Self-check')
 		check('without the cropper the self-check says so and the state says waiting', has(none.screen(), '✗ Found the cropper') && has(none.screen(), 'Waiting for the cropper'))
