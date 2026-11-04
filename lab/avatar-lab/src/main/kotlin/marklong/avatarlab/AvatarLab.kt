@@ -102,8 +102,32 @@ private fun addObject(o: Any?, out: MutableMap<Animatable, Boolean>, seen: Mutab
     }
 }
 
+private val draweeLines = Collections.synchronizedMap(LinkedHashMap<String, String>())
+
+private fun isDrawee(v: View): Boolean {
+    var c: Class<*>? = v.javaClass
+    while (c != null) { if (c.name == "com.facebook.drawee.view.DraweeView") return true; c = c.superclass }
+    return false
+}
+
+/** Fresco keeps the running animation in the view's controller, not in the drawable. */
+private fun draweeAnimatable(v: View): Pair<String, Animatable?> {
+    val ctrl = runCatching { v.javaClass.getMethod("getController").invoke(v) }.getOrNull() ?: return "no controller" to null
+    val m = ctrl.javaClass.methods.firstOrNull { it.parameterCount == 0 && Animatable::class.java.isAssignableFrom(it.returnType) }
+    val a = m?.let { runCatching { it.invoke(ctrl) as? Animatable }.getOrNull() }
+    return "${ctrl.javaClass.name}${if (m == null) " (no animatable getter)" else ""}" to a
+}
+
 private fun collect(v: View, out: MutableMap<Animatable, Boolean>, seen: MutableMap<Any, Boolean>, budget: IntArray) {
     if (budget[0]-- <= 0) return
+    if (isDrawee(v) && v.width > 0) runCatching {
+        val (ctrl, a) = draweeAnimatable(v)
+        bump("drawee views seen")
+        if (a != null) { out[a] = true; classesSeen += a.javaClass.name; bump("drawee with animation") }
+        else if (v.width >= 100) bump("drawee big without animation")
+        draweeLines["${v.width}x${v.height} #${System.identityHashCode(v) % 1000}"] =
+            "controller=$ctrl; animation=${a?.javaClass?.name ?: "none"}${if (a != null) " running=" + a.isRunning else ""}"
+    }
     runCatching {
         (v as? ImageView)?.let { addDrawable(it.drawable, out) }
         addDrawable(v.background, out)
@@ -125,6 +149,7 @@ private fun collect(v: View, out: MutableMap<Animatable, Boolean>, seen: Mutable
 private fun sweep() {
     val roots = synchronized(tracked) { tracked.toList() }
     bump("sweeps")
+    if (roots.any { it.isAttachedToWindow }) draweeLines.clear()
     stats.getOrPut("views tracked now") { AtomicInteger() }.set(roots.size)
     val found = IdentityHashMap<Animatable, Boolean>()
     val seen = IdentityHashMap<Any, Boolean>()
@@ -206,6 +231,8 @@ val avatarLab = plugin {
                 stats.entries.sortedBy { it.key }.forEach { append("  ${it.key}: ${it.value.get()}\n") }
                 append("## animated picture classes found\n")
                 synchronized(classesSeen) { classesSeen.forEach { append("  $it\n") } }
+                append("## fresco views on screen (latest sweep)\n")
+                synchronized(draweeLines) { draweeLines.entries.take(24).forEach { append("  ${it.key}: ${it.value}\n") } }
                 append("## tree of one chat message\n")
                 append(lastTree ?: "  no chat message was on screen yet. Tap Start, open a chat, scroll it, then come back.\n")
                 append("## hooks and first calls\n")
