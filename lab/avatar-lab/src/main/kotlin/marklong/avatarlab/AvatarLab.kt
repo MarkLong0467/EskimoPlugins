@@ -178,6 +178,60 @@ private fun hookAnimation(scope: PluginScope) {
     }
 }
 
+
+private val requests = Collections.synchronizedSet(LinkedHashSet<String>())
+
+private fun readBool(o: Any, vararg names: String): Boolean? {
+    for (n in names) {
+        runCatching { o.javaClass.getMethod(n).invoke(o) as? Boolean }.getOrNull()?.let { return it }
+        runCatching { o.javaClass.getField(n).get(o) as? Boolean }.getOrNull()?.let { return it }
+        runCatching { o.javaClass.getDeclaredField(n).also { it.isAccessible = true }.get(o) as? Boolean }.getOrNull()?.let { return it }
+    }
+    return null
+}
+
+/** Watches Fresco image requests for avatars and makes sure they are not decoded as stills. */
+private fun hookRequests(scope: PluginScope) {
+    val builder = runCatching { scope.classLoader.loadClass("com.facebook.imagepipeline.request.ImageRequestBuilder") }.getOrNull()
+    if (builder == null) { notes += "no class ImageRequestBuilder"; return }
+    val optionsClass = runCatching { scope.classLoader.loadClass("com.facebook.imagepipeline.common.ImageDecodeOptions") }.getOrNull()
+    notes += "ImageRequestBuilder found; ImageDecodeOptions ${if (optionsClass == null) "missing" else "found"}"
+    val defaults = optionsClass?.let { c -> runCatching { c.getMethod("defaults").invoke(null) }.getOrNull() }
+    // Replace "decode as a still" options.
+    builder.declaredMethods.filter { it.name == "setImageDecodeOptions" && it.parameterCount == 1 }.forEach { m ->
+        unhooks += XposedBridge.hookMethod(m, object : XC_MethodHook() {
+            override fun beforeHookedMethod(p: MethodHookParam) {
+                val opt = p.args[0] ?: return
+                bump("decode options set")
+                if (readBool(opt, "forceStaticImage", "getForceStaticImage") == true) {
+                    bump("decode as still (forceStaticImage)")
+                    if (defaults != null) { p.args[0] = defaults; bump("overridden to animated") }
+                }
+            }
+        })
+        notes += "setImageDecodeOptions: hooked"
+    }
+    // Note what avatar requests look like when they are built.
+    builder.declaredMethods.filter { it.name == "build" && it.parameterCount == 0 }.forEach { m ->
+        unhooks += XposedBridge.hookMethod(m, object : XC_MethodHook() {
+            override fun afterHookedMethod(p: MethodHookParam) {
+                val r = p.result ?: return
+                runCatching {
+                    val uri = r.javaClass.getMethod("getSourceUri").invoke(r)?.toString() ?: return
+                    bump("requests built")
+                    if (uri.contains("avatar") || uri.contains("decoration") || uri.contains("asset")) {
+                        bump("avatar-like requests")
+                        val opts = runCatching { r.javaClass.getMethod("getImageDecodeOptions").invoke(r) }.getOrNull()
+                        val still = opts?.let { readBool(it, "forceStaticImage", "getForceStaticImage") }
+                        if (requests.size < 14) requests += "${uri.substringAfter("://").take(110)} | forceStill=$still"
+                    }
+                }
+            }
+        })
+        notes += "ImageRequestBuilder.build: hooked"
+    }
+}
+
 private fun collect(v: View, out: MutableMap<Animatable, Boolean>, seen: MutableMap<Any, Boolean>, budget: IntArray) {
     if (budget[0]-- <= 0) return
     if (isDrawee(v) && v.width > 0) runCatching {
@@ -283,6 +337,7 @@ val avatarLab = plugin {
             if (!started) {
                 started = true
                 runCatching { hookTargets(this) }.onFailure { notes += "hook error: ${it::class.java.name}: ${it.message}" }
+                runCatching { hookRequests(this) }.onFailure { notes += "request hook error: ${it::class.java.name}: ${it.message}" }
                 runCatching { hookAnimation(this) }.onFailure { notes += "animation hook error: ${it::class.java.name}: ${it.message}" }
             }
             if (!running) { running = true; handler.post(loop) }
@@ -297,6 +352,8 @@ val avatarLab = plugin {
                 synchronized(classesSeen) { classesSeen.forEach { append("  $it\n") } }
                 append("## fresco views on screen (latest sweep)\n")
                 synchronized(draweeLines) { draweeLines.entries.sortedBy { it.key }.take(30).forEach { append("  ${it.key}: ${it.value}\n") } }
+                append("## avatar-like picture requests\n")
+                synchronized(requests) { requests.forEach { append("  $it\n") } }
                 append("## who stops Fresco animations\n")
                 synchronized(stopCallers) { stopCallers.forEach { append("  $it\n") } }
                 append("## tree of one chat message\n")
