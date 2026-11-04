@@ -15,7 +15,7 @@ jobs:
         with: { distribution: temurin, java-version: 25 }
       - name: Build the Valenced API from its public source
         working-directory: valenced-src
-        run: ./gradlew :android:api:publishToMavenLocal -x test --no-daemon
+        run: ./gradlew :core:publishToMavenLocal :android:api:publishToMavenLocal -x test --no-daemon
       - name: Build the lab plugins
         run: ./valenced-src/gradlew -p lab :avatar-lab:dexJar --no-daemon
       - name: Package
