@@ -1364,6 +1364,33 @@
       "channels": {
         "latest": "3.0.0"
       }
+    },
+    "marklong.always-animate": {
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.always-animate@1.0.0.zip",
+          "sha256": "645af35e1516940817647f77b4150980e480df4d1b8c91940f7792120e96f21e",
+          "size": 7235,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "name": "Always Animate",
+      "description": "Animates everything that can be animated: profile pictures, banners, server icons, avatar decorations, emoji, stickers, GIFs and status emoji. Pick what you want in the settings and run the self-check to see it work.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "contributors": [
+        "AlwaysAnimate for Vencord by FieryFlames (the idea; code written from scratch for Valenced)",
+        "Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
+      ],
+      "channels": {
+        "latest": "1.0.0"
+      }
     }
   }
 }
