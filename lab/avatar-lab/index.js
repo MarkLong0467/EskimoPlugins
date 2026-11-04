@@ -1,6 +1,6 @@
 (function (exports) {
 	/* Avatar Lab (native test): shows what the native part found inside Discord's Android code. Changes nothing. */
-	const VERSION = '0.2.1'
+	const VERSION = '0.3.0'
 	let text = 'Not asked yet.'
 	let listeners = []
 	const redraw = () => listeners.forEach((fn) => { try { fn() } catch (e) {} })
@@ -36,9 +36,12 @@
 		return h(RN.ScrollView, { style: { flex: 1 }, contentContainerStyle: { paddingBottom: 38 } },
 			h(RN.View, { style: { padding: 14, gap: 10 } },
 				h(Design.Text, { variant: 'heading-lg/bold' }, `Avatar Lab ${VERSION} (native test)`),
-				h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'Nothing runs until you tap a button. Do 1 first, then 3 and look at a chat, then 2 last. After each, tap "Copy report" and paste it in the chat.'),
+				h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'Nothing runs until you tap a button. Do A first, then B, scroll a chat with animated avatars, then Show report. Then C and look at the chat again. 1, 2 and 3 are the older scans. After each, tap "Copy report" and paste it in the chat.'),
 				h(Design.Button, { text: '1. Scan class names (light)', variant: 'primary', size: 'sm', onPress: () => run('names', 'Scanning names') }),
 				h(Design.Button, { text: '2. Scan row fields (heavy, may freeze for a while)', variant: 'secondary', size: 'sm', onPress: () => run('rows', 'Scanning row fields') }),
+				h(Design.Button, { text: 'A. Inspect the chat avatar classes (light)', variant: 'primary', size: 'sm', onPress: () => run('inspect', 'Inspecting') }),
+				h(Design.Button, { text: 'B. Watch animation start/stop calls', variant: 'primary', size: 'sm', onPress: () => run('watch', 'Starting to watch') }),
+				h(Design.Button, { text: 'C. Block/unblock animation stops (toggle)', variant: 'secondary', size: 'sm', onPress: () => run('block', 'Toggling') }),
 				h(Design.Button, { text: '3. Turn animation hooks on (until restart)', variant: 'secondary', size: 'sm', onPress: () => run('hooks', 'Turning hooks on') }),
 				h(RN.View, { style: { flexDirection: 'row', gap: 10 } },
 					h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Show report', variant: 'secondary', size: 'sm', onPress: ask })),
