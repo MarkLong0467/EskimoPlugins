@@ -1509,6 +1509,19 @@
               "version": "*"
             }
           }
+        },
+        "1.6.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.always-animate@1.6.0.zip",
+          "sha256": "49018d9fbecdf2deb40acd63f4d4e372b7c77b1f21609a6fd8e4c4f348622277",
+          "size": 14056,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
         }
       },
       "name": "Always Animate",
