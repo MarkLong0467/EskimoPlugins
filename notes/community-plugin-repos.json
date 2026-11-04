@@ -75,8 +75,249 @@
   {
    "repo": "SheWhoReignsSupreme/valenced-plugins",
    "install": "https://val.is-your.app/ (source https://code.is-your.app/SheWhoReignsSupreme/valenced-plugins)",
-   "readable": false,
-   "plugins": []
+   "readable": true,
+   "plugins": [
+    {
+     "id": "(not shown on the page)",
+     "name": "Auto Quest",
+     "version": "1.1.1",
+     "author": "Rosie",
+     "description": "Automatically completes 'watch a video' Discord quests after you accept them."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Better Devices",
+     "version": "1.1.2",
+     "author": "Rosie, kmmiio99o",
+     "description": "Better session control: multi-select logout, new-device alerts, and clearer device details."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "BetterInbox",
+     "version": "1.1.2",
+     "author": "Rosie",
+     "description": "Categorizes Discord notifications into clean tabs with filters for mentions, replies, reactions, and threads."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Chat Bubbles",
+     "version": "1.1.3",
+     "author": "Rosie, kmmiio99o",
+     "description": "Adds customizable chat bubbles to the chat, similar to Flowercord."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Chatbox Avatar",
+     "version": "1.1.2",
+     "author": "Rosie, kmmiio99o",
+     "description": "Quickly view your profile from the chatbox."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Client Utils",
+     "version": "1.1.1",
+     "author": "Rosie",
+     "description": "Custom client-side slash command engine and built-in Discord utilities."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "CloudSync",
+     "version": "1.1.1",
+     "author": "Rosie",
+     "description": "Sync and backup your plugins, themes, and settings seamlessly to the cloud."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Clyde Utils",
+     "version": "1.1.2",
+     "author": "Rosie",
+     "description": "Customizes Clyde's name, avatar, banner, bio, bot badge, role color, with built-in AI presets, live chat testing, and Destroy Clyde mode."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Diagnostics",
+     "version": "1.1.1",
+     "author": "Rosie",
+     "description": "Checks your plugins loaded and are up to date, keeps crash logs, and adds /plugins for bug reports."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Dreamscape",
+     "version": "1.1.1",
+     "author": "Rosie",
+     "description": "A tear in Discord that opens onto living shader worlds, or a browser."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Emoji Packs",
+     "version": "1.1.1",
+     "author": "Rosie",
+     "description": "28 emoji styles, from Apple to SerenityOS, for Valenced's Themes."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "File Uploader",
+     "version": "1.1.1",
+     "author": "Rosie",
+     "description": "Upload files and attachments to 18+ services (Zipline, E-Z Host, Nest, S3, Catbox, 0x0, Litterbox, GoFile, tmpfiles, buzzheavier, temp.sh, filebin, PixelVault, PixelDrain, ShareX, WebDAV, Immich) and shorten URLs."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Font Packs",
+     "version": "1.1.1",
+     "author": "Rosie",
+     "description": "33 community fonts, from Poppins to Comic Sans and Griffy, for Valenced's Themes."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Global Emojis",
+     "version": "1.1.1",
+     "author": "Rosie",
+     "description": "A shared emoji collection you can use in any chat, shown as real emoji to everyone with the plugin."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Hex Color",
+     "version": "1.0.1",
+     "author": "Rosie",
+     "description": "Highlights 3, 6, and 8-digit hex colors in chat messages and the text box with native preview styling."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Icon Packs",
+     "version": "1.1.1",
+     "author": "Rosie",
+     "description": "Solar, MD3, IconPark and 16 more icon packs for Valenced's Themes."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "ImageStealer",
+     "version": "1.1.1",
+     "author": "Rosie",
+     "description": "Steal custom emojis and stickers from messages and reactions, save to your Cloudflare-synced Vault or Discord servers, and send anywhere without Nitro."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Live Markdown",
+     "version": "1.1.1",
+     "author": "Rosie",
+     "description": "Shows bold, italics, code, spoilers and more styled as you type a message."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Markdown Toolbar",
+     "version": "1.1.2",
+     "author": "Rosie, kmmiio99o",
+     "description": "Floating markdown formatting bar under chat input."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Message Tweaks",
+     "version": "1.1.2",
+     "author": "Rosie, kmmiio99o",
+     "description": "Keep deleted messages in chat with red tint and an edit-history trail, unspoiler everything, precise timestamps, usernames next to nicknames, and /read slash commands."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "More Alts!",
+     "version": "1.1.2",
+     "author": "Rosie",
+     "description": "Manage and switch between multiple Discord accounts, plus unlocks Discord's own native multi-account switcher."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Plugin Browser",
+     "version": "1.1.1",
+     "author": "Rosie, K1NG",
+     "description": "Browse third-party repositories, see what they offer, and add them to Valenced."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Quoter",
+     "version": "1.1.1",
+     "author": "Rosie, Benjii",
+     "description": "Generate beautiful quote card images directly from messages with full customization."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "RoseLib",
+     "version": "1.1.3",
+     "author": "Rosie",
+     "description": "Core library providing media session hooks, chat bubble styling, declutter, reflection, and cloud access control for Rosie plugins."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Server Info",
+     "version": "1.1.2",
+     "author": "Rosie, kmmiio99o",
+     "description": "View server information from the guild context menu."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Split Messages",
+     "version": "1.1.1",
+     "author": "Rosie",
+     "description": "Automatically splits messages over Discord's character limit into multiple sequential messages instead of blocking the send."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Themes",
+     "version": "1.1.1",
+     "author": "Rosie, Contra",
+     "description": "Colour themes, fonts, icon packs and emoji packs for Discord."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Tilt Physics",
+     "version": "1.1.1",
+     "author": "Rosie",
+     "description": "Tilt your phone to make avatars and emoji slide around, or make chat slosh like water."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Toast API",
+     "version": "1.1.1",
+     "author": "Rosie, kmmiio99o",
+     "description": "Customizable toast notifications engine and API with rich animations, icons, subtitles, and styling."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Typing Styles",
+     "version": "1.1.1",
+     "author": "Rosie",
+     "description": "Custom typing indicators shared through a maintainer-operated service."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "Vencord Tab",
+     "version": "1.1.2",
+     "author": "Rosie",
+     "description": "Discord's web app with Vencord or Equicord, in a tab of the emoji picker."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "ViewRaw",
+     "version": "1.1.1",
+     "author": "Rosie",
+     "description": "View a message's raw JSON data - searchable, syntax-highlighted, and copyable with one tap."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "VodkaXMartini Themes",
+     "version": "1.1.1",
+     "author": "Rosie",
+     "description": "15 of VodkaXMartini's themes, from Ataraxia to Purple Galaxy, for Valenced's Themes."
+    },
+    {
+     "id": "(not shown on the page)",
+     "name": "YouBar+",
+     "version": "1.1.2",
+     "author": "Rosie, Benjii",
+     "description": "Customize your YouBar bottom navigation bar with Direct Messages and Settings shortcuts."
+    }
+   ],
+   "repo_name": "Rosie's Valenced Plugins (val.is-your.app, Forgejo)",
+   "note": "Copied by the user from the website https://val.is-your.app on 2026-11-04 because this session cannot reach the site. Plugin ids are not shown on the page; the page says \"Native DEX\" plugins exist."
   },
   {
    "repo": "bleelblep/bleel-bazinga-repo",

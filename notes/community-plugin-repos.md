@@ -1,7 +1,7 @@
 # Community Valenced plugin repositories
 
-Read on 2026-11-04 from each repo's `gh-pages/index.json` (raw.githubusercontent.com). 121 plugins in 14 readable repositories.
-Not readable: SheWhoReignsSupreme/valenced-plugins. The GitHub organisation `Valenced` may hold more repositories; only `valenced-community-plugins` was listed.
+Read on 2026-11-04 from each repo's `gh-pages/index.json` (raw.githubusercontent.com). 155 plugins in 15 repositories.
+Not readable by this session: none (the Rosie / SheWhoReignsSupreme list was pasted by the user). The GitHub organisation `Valenced` may hold more repositories; only `valenced-community-plugins` was listed.
 
 ## k1ng_op Plugins  (9 plugins)
 - Install: https://k1ng0p.github.io/Valenced-Plugins-by-k1ng0p/
@@ -17,10 +17,43 @@ Not readable: SheWhoReignsSupreme/valenced-plugins. The GitHub organisation `Val
 - **ValidUser** `k1ngop.valid-user` v1.0.4 · k1ng_op — Fixes unresolved user mentions like @unknown-user to a normal clickable mention.
 - **Watchlist** `k1ngop.watchlist` v1.1.0 · k1ng_op — Shows toasts when users you track change status, start typing, or send a message.
 
-## SheWhoReignsSupreme/valenced-plugins
-- Install: https://val.is-your.app/ (source https://code.is-your.app/SheWhoReignsSupreme/valenced-plugins)
-- Source: https://github.com/SheWhoReignsSupreme/valenced-plugins
-- **Could not be read** from this session (host blocked or no index.json on gh-pages/main). Not listed.
+## Rosie's Valenced Plugins  (34 plugins)
+- Install: https://val.is-your.app (source https://code.is-your.app/SheWhoReignsSupreme/valenced-plugins, a Forgejo site)
+- Copied from the website by the user on 2026-11-04 (this session cannot reach the site). Ids are not shown on the page. Categories on the site: All, Native DEX, Chat & UI, Themes & Media, Utilities.
+- **Auto Quest** v1.1.1 · Rosie — Automatically completes 'watch a video' Discord quests after you accept them.
+- **Better Devices** v1.1.2 · Rosie, kmmiio99o — Better session control: multi-select logout, new-device alerts, and clearer device details.
+- **BetterInbox** v1.1.2 · Rosie — Categorizes Discord notifications into clean tabs with filters for mentions, replies, reactions, and threads.
+- **Chat Bubbles** v1.1.3 · Rosie, kmmiio99o — Adds customizable chat bubbles to the chat, similar to Flowercord.
+- **Chatbox Avatar** v1.1.2 · Rosie, kmmiio99o — Quickly view your profile from the chatbox.
+- **Client Utils** v1.1.1 · Rosie — Custom client-side slash command engine and built-in Discord utilities.
+- **CloudSync** v1.1.1 · Rosie — Sync and backup your plugins, themes, and settings seamlessly to the cloud.
+- **Clyde Utils** v1.1.2 · Rosie — Customizes Clyde's name, avatar, banner, bio, bot badge, role color, with built-in AI presets, live chat testing, and Destroy Clyde mode.
+- **Diagnostics** v1.1.1 · Rosie — Checks your plugins loaded and are up to date, keeps crash logs, and adds /plugins for bug reports.
+- **Dreamscape** v1.1.1 · Rosie — A tear in Discord that opens onto living shader worlds, or a browser.
+- **Emoji Packs** v1.1.1 · Rosie — 28 emoji styles, from Apple to SerenityOS, for Valenced's Themes.
+- **File Uploader** v1.1.1 · Rosie — Upload files and attachments to 18+ services (Zipline, E-Z Host, Nest, S3, Catbox, 0x0, Litterbox, GoFile, tmpfiles, buzzheavier, temp.sh, f…
+- **Font Packs** v1.1.1 · Rosie — 33 community fonts, from Poppins to Comic Sans and Griffy, for Valenced's Themes.
+- **Global Emojis** v1.1.1 · Rosie — A shared emoji collection you can use in any chat, shown as real emoji to everyone with the plugin.
+- **Hex Color** v1.0.1 · Rosie — Highlights 3, 6, and 8-digit hex colors in chat messages and the text box with native preview styling.
+- **Icon Packs** v1.1.1 · Rosie — Solar, MD3, IconPark and 16 more icon packs for Valenced's Themes.
+- **ImageStealer** v1.1.1 · Rosie — Steal custom emojis and stickers from messages and reactions, save to your Cloudflare-synced Vault or Discord servers, and send anywhere wit…
+- **Live Markdown** v1.1.1 · Rosie — Shows bold, italics, code, spoilers and more styled as you type a message.
+- **Markdown Toolbar** v1.1.2 · Rosie, kmmiio99o — Floating markdown formatting bar under chat input.
+- **Message Tweaks** v1.1.2 · Rosie, kmmiio99o — Keep deleted messages in chat with red tint and an edit-history trail, unspoiler everything, precise timestamps, usernames next to nicknames…
+- **More Alts!** v1.1.2 · Rosie — Manage and switch between multiple Discord accounts, plus unlocks Discord's own native multi-account switcher.
+- **Plugin Browser** v1.1.1 · Rosie, K1NG — Browse third-party repositories, see what they offer, and add them to Valenced.
+- **Quoter** v1.1.1 · Rosie, Benjii — Generate beautiful quote card images directly from messages with full customization.
+- **RoseLib** v1.1.3 · Rosie — Core library providing media session hooks, chat bubble styling, declutter, reflection, and cloud access control for Rosie plugins.
+- **Server Info** v1.1.2 · Rosie, kmmiio99o — View server information from the guild context menu.
+- **Split Messages** v1.1.1 · Rosie — Automatically splits messages over Discord's character limit into multiple sequential messages instead of blocking the send.
+- **Themes** v1.1.1 · Rosie, Contra — Colour themes, fonts, icon packs and emoji packs for Discord.
+- **Tilt Physics** v1.1.1 · Rosie — Tilt your phone to make avatars and emoji slide around, or make chat slosh like water.
+- **Toast API** v1.1.1 · Rosie, kmmiio99o — Customizable toast notifications engine and API with rich animations, icons, subtitles, and styling.
+- **Typing Styles** v1.1.1 · Rosie — Custom typing indicators shared through a maintainer-operated service.
+- **Vencord Tab** v1.1.2 · Rosie — Discord's web app with Vencord or Equicord, in a tab of the emoji picker.
+- **ViewRaw** v1.1.1 · Rosie — View a message's raw JSON data - searchable, syntax-highlighted, and copyable with one tap.
+- **VodkaXMartini Themes** v1.1.1 · Rosie — 15 of VodkaXMartini's themes, from Ataraxia to Purple Galaxy, for Valenced's Themes.
+- **YouBar+** v1.1.2 · Rosie, Benjii — Customize your YouBar bottom navigation bar with Direct Messages and Settings shortcuts.
 
 ## Bazinga Plugins  (17 plugins)
 - Install: https://bleelblep.github.io/bleel-bazinga-repo/index.json
