@@ -8,7 +8,7 @@
 		"AlwaysAnimate for Vencord by FieryFlames (the idea; code written from scratch for Valenced)",
 		"Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
 	],
-	"version": "1.6.0",
+	"version": "2.0.0",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"
@@ -18,6 +18,7 @@
 		}
 	},
 	"dist": {
-		"script": "index.js"
+		"script": "index.js",
+		"android": { "path": "plugin.jar", "class": "marklong.alwaysanimate.AlwaysAnimateNative" }
 	}
 }

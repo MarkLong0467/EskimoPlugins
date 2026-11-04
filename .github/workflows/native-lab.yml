@@ -22,7 +22,7 @@ jobs:
         working-directory: valenced-src
         run: ./gradlew :core:publishToMavenLocal :android:api:publishToMavenLocal -x test --no-daemon
       - name: Build the lab plugins
-        run: ./valenced-src/gradlew -p lab :avatar-lab:dexJar :chat-animator:dexJar --no-daemon
+        run: ./valenced-src/gradlew -p lab :avatar-lab:dexJar :chat-animator:dexJar :always-animate-native:dexJar --no-daemon
       - name: Package
         run: |
           mkdir -p out
@@ -32,6 +32,11 @@ jobs:
             v=$(sed -nE 's/.*"version": "([^"]+)".*/\1/p' "$d/manifest.json" | head -1)
             (cd "$d" && zip -qX "../../out/$id@$v.zip" manifest.json index.js plugin.jar)
           done
+          # Always Animate: its own files (plugins/always-animate) plus the native jar
+          d=plugins/always-animate
+          cp lab/always-animate-native/build/outputs/plugin/plugin.jar "$d/plugin.jar"
+          v=$(sed -nE 's/.*"version": "([^"]+)".*/\1/p' "$d/manifest.json" | head -1)
+          (cd "$d" && zip -qX "../../out/marklong.always-animate@$v.zip" manifest.json index.js plugin.jar)
       - uses: actions/upload-artifact@v4
         with: { name: lab-zips, path: out/*.zip }
       - name: Publish the zips on the lab-builds branch

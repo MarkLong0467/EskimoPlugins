@@ -21,7 +21,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.6.0'
+	const VERSION = '2.0.0'
 
 	// ---------------------------------------------------------------------------------------------------
 	// Small helpers
@@ -626,6 +626,42 @@
 		})
 	}
 
+	// ---------------------------------------------------------------------------------------------------
+	// 7b. The native part (Kotlin, inside Discord): keeps animated profile pictures playing in the native chat
+	// ---------------------------------------------------------------------------------------------------
+	const nat = { info: {}, error: '' }
+	function nativeCaller() {
+		const n = valenced.modules && valenced.modules.native
+		if (n && typeof n.callNativeMethod === 'function') return n.callNativeMethod
+		if (valenced.native && typeof valenced.native.callNativeMethod === 'function') return valenced.native.callNativeMethod
+		return null
+	}
+	const parseState = (text) => { const out = {}; String(text).split(';').forEach((part) => { const i = part.indexOf('='); if (i > 0) out[part.slice(0, i)] = part.slice(i + 1) }); return out }
+	async function nativeCall(name, args) {
+		const fn = nativeCaller()
+		if (!fn) throw new Error('The native part is not reachable. Restart Discord.')
+		return parseState(await fn(`marklong.always-animate.${name}`, args || []))
+	}
+	async function nativeRefresh() {
+		try { nat.info = await nativeCall('state'); nat.error = '' } catch (e) { nat.error = String((e && e.message) || e).slice(0, 100) }
+		redrawSettings()
+	}
+	async function nativeSet(key, value) {
+		try { nat.info = await nativeCall('set', [key, String(value)]); nat.error = '' } catch (e) { nat.error = String((e && e.message) || e).slice(0, 100); toast('Could not change that') }
+		redrawSettings()
+	}
+	function nativeReportLines() {
+		const i = nat.info
+		if (nat.error && !Object.keys(i).length) return [`native chat part: ${nat.error}`]
+		return [
+			`native chat part: ${i.enabled === 'false' ? 'off' : i.running === 'true' ? 'running' : 'waiting'}; guard tripped ${i.guardTripped}; animated pictures seen ${i.animated}, restarted ${i.restarts}x; chat messages seen ${i.binds}, on screen ${i.attached}; hook: ${i.hook}${i.error ? `; error ${i.error}` : ''}`,
+			`native ears: ${i.earViews} ear views seen, ${i.earViewsAnimated} with an animation; mode ${i.earMode}`,
+			`native ear addresses: ${i.earsSeen || '-'}`,
+			`native ear addresses after the mode: ${i.earsOut || '-'}`,
+			`native ear files: ${i.earFiles || '-'}`,
+		]
+	}
+
 	function buildReport() {
 		const lines = ['Always Animate report', `version: ${VERSION}`]
 		lines.push(`chat json: ${found.chatJson || 'not hooked'}; updates ${chatJson.updates}, change ops ${chatJson.ops}; flipped ${chatJson.flipped}${chatJson.flippedKeys.size ? ` (${[...chatJson.flippedKeys].join(', ')})` : ''}; added ${chatJson.added}`)
@@ -641,6 +677,7 @@
 		FEATURES.forEach((f) => lines.push(`${f.key}: ${setting(f.key) ? 'on' : 'off'}; ${found[f.key] || 'not hooked'}; Discord used it ${seen[f.key]} time(s), changed ${forced[f.key]}`))
 		const top = Object.keys(perFunction).sort((a, b) => perFunction[b].seen - perFunction[a].seen).slice(0, 8)
 		if (top.length) lines.push(`pictures by function (used/changed): ${top.map((n) => `${n} ${perFunction[n].seen}/${perFunction[n].changed}`).join(', ')}`)
+		lines.push(...nativeReportLines())
 		runSelfCheck().forEach((r) => lines.push(`check - ${r.label}: ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`))
 		if (problems.length) lines.push(`problems: ${problems.join(' | ')}`)
 		return lines.join('\n')
@@ -692,7 +729,9 @@
 		React.useEffect(() => {
 			const redraw = () => setRedraws((n) => n + 1)
 			screenListeners.push(redraw)
-			return () => { screenListeners = screenListeners.filter((l) => l !== redraw) }
+			nativeRefresh()
+			const nativeTimer = setInterval(nativeRefresh, 2500)
+			return () => { clearInterval(nativeTimer); screenListeners = screenListeners.filter((l) => l !== redraw) }
 		}, [])
 
 		const featureRow = (feature) => {
@@ -707,6 +746,29 @@
 			)
 		}
 		const onCount = FEATURES.filter((f) => setting(f.key)).length
+
+		const nativeSection = () => {
+			const i = nat.info
+			const on = i.enabled !== 'false'
+			const saver = Number(i.intervalMs || 400) >= 1000
+			const status = nat.error && !Object.keys(i).length ? nat.error : !on ? 'Off' : i.running === 'true' ? `On. Keeping ${i.animated || 0} animated pictures playing` : 'Waiting to start (a few seconds after Discord opens)'
+			const mode = String(i.earMode || '0')
+			return h(RN.View, { key: 'native', style: { gap: 10 } },
+				h(Design.Text, { variant: 'text-sm/semibold', color: 'text-muted' }, 'CHAT PHOTOS (NATIVE PART)'),
+				h(Design.TableRowGroup, { title: '' },
+					h(Design.TableRow, { key: 'nstatus', label: 'Status', subLabel: status }),
+					h(Design.TableSwitchRow, { key: 'non', label: 'Keep profile pictures animated in chat', subLabel: 'Works inside Discord\'s own chat. Starts a few seconds after Discord opens', value: on, onValueChange: (v) => nativeSet('enabled', !!v) }),
+					h(Design.TableSwitchRow, { key: 'nsaver', label: 'Battery saver', subLabel: 'Checks once a second instead of about twice a second', value: saver, onValueChange: (v) => nativeSet('intervalMs', v ? 1000 : 400) })),
+				i.guardTripped === 'true' && h(RN.View, { key: 'nguard', style: { gap: 8 } },
+					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'The last start did not finish before Discord closed, so it waited.'),
+					h(Design.Button, { text: 'Start now', variant: 'primary', size: 'sm', onPress: () => nativeSet('start', true) })),
+				h(Card, { key: 'nears' },
+					h(Design.Text, { variant: 'text-sm/semibold' }, 'Ears (avatar decorations): experiment'),
+					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'Ears do not animate in chat yet. Try these forms of the ear picture one at a time. After picking one, leave the chat and open it again, then look at the ears. Tell me which one moves them.'),
+					...[['0', 'Mode 0: off'], ['1', 'Mode 1: webp'], ['2', 'Mode 2: webp, animated'], ['3', 'Mode 3: gif']].map(([m, label]) =>
+						h(Design.Button, { key: m, text: `${mode === m ? '(selected) ' : ''}${label}`, variant: mode === m ? 'primary' : 'secondary', size: 'sm', onPress: () => { nativeSet('earMode', m); toast('Open the chat again') } })),
+					i.earFiles ? h(Design.Text, { variant: 'text-xs/medium', color: 'text-muted', selectable: true }, `Ear files: ${i.earFiles}`) : null))
+		}
 		const working = FEATURES.filter((f) => setting(f.key) && forced[f.key] > 0).length
 
 		return h(
@@ -734,6 +796,7 @@
 				h(RN.View, { style: { gap: 4 } },
 					h(Design.Text, { variant: 'text-sm/semibold', color: 'text-muted' }, 'WHAT ANIMATES'),
 					h(Design.TableRowGroup, { title: '' }, ...FEATURES.slice(0, 9).map(featureRow))),
+				nativeSection(),
 				setting('chat') && h(Design.TableRowGroup, { key: 'chatJson', title: 'Chat rows (what the native chat is sent)' },
 					h(Design.TableSwitchRow, { key: 'chatFlip', label: 'Switch on animation flags in chat rows', subLabel: 'Any animation switch in a row that is off is turned on. Nothing is added to the row', value: !!setting('chatFlip'), onValueChange: (value) => saveSettings({ chatFlip: !!value }) }),
 					h(Design.TableSwitchRow, { key: 'chatExtra', label: 'Experiment: add animation flags to chat rows', subLabel: 'Adds nine made-up animation flags (animateAvatar and so on). If the native chat does not know a field it may refuse the row: turn this off if the chat breaks', value: !!setting('chatExtra'), onValueChange: (value) => { saveSettings({ chatExtra: !!value }); toast(value ? 'Open the chat again. Turn this off if it looks broken.' : 'Off') } }),
@@ -773,6 +836,8 @@
 			const apngTimers = [1000, 3000, 8000].map((ms) => setTimeout(() => { if (!apngModule) { try { hookApng(api.cleanup) } catch (e) {} } else sendApng() }, ms))
 			api.cleanup(() => apngTimers.forEach(clearTimeout))
 			attempt('chat json', () => hookChatUpdates(api.cleanup))
+			const nativeLooks = [3000, 9000].map((ms) => setTimeout(nativeRefresh, ms))
+			api.cleanup(() => nativeLooks.forEach(clearTimeout))
 			// The server list and other screens were drawn before the plugin was in place: draw them again.
 			const timers = [1500, 5000].map((ms) => setTimeout(refreshPictures, ms))
 			// What was not found yet is looked for again a few times, and the pictures drawn again when it turns up.
