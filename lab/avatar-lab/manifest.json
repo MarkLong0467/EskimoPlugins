@@ -1,0 +1,11 @@
+{
+	"format": 1,
+	"id": "marklong.avatar-lab",
+	"name": "Avatar Lab (native test)",
+	"description": "Test plugin. Looks inside Discord's Android code for the classes that draw chat avatars and decorations, so animation can be fixed there. Changes nothing.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [],
+	"version": "0.1.0",
+	"dependencies": { "valenced.api": { "version": ">=1 <2" }, "discord": { "version": "*" } },
+	"dist": { "script": "index.js", "android": { "path": "plugin.jar", "class": "marklong.avatarlab.AvatarLab" } }
+}
