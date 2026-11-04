@@ -1459,6 +1459,19 @@
               "version": "*"
             }
           }
+        },
+        "1.1.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.crop-plus@1.1.0.zip",
+          "sha256": "928270073b669323b1b1001f49181fcef27e9726b3de20c8e13acfbb96f0d88f",
+          "size": 9548,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
         }
       },
       "name": "Crop Plus",
@@ -1468,7 +1481,7 @@
         "Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
       ],
       "channels": {
-        "latest": "1.0.0"
+        "latest": "1.1.0"
       }
     }
   }
