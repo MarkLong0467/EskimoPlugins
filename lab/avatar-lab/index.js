@@ -1,6 +1,6 @@
 (function (exports) {
 	/* Avatar Lab (native test): shows what the native part found inside Discord's Android code. Changes nothing. */
-	const VERSION = '0.2.0'
+	const VERSION = '0.2.1'
 	let text = 'Not asked yet.'
 	let listeners = []
 	const redraw = () => listeners.forEach((fn) => { try { fn() } catch (e) {} })
@@ -11,12 +11,16 @@
 		if (valenced.native && typeof valenced.native.callNativeMethod === 'function') return valenced.native.callNativeMethod
 		return null
 	}
-	async function ask() {
+	async function run(name, note) {
 		const call = nativeCall()
 		if (!call) { text = 'The JavaScript side cannot reach the native bridge (no callNativeMethod found).'; redraw(); return }
-		try { text = String(await call('marklong.avatar-lab.report', [])) } catch (e) { text = `Could not ask the native part: ${(e && e.message) || e}` }
+		try {
+			if (name) { text = `${note}...`; redraw(); text = String(await call(`marklong.avatar-lab.${name}`, [])) + '\n\n' }
+			text += String(await call('marklong.avatar-lab.report', []))
+		} catch (e) { text = `Could not ask the native part: ${(e && e.message) || e}` }
 		redraw()
 	}
+	const ask = () => run(null)
 	function h(type, props, ...children) {
 		const rt = valenced.react.ReactJSXRuntime
 		const { key, ...rest } = props || {}
@@ -32,13 +36,16 @@
 		return h(RN.ScrollView, { style: { flex: 1 }, contentContainerStyle: { paddingBottom: 38 } },
 			h(RN.View, { style: { padding: 14, gap: 10 } },
 				h(Design.Text, { variant: 'heading-lg/bold' }, `Avatar Lab ${VERSION} (native test)`),
-				h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'Tap "Ask the native part", wait a few seconds, then "Copy report" and paste it in the chat.'),
+				h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'Nothing runs until you tap a button. Do 1 first, then 3 and look at a chat, then 2 last. After each, tap "Copy report" and paste it in the chat.'),
+				h(Design.Button, { text: '1. Scan class names (light)', variant: 'primary', size: 'sm', onPress: () => run('names', 'Scanning names') }),
+				h(Design.Button, { text: '2. Scan row fields (heavy, may freeze for a while)', variant: 'secondary', size: 'sm', onPress: () => run('rows', 'Scanning row fields') }),
+				h(Design.Button, { text: '3. Turn animation hooks on (until restart)', variant: 'secondary', size: 'sm', onPress: () => run('hooks', 'Turning hooks on') }),
 				h(RN.View, { style: { flexDirection: 'row', gap: 10 } },
-					h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Ask the native part', variant: 'primary', size: 'sm', onPress: ask })),
+					h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Show report', variant: 'secondary', size: 'sm', onPress: ask })),
 					h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Copy report', variant: 'secondary', size: 'sm', onPress: () => { try { valenced.externals.ReactNativeClipboard.Clipboard.setString(`Avatar Lab ${VERSION}\n${text}`); toast('Copied') } catch (e) { toast('Could not copy') } } }))),
 				h(Design.Text, { variant: 'text-xs/normal', selectable: true }, text.slice(0, 2500))))
 	}
 	Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
-	exports.default = plugin({ SettingsComponent: Screen, start(api) { api.cleanup(() => { listeners = [] }); ask() } })
+	exports.default = plugin({ SettingsComponent: Screen, start(api) { api.cleanup(() => { listeners = [] }) } })
 	return exports
 })({})

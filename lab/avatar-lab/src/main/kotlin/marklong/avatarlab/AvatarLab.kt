@@ -4,6 +4,7 @@ package marklong.avatarlab
 
 import app.valenced.plugins.PluginScope
 import app.valenced.plugins.plugin
+import app.valenced.xposed.api.registerNativeAsyncMethod
 import app.valenced.xposed.api.registerNativeMethod
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
@@ -57,29 +58,39 @@ private fun force(scope: PluginScope, className: String, method: String, index: 
     notes += "$className.$method: hooked $n overload(s)"
 }
 
-/** Looks for Discord classes by name and by the row field names, and forces image playback on. */
+/** Does nothing at startup. Everything runs only when a button is tapped, so a bad step can't stop Discord from opening. */
 val avatarLab = plugin {
     start {
-        var scan = "scan not finished yet"
         val notes = mutableListOf<String>()
+        var names = "not asked"
+        var rows = "not asked"
         registerNativeMethod("marklong.avatar-lab.report") {
             buildString {
                 append("## hooks\n")
                 notes.forEach { append(it).append('\n') }
                 hits.entries.sortedBy { it.key }.forEach { append("  ${it.key}: ${it.value.get()}\n") }
-                append("\n").append(scan)
+                append("\n## names\n").append(names).append("\n\n## rows\n").append(rows)
             }
         }
-        runCatching {
-            force(this, FAST_IMAGE, "setPaused", 1, false, notes)
-            force(this, FAST_IMAGE, "setEnableAnimation", 1, true, notes)
-            force(this, FAST_IMAGE, "setAutoPlay", 1, true, notes)
-            force(this, APNG_DECORATION, "setAutoplay", 1, true, notes)
-        }.onFailure { notes += "hook error: ${it::class.java.name}: ${it.message}" }
-        Thread {
-            scan = runCatching { scan(this) }.getOrElse { "error: ${it::class.java.name}: ${it.message}" }
-            log.i("Avatar Lab finished (${scan.length} chars)")
-        }.start()
+        registerNativeAsyncMethod("marklong.avatar-lab.names") {
+            names = runCatching { scanNames(this) }.getOrElse { "error: ${it::class.java.name}: ${it.message}" }
+            "names done (${names.length} chars)"
+        }
+        registerNativeAsyncMethod("marklong.avatar-lab.rows") {
+            rows = runCatching { scanRows(this) }.getOrElse { "error: ${it::class.java.name}: ${it.message}" }
+            "rows done (${rows.length} chars)"
+        }
+        registerNativeMethod("marklong.avatar-lab.hooks") {
+            if (unhooks.isNotEmpty()) "already on" else {
+                runCatching {
+                    force(this, FAST_IMAGE, "setPaused", 1, false, notes)
+                    force(this, FAST_IMAGE, "setEnableAnimation", 1, true, notes)
+                    force(this, FAST_IMAGE, "setAutoPlay", 1, true, notes)
+                    force(this, APNG_DECORATION, "setAutoplay", 1, true, notes)
+                }.onFailure { notes += "hook error: ${it::class.java.name}: ${it.message}" }
+                "hooks on: ${unhooks.size}"
+            }
+        }
     }
     stop {
         unhooks.forEach { runCatching { it.unhook() } }
@@ -87,10 +98,10 @@ val avatarLab = plugin {
     }
 }
 
-private fun scan(scope: PluginScope): String {
+private fun scanNames(scope: PluginScope): String {
     val loader = scope.classLoader
-    val found = scope.dexFinder.findValue("avatar-lab:v2", { s: String -> s }, { it }) {
-        val out = StringBuilder("## classes by name\n")
+    val found = scope.dexFinder.findValue("avatar-lab:names2", { s: String -> s }, { it }) {
+        val out = StringBuilder()
         for (word in NAME_WORDS) {
             val hit = findClass {
                 searchPackages("com.discord")
@@ -99,7 +110,22 @@ private fun scan(scope: PluginScope): String {
             out.append("# $word (${hit.size})\n")
             hit.take(70).forEach { out.append(it).append('\n') }
         }
-        out.append("\n## classes using the row field names\n")
+        out.toString()
+    } ?: return "dex scan returned nothing"
+    val sb = StringBuilder(found).append("\n## details\n")
+    runCatching {
+        val manager = loader.loadClass(FAST_IMAGE)
+        val playback = manager.declaredMethods.firstOrNull { it.name == "getPlayback" && it.returnType != Any::class.java }
+        playback?.parameterTypes?.firstOrNull()?.let { sb.append("\nFastImageView class:").append(dump(it, 70)) }
+        playback?.returnType?.let { sb.append("\nPlayback type:").append(dump(it)) }
+    }
+    return sb.toString()
+}
+
+private fun scanRows(scope: PluginScope): String {
+    val loader = scope.classLoader
+    val found = scope.dexFinder.findValue("avatar-lab:rows2", { s: String -> s }, { it }) {
+        val out = StringBuilder()
         for (s in ROW_STRINGS) {
             val hit = findClass { matcher { usingStrings(s) } }.map { it.name }.sorted()
             out.append("# \"$s\" (${hit.size})\n")
@@ -107,19 +133,8 @@ private fun scan(scope: PluginScope): String {
         }
         out.toString()
     } ?: return "dex scan returned nothing"
-
     val sb = StringBuilder(found).append("\n## details\n")
-    // The image view and its playback type.
-    runCatching {
-        val manager = loader.loadClass(FAST_IMAGE)
-        val playback = manager.declaredMethods.firstOrNull { it.name == "getPlayback" && it.returnType != Any::class.java }
-        sb.append(dump(manager))
-        playback?.parameterTypes?.firstOrNull()?.let { sb.append("\nFastImageView class:").append(dump(it, 70)) }
-        playback?.returnType?.let { sb.append("\nPlayback type:").append(dump(it)) }
-    }
-    // Details of the classes that hold the row fields (these are the chat's own avatar code).
-    val rowClasses = found.substringAfter("## classes using the row field names")
-        .lines().filter { it.startsWith("com.") }.distinct().take(12)
-    for (name in rowClasses) runCatching { sb.append(dump(loader.loadClass(name), 60)) }
+    found.lines().filter { it.startsWith("com.") }.distinct().take(12)
+        .forEach { name -> runCatching { sb.append(dump(loader.loadClass(name), 60)) } }
     return sb.toString()
 }
