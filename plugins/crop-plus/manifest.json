@@ -1,0 +1,22 @@
+{
+	"format": 1,
+	"id": "marklong.crop-plus",
+	"name": "Crop Plus",
+	"description": "Crop pictures much smaller than Discord allows: after each crop a sheet offers to crop the result again, so the passes add up. Also sets the cropper's starting shape, grid, rotation and can shrink the result. With a self-check.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [
+		"Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
+	],
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
