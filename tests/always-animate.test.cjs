@@ -34,6 +34,7 @@ function load(settings = {}, options = {}) {
 	const accessibility = { AnimateEmoji: settingsObject(false), AnimateStickers: settingsObject(false), GifAutoPlay: settingsObject(false) }
 	const runtime = { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) }
 	const toasts = []
+	const emitted = []
 	const React = {
 		useState: (initial) => { const state = [initial]; return [initial, (v) => { state[0] = v }] },
 		useEffect: () => {},
@@ -42,7 +43,7 @@ function load(settings = {}, options = {}) {
 	global.valenced = {
 		react: { React, ReactNative: { View: 'V', ScrollView: 'S' }, ReactJSXRuntime: runtime },
 		externals: { ReactNativeClipboard: { Clipboard: { setString: (text) => { global.copied = text } } } },
-		discord: { actions: { ToastActionCreators: { open: (k, o) => toasts.push(o.text) } }, design: { Design: new Proxy({}, { get: (_, key) => key }) } },
+		discord: { actions: { ToastActionCreators: { open: (k, o) => toasts.push(o.text) } }, design: { Design: new Proxy({}, { get: (_, key) => key }) }, flux: { Stores: options.noStores ? {} : { GuildStore: { emitChange: () => emitted.push('GuildStore') }, GuildMemberStore: { emitChange: () => emitted.push('GuildMemberStore') }, UserStore: { emitChange: () => emitted.push('UserStore') } } } },
 		patcher: {
 			after: (object, key, fn) => { const original = object[key]; object[key] = function (...a) { const r = original.apply(this, a); const x = fn.call(this, r); return x === undefined ? r : x }; return () => { object[key] = original } },
 			instead: (object, key, fn) => { const original = object[key]; object[key] = function (...a) { return fn.call(this, a, original) }; return () => { object[key] = original } },
@@ -65,7 +66,7 @@ function load(settings = {}, options = {}) {
 	const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'always-animate', 'index.js'), 'utf8')
 	const plugin = new Function('valenced', 'plugin', `return ${source}`)(global.valenced, global.plugin).default
 	plugin.start({ cleanup: (fn) => fn, jsonStorage: json })
-	return { plugin, data, json, runtime, log, avatarUtils, avatarModule, accessibility, toasts }
+	return { plugin, data, json, runtime, log, avatarUtils, avatarModule, accessibility, toasts, emitted }
 }
 const user = (animated) => ({ id: '123456789012345678', avatar: `${animated ? 'a_' : ''}0123456789abcdef`, discriminator: '0' })
 const texts = (node, out = []) => {
@@ -82,6 +83,7 @@ const texts = (node, out = []) => {
 const expand = (node) => (Array.isArray(node) ? node.map(expand) : node && typeof node === 'object' && typeof node.type === 'function' ? expand(node.type(node.props)) : node && typeof node === 'object' ? { ...node, props: { ...node.props, children: expand(node.props && node.props.children) } } : node)
 const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEach((n) => findAll(n, test, out)); else if (tree && typeof tree === 'object') { if (test(tree)) out.push(tree); findAll(tree.props && tree.props.children, test, out) } return out }
 
+;(async () => {
 // 1. Pictures
 {
 	const app = load()
@@ -122,6 +124,57 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	check('if the settings are not found the plugin still starts', true)
 }
 
+// 2b. Addresses of still pictures
+{
+	const app = load()
+	const hash = 'a_0123456789abcdef0123456789abcdef'
+	const Image = function Image() {}
+	const addr = (uri, extra = {}) => app.runtime.jsx(Image, { source: { uri, ...extra }, style: { width: 40 } }).props.source
+	const icon = `https://cdn.discordapp.com/icons/123456789012345678/${hash}.webp?size=96`
+	check('a still server icon (webp) gets "animated=true"', addr(icon).uri === `${icon}&animated=true`, addr(icon).uri)
+	check('...a png or jpg gets the gif address', addr(`https://cdn.discordapp.com/icons/1/${hash}.png?size=96`).uri === `https://cdn.discordapp.com/icons/1/${hash}.gif?size=96` && addr(`https://media.discordapp.net/avatars/1/${hash}.jpg`).uri === `https://media.discordapp.net/avatars/1/${hash}.gif`)
+	check('...with no query a webp still gets one', addr(`https://cdn.discordapp.com/icons/1/${hash}.webp`).uri === `https://cdn.discordapp.com/icons/1/${hash}.webp?animated=true`)
+	check('an address that is already animated is left alone', addr(`${icon}&animated=true`).uri === `${icon}&animated=true` && addr(`https://cdn.discordapp.com/icons/1/${hash}.gif?size=96`).uri === `https://cdn.discordapp.com/icons/1/${hash}.gif?size=96`)
+	check('a picture that is not animated (no a_ in the hash) is left alone', addr('https://cdn.discordapp.com/icons/1/0123456789abcdef0123456789abcdef.webp?size=96').uri === 'https://cdn.discordapp.com/icons/1/0123456789abcdef0123456789abcdef.webp?size=96')
+	check('an address that is not Discord\u2019s is left alone', addr(`https://example.com/x/${hash}.webp`).uri === `https://example.com/x/${hash}.webp`)
+	check('other parts of the source are kept', addr(icon, { headers: { a: 'b' }, cache: 'force-cache' }).cache === 'force-cache')
+	const list = app.runtime.jsx(Image, { source: [{ uri: icon }, { uri: 'https://x/y.png' }] }).props.source
+	check('a list of sources is handled one by one', Array.isArray(list) && list[0].uri === `${icon}&animated=true` && list[1].uri === 'https://x/y.png')
+	const asNumber = app.runtime.jsx(Image, { source: 18558 })
+	check('a source that is a local picture (a number) is left alone', asNumber.props.source === 18558)
+	const same = app.runtime.jsx(Image, { source: { uri: 'https://x/y.png' } })
+	check('an element without such an address is returned as it was', same.props.source.uri === 'https://x/y.png')
+	check('the screen counts it', /addresses: on; every picture address; Discord used it \d+ time\(s\), changed \d+/.test((() => { findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress(); return global.copied })()) && !/addresses: on; every picture address; Discord used it 0 /.test(global.copied), global.copied)
+	const off = load({ addresses: false })
+	check('with the switch off nothing is rewritten', off.runtime.jsx(Image, { source: { uri: icon } }).props.source.uri === icon)
+}
+
+// 2c. Drawing the pictures on screen again
+{
+	const app = load()
+	const screenFind = (label) => findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === label)[0]
+	screenFind('Refresh the pictures on screen').props.onPress()
+	check('the button makes the stores that draw pictures announce a change', app.emitted.join() === 'GuildStore,GuildMemberStore,UserStore' && app.toasts.some((x) => /drawn again/.test(x)))
+	const lost = load({}, { noStores: true })
+	findAll(expand(lost.plugin.SettingsComponent({ api: { jsonStorage: lost.json } })), (n) => n.props && n.props.text === 'Refresh the pictures on screen')[0].props.onPress()
+	check('without the stores it says so', lost.toasts.some((x) => /Could not refresh/.test(x)))
+	const timed = load()
+	await new Promise((r) => setTimeout(r, 1700))
+	check('on its own the plugin draws the pictures again a moment after it starts', timed.emitted.length >= 3)
+	const toggled = load()
+	const row = findAll(expand(toggled.plugin.SettingsComponent({ api: { jsonStorage: toggled.json } })), (n) => n.props && n.props.label === 'Pictures' && n.props.onValueChange)[0]
+	toggled.emitted.length = 0
+	row.props.onValueChange(false)
+	await new Promise((r) => setTimeout(r, 400))
+	check('changing a picture switch draws them again too', toggled.emitted.length >= 3)
+	const emojiRow = findAll(expand(toggled.plugin.SettingsComponent({ api: { jsonStorage: toggled.json } })), (n) => n.props && n.props.label === 'Emoji' && n.props.onValueChange)[0]
+	toggled.emitted.length = 0
+	emojiRow.props.onValueChange(false)
+	await new Promise((r) => setTimeout(r, 400))
+	check('...but not an emoji switch', toggled.emitted.length === 0)
+	check('the report says how often', /pictures drawn again: \d+x/.test((() => { findAll(expand(toggled.plugin.SettingsComponent({ api: { jsonStorage: toggled.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress(); return global.copied })()))
+}
+
 // 3. Status emoji and everything else
 {
 	function ActivityEmoji() {}
@@ -146,10 +199,10 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	const screen = (settings) => { const a = load(settings); return { a, tree: expand(a.plugin.SettingsComponent({ api: { jsonStorage: a.json } })) } }
 	const { a, tree } = screen({})
 	const shown = texts(tree).join('|')
-	check('the screen shows all six switches', ['Pictures', 'Emoji', 'Stickers', 'GIFs', 'Status emoji', 'Everything else (advanced)'].every((t) => shown.includes(t)), shown.slice(0, 300))
+	check('the screen shows all seven switches', ['Pictures', 'Emoji', 'Stickers', 'GIFs', 'Status emoji', 'Still pictures of animated things', 'Everything else (advanced)'].every((t) => shown.includes(t)), shown.slice(0, 300))
 	check('each switch says what it covers and whether it was found', /AvatarUtils \(\d+ places?, \d+ functions\)/.test(shown) && /UserSettings\.AnimateEmoji/.test(shown), shown.slice(0, 400))
 	const switches = findAll(tree, (n) => n.type === 'TableSwitchRow' && n.props.label)
-	check('there are six switches', switches.length === 6, String(switches.length))
+	check('there are seven switches', switches.length === 7, String(switches.length))
 	switches.find((s) => s.props.label === 'GIFs').props.onValueChange(false)
 	check('a switch saves', a.data.cache.gifs === false)
 	const reportApp = load()
@@ -197,3 +250,4 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 
 console.log(failed ? `\n${failed} check(s) failed` : '\nAll checks passed')
 process.exit(failed ? 1 : 0)
+})()

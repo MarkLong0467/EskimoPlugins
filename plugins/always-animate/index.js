@@ -21,7 +21,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.0.1'
+	const VERSION = '1.1.0'
 
 	// ---------------------------------------------------------------------------------------------------
 	// Small helpers
@@ -56,6 +56,7 @@
 		{ key: 'stickers', on: true, title: 'Stickers', blurb: 'Animated stickers, as if "Animate stickers" were on.' },
 		{ key: 'gifs', on: true, title: 'GIFs', blurb: 'GIFs play by themselves, as if "Play GIFs automatically" were on.' },
 		{ key: 'statusEmoji', on: true, title: 'Status emoji', blurb: 'The emoji of a custom status.' },
+		{ key: 'addresses', on: true, title: 'Still pictures of animated things', blurb: 'A safety net: when a screen is about to show the still version of an animated server icon, profile picture or banner, it gets the animated one. This catches what the other switches miss, for example the server list.' },
 		{ key: 'everything', on: false, title: 'Everything else (advanced)', blurb: 'Switches on every `animate` or `canAnimate` property Discord gives its screens. This can animate things Discord keeps still on purpose.' },
 	]
 	const defaults = Object.fromEntries(FEATURES.map((f) => [f.key, f.on]))
@@ -243,12 +244,68 @@
 		return valenced.react.React.cloneElement(element, patch)
 	}
 
+	// A picture's address says if it is the still or the animated one: an animated picture has a hash that starts with
+	// "a_" and, when asked for as animated, ends in .gif or .webp?animated=true. Discord's server list (GuildsBarGuild)
+	// asks for the animated one only for the open server.
+	const STILL_ADDRESS = /(\/a_[0-9a-f]{6,})\.(png|jpe?g|webp)(\?[^#]*)?$/i
+	function animatedAddress(uri) {
+		if (typeof uri !== 'string' || uri.indexOf('/a_') < 0 || !/discord(app)?\.(com|net)|discordapp/.test(uri)) return uri
+		const m = uri.match(STILL_ADDRESS)
+		if (!m) return uri
+		const query = m[3] || ''
+		if (/[?&]animated=true/.test(query)) return uri
+		const head = uri.slice(0, m.index) + m[1]
+		return m[2].toLowerCase() === 'webp' ? `${head}.webp${query ? `${query}&animated=true` : '?animated=true'}` : `${head}.gif${query}`
+	}
+	/** Rewrites the `source` of an image element when it points at the still version of an animated picture. */
+	function animateAddresses(element) {
+		const props = element.props
+		const source = props && props.source
+		if (!source || typeof source !== 'object') return element
+		let changed = false
+		const fix = (one) => {
+			if (!one || typeof one !== 'object' || typeof one.uri !== 'string') return one
+			const next = animatedAddress(one.uri)
+			if (next === one.uri) return one
+			changed = true
+			return { ...one, uri: next }
+		}
+		const fixed = Array.isArray(source) ? source.map(fix) : fix(source)
+		if (!changed) return element
+		countSeen('addresses', true)
+		return valenced.react.React.cloneElement(element, { source: fixed })
+	}
+
+	/** Makes the pictures that are already on screen be drawn again, now that the plugin is in place. */
+	function refreshPictures() {
+		let count = 0
+		try {
+			const stores = valenced.discord.flux.Stores
+			;['GuildStore', 'GuildMemberStore', 'UserStore'].forEach((name) => {
+				const store = stores && stores[name]
+				if (store && typeof store.emitChange === 'function') { store.emitChange(); count += 1 }
+			})
+		} catch (e) { reportProblem('refresh', e) }
+		refreshed.count += count ? 1 : 0
+		refreshed.at = Date.now()
+		return count
+	}
+	const refreshed = { count: 0, at: 0 }
+	const PICTURE_SWITCHES = ['pictures', 'addresses', 'everything']
+	let refreshTimer
+	/** After a switch changed, the pictures on screen are drawn again once things have settled. */
+	function scheduleRefresh() {
+		clearTimeout(refreshTimer)
+		refreshTimer = setTimeout(refreshPictures, 300)
+	}
+
 	function animateElements(cleanup) {
 		const finders = valenced.modules.finders
 		const runtime = finders.lookupModule(finders.filters.withProps('jsx', 'jsxs'))[0] || valenced.react.ReactJSXRuntime
 		const onNewElement = (element) => {
 			if (!element || !element.props) return element
 			let result = element
+			if (setting('addresses')) result = animateAddresses(result)
 			if (setting('statusEmoji')) result = animateStatusEmoji(result)
 			if (setting('everything')) result = animateEverything(result)
 			return result
@@ -257,6 +314,7 @@
 		;['jsx', 'jsxs'].forEach((name) => {
 			if (runtime && typeof runtime[name] === 'function') { cleanup(valenced.patcher.after(runtime, name, onNewElement)); hooked += 1 }
 		})
+		found.addresses = hooked ? 'every picture address' : 'not found'
 		found.statusEmoji = hooked ? 'every new screen element (ActivityEmoji)' : 'not found'
 		found.everything = hooked ? 'every new screen element' : 'not found'
 	}
@@ -311,6 +369,7 @@
 
 	function buildReport() {
 		const lines = ['Always Animate report', `version: ${VERSION}`]
+		lines.push(`pictures drawn again: ${refreshed.count}x${refreshed.at ? `, last ${new Date(refreshed.at).toLocaleTimeString()}` : ''}`)
 		FEATURES.forEach((f) => lines.push(`${f.key}: ${setting(f.key) ? 'on' : 'off'}; ${found[f.key] || 'not hooked'}; Discord used it ${seen[f.key]} time(s), changed ${forced[f.key]}`))
 		const top = Object.keys(perFunction).sort((a, b) => perFunction[b].seen - perFunction[a].seen).slice(0, 8)
 		if (top.length) lines.push(`pictures by function (used/changed): ${top.map((n) => `${n} ${perFunction[n].seen}/${perFunction[n].changed}`).join(', ')}`)
@@ -369,7 +428,7 @@
 			return h(
 				RN.View,
 				{ key: feature.key, style: { gap: 6 } },
-				h(Design.TableSwitchRow, { label: feature.title, subLabel: feature.blurb, value: !!setting(feature.key), onValueChange: (value) => saveSettings({ [feature.key]: !!value }) }),
+				h(Design.TableSwitchRow, { label: feature.title, subLabel: feature.blurb, value: !!setting(feature.key), onValueChange: (value) => { saveSettings({ [feature.key]: !!value }); if (PICTURE_SWITCHES.includes(feature.key)) scheduleRefresh() } }),
 				h(RN.View, { style: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 6 } },
 					h(Pill, { text: state.text, color: state.color }),
 					found[feature.key] && h(Design.Text, { variant: 'text-xs/medium', color: 'text-muted', numberOfLines: 1, style: { flex: 1 } }, found[feature.key])),
@@ -388,10 +447,11 @@
 					Card,
 					null,
 					h(Design.Text, { variant: 'heading-lg/bold' }, `Always Animate ${VERSION}`),
-					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, `${onCount} of ${FEATURES.length} switches are on, ${working} already changed something. Pictures that were already on screen stay still until Discord loads them again: scroll away and back, or restart Discord.`),
+					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, `${onCount} of ${FEATURES.length} switches are on, ${working} already changed something. Pictures that were already on screen are drawn again after a switch changes or when you tap "Refresh the pictures on screen".`),
 					h(RN.View, { style: { flexDirection: 'row', gap: 10 } },
 						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Run the self-check', variant: 'primary', size: 'sm', onPress: () => setChecks(runSelfCheck()) })),
 						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Copy report', variant: 'secondary', size: 'sm', onPress: copyReport }))),
+					h(Design.Button, { text: 'Refresh the pictures on screen', variant: 'secondary', size: 'sm', onPress: () => { const n = refreshPictures(); toast(n ? 'Pictures are drawn again. Server icons and pictures should animate now.' : 'Could not refresh. Switch server or restart Discord.') } }),
 				),
 				checks && h(
 					Design.TableRowGroup,
@@ -401,8 +461,8 @@
 				),
 				h(RN.View, { style: { gap: 4 } },
 					h(Design.Text, { variant: 'text-sm/semibold', color: 'text-muted' }, 'WHAT ANIMATES'),
-					h(Design.TableRowGroup, { title: '' }, ...FEATURES.slice(0, 5).map(featureRow))),
-				h(Design.TableRowGroup, { title: 'Advanced' }, featureRow(FEATURES[5])),
+					h(Design.TableRowGroup, { title: '' }, ...FEATURES.slice(0, 6).map(featureRow))),
+				h(Design.TableRowGroup, { title: 'Advanced' }, featureRow(FEATURES[6])),
 				h(
 					Design.TableRowGroup,
 					{ title: 'Good to know' },
@@ -427,7 +487,9 @@
 			attempt('pictures', () => allowPictureAnimations(api.cleanup))
 			attempt('emoji, stickers and GIFs', () => allowAccessibilityAnimations(api.cleanup))
 			attempt('status emoji', () => animateElements(api.cleanup))
-			api.cleanup(() => { screenListeners = [] })
+			// The server list and other screens were drawn before the plugin was in place: draw them again.
+			const timers = [1500, 5000].map((ms) => setTimeout(refreshPictures, ms))
+			api.cleanup(() => { screenListeners = []; timers.forEach(clearTimeout); clearTimeout(refreshTimer) })
 		},
 	})
 	return exports
