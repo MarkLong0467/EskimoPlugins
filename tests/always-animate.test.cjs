@@ -69,7 +69,7 @@ function load(settings = {}, options = {}) {
 		},
 	}
 	global.plugin = (definition) => definition
-	const data = { cache: { ...settings } }
+	const data = { cache: { chatFormat2: 'webp', ...settings } } // most tests use webp; the real default is GIF
 	const json = { get cache() { return data.cache }, use() { return data.cache }, set(patch) { Object.assign(data.cache, patch) } }
 	const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'always-animate', 'index.js'), 'utf8')
 	const plugin = new Function('valenced', 'plugin', `return ${source}`)(global.valenced, global.plugin).default
@@ -229,7 +229,7 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 // 2f. Chat picture format and the report sample
 {
 	const hash = 'a_0123456789abcdef0123456789abcdef'
-	const gif = load({ chatFormat: 'gif' })
+	const gif = load({ chatFormat2: 'gif' })
 	const row = gif.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64` })
 	check('with "GIF" chosen a chat picture gets a .gif address, with no webp parameter', row.avatarURL === `https://cdn.discordapp.com/avatars/1/${hash}.gif?size=64`, row.avatarURL)
 	const png = gif.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.png` })
@@ -237,11 +237,14 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	const still = gif.chatModule.default({ avatarURL: 'https://cdn.discordapp.com/avatars/1/0123456789abcdef0123456789abcdef.webp?size=64' })
 	check('...a picture that is not animated stays as it is', still.avatarURL.endsWith('.webp?size=64'))
 	check('...and the decoration is not changed by the picture format', gif.chatModule.default({ avatarDecorationURL: 'https://cdn.discordapp.com/avatar-decoration-presets/a_abc.png?size=96&passthrough=false' }).avatarDecorationURL.includes('passthrough=true'))
-	const webp = load()
-	check('by default it is the animated webp', /\.webp\?size=64&animated=true/.test(webp.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64` }).avatarURL))
+	const webp = load({ chatFormat2: 'webp' })
+	check('"Animated webp" gives the animated webp address', /\.webp\?size=64&animated=true/.test(webp.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64` }).avatarURL))
+	const fresh = load({ chatFormat2: undefined })
+	check('by default chat pictures are asked for as GIF', fresh.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64&animated=true` }).avatarURL === `https://cdn.discordapp.com/avatars/1/${hash}.gif?size=64`)
 	const radio = load()
-	findAll(expand(radio.plugin.SettingsComponent({ api: { jsonStorage: radio.json } })), (n) => n.props && n.props.title === 'Chat: kind of animated picture')[0].props.onChange('gif')
-	check('the screen can switch the format', radio.data.cache.chatFormat === 'gif')
+	findAll(expand(radio.plugin.SettingsComponent({ api: { jsonStorage: radio.json } })), (n) => n.props && n.props.title === 'Chat: kind of animated picture')[0].props.onChange('webp')
+	check('the screen can switch the format', radio.data.cache.chatFormat2 === 'webp')
+	radio.json.set({ chatFormat2: 'gif' })
 	findAll(expand(radio.plugin.SettingsComponent({ api: { jsonStorage: radio.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()
 	radio.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64`, avatarDecorationURL: 'https://cdn.discordapp.com/avatar-decoration-presets/a_abc.png?size=96&passthrough=false' })
 	findAll(expand(radio.plugin.SettingsComponent({ api: { jsonStorage: radio.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()

@@ -21,7 +21,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.3.1'
+	const VERSION = '1.3.2'
 
 	// ---------------------------------------------------------------------------------------------------
 	// Small helpers
@@ -60,7 +60,7 @@
 		{ key: 'addresses', on: true, title: 'Still pictures of animated things', blurb: 'A safety net: when a screen is about to show the still version of an animated server icon, profile picture or banner, it gets the animated one. This catches what the other switches miss, for example the server list.' },
 		{ key: 'everything', on: false, title: 'Everything else (advanced)', blurb: 'Switches on every `animate` or `canAnimate` property Discord gives its screens. This can animate things Discord keeps still on purpose.' },
 	]
-	const defaults = { ...Object.fromEntries(FEATURES.map((f) => [f.key, f.on])), chatFormat: 'webp' }
+	const defaults = { ...Object.fromEntries(FEATURES.map((f) => [f.key, f.on])), chatFormat2: 'gif' }
 
 	let storage
 	let screenListeners = []
@@ -305,7 +305,7 @@
 		let changed = false
 		if (typeof row.avatarURL === 'string') {
 			let next = animatedAddress(row.avatarURL)
-			if (setting('chatFormat') === 'gif') next = asGif(next)
+			if (setting('chatFormat2') === 'gif') next = asGif(next)
 			if (next !== row.avatarURL) { row.avatarURL = next; changed = true }
 		}
 		if (typeof row.avatarDecorationURL === 'string') { const next = animatedDecoration(row.avatarDecorationURL); if (next !== row.avatarDecorationURL) { row.avatarDecorationURL = next; changed = true } }
@@ -471,7 +471,7 @@
 
 	function buildReport() {
 		const lines = ['Always Animate report', `version: ${VERSION}`]
-		lines.push(`chat picture format: ${setting('chatFormat')}; chat sample: ${chatSample || 'none yet'}`)
+		lines.push(`chat picture format: ${setting('chatFormat2')}; chat sample: ${chatSample || 'none yet'}`)
 		lines.push(`chat rows seen ${chatCounts.rows}: with an animated profile picture ${chatCounts.animatedAvatars}, with a decoration ${chatCounts.decorations}; animated picture sample: ${chatAvatarSample || 'none yet'}`)
 		lines.push(`pictures drawn again: ${refreshed.count}x${refreshed.at ? `, last ${new Date(refreshed.at).toLocaleTimeString()}` : ''}`)
 		FEATURES.forEach((f) => lines.push(`${f.key}: ${setting(f.key) ? 'on' : 'off'}; ${found[f.key] || 'not hooked'}; Discord used it ${seen[f.key]} time(s), changed ${forced[f.key]}`))
@@ -570,7 +570,7 @@
 				h(RN.View, { style: { gap: 4 } },
 					h(Design.Text, { variant: 'text-sm/semibold', color: 'text-muted' }, 'WHAT ANIMATES'),
 					h(Design.TableRowGroup, { title: '' }, ...FEATURES.slice(0, 7).map(featureRow))),
-				setting('chat') && h(Radio, { key: 'chatFormat', title: 'Chat: kind of animated picture', value: setting('chatFormat'), onChange: (v) => { saveSettings({ chatFormat: v }); scheduleRefresh() }, items: [
+				setting('chat') && h(Radio, { key: 'chatFormat2', title: 'Chat: kind of animated picture', value: setting('chatFormat2'), onChange: (v) => { saveSettings({ chatFormat2: v }); scheduleRefresh() }, items: [
 					{ v: 'webp', l: 'Animated webp', s: 'What Discord uses for animated pictures' },
 					{ v: 'gif', l: 'GIF', s: 'Try this if the chat does not play the webp. Only for profile pictures' },
 				] }),
