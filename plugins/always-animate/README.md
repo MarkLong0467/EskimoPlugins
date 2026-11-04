@@ -5,7 +5,7 @@ emoji, stickers, GIFs and nameplates, including in the native chat.
 
 ## Where it comes from
 
-Version 4.0.0 merges two projects, both GPL-3.0-or-later:
+Version 4.0.x merges two projects, both GPL-3.0-or-later:
 
 - **fluttershy_simper67, Always Animate for Valenced 1.0.0-beta16** is the implementation: the picture, emoji, sticker and
   cosmetic animation in `index.js`, the chat bridge, and the native frame player (`android/always-animate.jar`, source in
@@ -27,3 +27,10 @@ Where the two overlapped, the beta16 code is used.
 
 Avatars & frames, Emoji, Stickers, Nameplates & roles, GIFs, Ignore "Reduce motion". Settings saved by 3.x (`pictures`, `emoji`, ...)
 are not read any more; every switch starts on.
+
+## Speed
+
+4.0.1 makes the two hot paths of the beta16 code cheaper without changing what they do: what kind of component a React element is
+(worked out once per component type instead of once per element) and the walk over the rows sent to the native chat (field names
+classified once, parts that never hold an avatar skipped). In `tests/always-animate/bench.cjs` that is about 3x faster per element
+and 4x faster per chat update. All of beta16's own tests pass unchanged.

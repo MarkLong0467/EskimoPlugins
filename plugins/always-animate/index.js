@@ -8,7 +8,7 @@
  * Uses Valenced's documented runtime API; no desktop webpack patches.
  */
   'use strict';
-  var VERSION = '4.0.0';
+  var VERSION = '4.0.1';
   var defaults = { images: true, emojis: true, stickers: true, cosmetics: true, gifs: true, motion: true };
   var storage;
   var stats = {};
@@ -76,15 +76,34 @@
       (type.render && (type.render.displayName || type.render.name)) || type.name || '';
   }
 
+  // What a component type is (a media component or not) is worked out once per type, not once per element:
+  // this function runs for every React element the whole app creates.
+  var SOURCE_KEYS = ['source', 'src', 'uri', 'avatarURL', 'iconURL', 'bannerURL', 'bannerSource'];
+  var NOT_MEDIA = { named: false, group: '' };
+  var typeInfo = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function mediaInfo(type) {
+    if (!type || typeof type === 'string') return NOT_MEDIA;
+    var info = typeInfo && typeInfo.get(type);
+    if (info) return info;
+    var name = typeName(type);
+    var named = MEDIA_NAME.test(name);
+    info = { named: named, group: !named ? '' : /emoji/i.test(name) ? 'emojis' : /nameplate|gradient/i.test(name) ? 'cosmetics' : 'images' };
+    if (typeInfo && (typeof type === 'function' || typeof type === 'object')) { try { typeInfo.set(type, info); } catch (_) {} }
+    return info;
+  }
+
   function mediaProps(type, props) {
     if (!props || typeof props !== 'object') return props;
     if (props.hidden === true || props.visible === false || props.isHidden === true) return props;
-    var name = typeName(type);
+    var info = mediaInfo(type);
     // Native Image/FastImage components can have anonymous or minified names.
     // The URL itself is sufficient to identify an animated Discord asset.
-    var sourceKeys = ['source', 'src', 'uri', 'avatarURL', 'iconURL', 'bannerURL', 'bannerSource'];
-    var named = MEDIA_NAME.test(name);
+    var sourceKeys = SOURCE_KEYS;
+    var named = info.named;
     if (!named) {
+      var hasSource = false;
+      for (var s = 0; s < sourceKeys.length; s++) { if (props[sourceKeys[s]] !== undefined) { hasSource = true; break; } }
+      if (!hasSource) return props;
       if (!enabled('images')) return props;
       var imageProps = props;
       sourceKeys.forEach(function (key) {
@@ -97,7 +116,7 @@
       if (imageProps !== props) stats.renders = (stats.renders || 0) + 1;
       return imageProps;
     }
-    var group = /emoji/i.test(name) ? 'emojis' : /nameplate|gradient/i.test(name) ? 'cosmetics' : 'images';
+    var group = info.group;
     if (!enabled(group)) return props;
     var next = props;
     function set(key, value) {
@@ -443,6 +462,14 @@
       // The final handoff is independent of RowManager's cached generated rows.
       // Current clients use updateRows(ref, { rows }); older NativeChatModule /
       // DCDChatManager clients use updateRows(ref, JSON.stringify(rows)).
+      // Per field name, worked out once: is it text/attachments/embeds-like (never touched), and does it name an avatar?
+      var SKIP_KEY = /^(?:content|attachments|embeds|components|reactions|pollData|accessibilityActions|codedLinks|postPreviewEmbeds|safetyPolicyNoticeEmbed|safetySystemNotificationEmbed|activityInstanceEmbed|activityRichPresenceInviteEmbed|giftCodes|sharedClientTheme)$/i;
+      var keyFlags = new Map();
+      function flagsOf(key) {
+        var f = keyFlags.get(key);
+        if (!f) { f = { skip: SKIP_KEY.test(key), avatar: /avatar/i.test(key) }; if (keyFlags.size < 4000) keyFlags.set(key, f); }
+        return f;
+      }
       function rewriteChatPayload(payload) {
         var asJSON = typeof payload === 'string';
         var root = payload;
@@ -457,11 +484,13 @@
           if (--budget < 0 || depth > 20) return value;
           if (typeof value === 'string') {
             // Some native wrappers serialize rows inside their rows/data field.
-            if (/^(?:rows|data)$/i.test(fieldName || '') && /^\s*[\[{]/.test(value)) {
+            if (fieldName && fieldName.length === 4 && /^(?:rows|data)$/i.test(fieldName) && /^\s*[\[{]/.test(value)) {
               try { var decoded = JSON.parse(value); var nested = walk(decoded, false, depth + 1);
                 return nested === decoded ? value : JSON.stringify(nested);
               } catch (_) { return value; }
             }
+            // Only the strings of avatar fields are ever changed.
+            if (!avatarContext) return value;
             if (!enabled('images')) return value;
             if (avatarContext) {
               stats.bridgeAvatarFields = (stats.bridgeAvatarFields || 0) + 1;
@@ -493,9 +522,10 @@
             copy = withChatDecoration(copy);
             var avatarNode = avatarContext || value.type === 'avatar';
             Object.keys(value).forEach(function (key) {
-              // Chat text, attachments and embeds must keep their exact contents.
-              if (/^(?:content|attachments|embeds)$/i.test(key)) return;
-              var next = walk(value[key], avatarNode || /avatar/i.test(key), depth + 1, key);
+              // Chat text, attachments, embeds and other parts that never hold an avatar keep their exact contents.
+              var flags = flagsOf(key);
+              if (flags.skip) return;
+              var next = walk(value[key], avatarNode || flags.avatar, depth + 1, key);
               if (next !== value[key]) { if (copy === value) copy = Object.assign({}, value); copy[key] = next; }
             });
           }
