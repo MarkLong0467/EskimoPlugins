@@ -27,7 +27,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.1.0'
+	const VERSION = '1.2.0'
 	const INSTANCE = {}
 	const SHEET_KEY = 'MARKLONG_CROP_PLUS_ASK'
 	const CANCELLED = 'E_PICKER_CANCELLED'
@@ -70,8 +70,8 @@
 	]
 	const SIDES = [0, 128, 256, 512, 1024, 1600, 2048]
 	const QUALITIES = [100, 95, 90, 80, 70, 60]
-	const PASSES = [2, 3, 4, 6, 10]
-	const TARGETS = [64, 128, 256, 512, 1024]
+	const PASSES = [2, 3, 4, 6, 10, 15]
+	const TARGETS = [16, 32, 64, 128, 256, 512, 1024]
 
 	const defaults = {
 		enabled: true,
@@ -93,6 +93,9 @@
 		quality: 100, // JPEG quality of the result, in percent
 		cleanTemp: true, // delete the pictures of earlier passes when done
 	}
+
+	/** What "Smallest crop" sets: crop again and again, on its own, until the picture is tiny. */
+	const SMALLEST = { enabled: true, again: true, mode: 'auto', targetPx: 32, maxPasses: 15, scope: 'attachments', freeStyle: true, ratio: 'free', bottomControls: true, askAbove: 0, maxWidth: 0, maxHeight: 0, quality: 100 }
 
 	let storage
 	let screenListeners = []
@@ -367,6 +370,10 @@
 					h(RN.View, { style: { flexDirection: 'row', gap: 10 } },
 						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Self-check', variant: 'primary', size: 'sm', onPress: () => setChecks(runSelfCheck()) })),
 						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Copy report', variant: 'secondary', size: 'sm', onPress: () => copyReport() })))),
+				h(Card, { key: 'smallest' },
+					h(Design.Text, { variant: 'text-md/bold' }, 'Need a really small crop?'),
+					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'One tap sets this up: crop again and again on its own until the picture is 32 px or less, no starting shape, up to 15 crops. Each crop starts from the last one, so the area you pick shrinks every time. Tap Cancel in the cropper when it is small enough.'),
+					h(Design.Button, { text: 'Set up for the smallest crop', variant: 'primary', size: 'sm', onPress: () => { saveSettings(SMALLEST); toast('Done. Add a picture, tap Edit image and crop it.') } })),
 				h(Design.TableRowGroup, { key: 'general', title: 'General' },
 					switchRow('enabled', 'Crop Plus', 'The main switch'),
 					switchRow('again', 'Crop again', 'After each crop, crop the result again so the passes add up'),

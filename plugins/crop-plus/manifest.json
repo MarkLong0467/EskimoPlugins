@@ -7,7 +7,7 @@
 	"contributors": [
 		"Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
 	],
-	"version": "1.1.0",
+	"version": "1.2.0",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"
