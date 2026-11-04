@@ -106,16 +106,39 @@ private val draweeLines = Collections.synchronizedMap(LinkedHashMap<String, Stri
 
 private fun isDrawee(v: View): Boolean {
     var c: Class<*>? = v.javaClass
-    while (c != null) { if (c.name == "com.facebook.drawee.view.DraweeView") return true; c = c.superclass }
+    while (c != null) { if (c.name.endsWith("DraweeView")) return true; c = c.superclass }
     return false
 }
 
-/** Fresco keeps the running animation in the view's controller, not in the drawable. */
+private var ctrlGetter: java.lang.reflect.Method? = null
+private var animGetter: java.lang.reflect.Method? = null
+private var methodsShown = false
+
+private fun animatableGetter(c: Class<*>) =
+    c.methods.firstOrNull { it.parameterCount == 0 && Animatable::class.java.isAssignableFrom(it.returnType) }
+
+/** Fresco keeps the running animation in the view's controller, not in the drawable. The names are scrambled, so find them by what they return. */
 private fun draweeAnimatable(v: View): Pair<String, Animatable?> {
-    val ctrl = runCatching { v.javaClass.getMethod("getController").invoke(v) }.getOrNull() ?: return "no controller" to null
-    val m = ctrl.javaClass.methods.firstOrNull { it.parameterCount == 0 && Animatable::class.java.isAssignableFrom(it.returnType) }
-    val a = m?.let { runCatching { it.invoke(ctrl) as? Animatable }.getOrNull() }
-    return "${ctrl.javaClass.name}${if (m == null) " (no animatable getter)" else ""}" to a
+    var ctrl: Any? = ctrlGetter?.let { m -> runCatching { m.invoke(v) }.getOrNull() }
+    if (ctrl == null) {
+        val named = runCatching { v.javaClass.getMethod("getController") }.getOrNull()
+        val candidates = listOfNotNull(named) + v.javaClass.methods.filter {
+            it.parameterCount == 0 && !it.returnType.isPrimitive && it.returnType != String::class.java &&
+                !it.returnType.name.startsWith("android.") && !it.returnType.name.startsWith("java.") && it != named
+        }
+        if (!methodsShown) {
+            methodsShown = true
+            draweeLines["view methods (first view)"] = candidates.take(30).joinToString(", ") { "${it.name}:${it.returnType.name.substringAfterLast('.')}" }
+        }
+        for (m in candidates) {
+            val r = runCatching { m.invoke(v) }.getOrNull() ?: continue
+            if (animatableGetter(r.javaClass) != null) { ctrlGetter = m; ctrl = r; break }
+        }
+    }
+    if (ctrl == null) return "no controller yet" to null
+    val ag = animGetter?.takeIf { it.declaringClass.isAssignableFrom(ctrl!!.javaClass) } ?: animatableGetter(ctrl.javaClass)?.also { animGetter = it }
+    val a = ag?.let { m -> runCatching { m.invoke(ctrl) as? Animatable }.getOrNull() }
+    return "${ctrl.javaClass.name}${if (ag == null) " (no animatable getter)" else ""}" to a
 }
 
 private fun collect(v: View, out: MutableMap<Animatable, Boolean>, seen: MutableMap<Any, Boolean>, budget: IntArray) {
