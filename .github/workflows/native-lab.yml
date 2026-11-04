@@ -3,6 +3,9 @@ on:
   workflow_dispatch:
   push:
     paths: ['lab/**', '.github/workflows/native-lab.yml']
+concurrency:
+  group: native-lab
+  cancel-in-progress: false
 permissions:
   contents: write
 jobs:

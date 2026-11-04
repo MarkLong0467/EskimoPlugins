@@ -39,6 +39,9 @@ private val sweeps = AtomicInteger()
 private val binds = AtomicInteger()
 
 @Volatile private var enabled = true
+@Volatile private var earMode = 0
+private val earsSeen = Collections.synchronizedSet(LinkedHashSet<String>())
+private val earsOut = Collections.synchronizedSet(LinkedHashSet<String>())
 @Volatile private var intervalMs = 400L
 @Volatile private var running = false
 @Volatile private var hooked = false
@@ -50,7 +53,7 @@ private lateinit var cfgFile: File
 private lateinit var guardFile: File
 
 private fun saveCfg() {
-    runCatching { cfgFile.writeText("enabled=$enabled\nintervalMs=$intervalMs\n") }
+    runCatching { cfgFile.writeText("enabled=$enabled\nintervalMs=$intervalMs\nearMode=$earMode\n") }
 }
 
 private fun loadCfg() {
@@ -60,6 +63,7 @@ private fun loadCfg() {
             when (k) {
                 "enabled" -> enabled = v != "false"
                 "intervalMs" -> intervalMs = (v.toLongOrNull() ?: 400L).coerceIn(200L, 3000L)
+                "earMode" -> earMode = (v.toIntOrNull() ?: 0).coerceIn(0, 3)
             }
         }
     }
@@ -132,7 +136,37 @@ private val loop = object : Runnable {
     }
 }
 
+private fun addQuery(u: String, q: String) = if (u.contains("?")) "$u&$q" else "$u?$q"
+
+/** The chat asks for the still version of decorations ("ears"). These modes ask for animated forms instead. */
+private fun transformEars(u: String): String = when (earMode) {
+    1 -> u.replace("/static", "/animated")
+    2 -> addQuery(u.replace("/static", "/animated"), "format=webp")
+    3 -> addQuery(u.replace(".png", ".webp").replace("/static", "/animated"), "animated=true")
+    else -> u
+}
+
+private fun hookEars(scope: PluginScope) {
+    val c = runCatching { scope.classLoader.loadClass("com.discord.chat.bridge.Message") }.getOrNull() ?: return
+    c.declaredMethods.filter { it.name == "getAvatarDecorationURL" && it.parameterCount == 0 }.forEach { m ->
+        unhooks += XposedBridge.hookMethod(m, object : XC_MethodHook() {
+            override fun afterHookedMethod(p: MethodHookParam) {
+                val u = p.result as? String ?: return
+                if (earsSeen.size < 4) earsSeen += u.substringAfter("://").take(150)
+                if (earMode != 0) {
+                    val out = transformEars(u)
+                    if (out != u) {
+                        p.result = out
+                        if (earsOut.size < 4) earsOut += out.substringAfter("://").take(150)
+                    }
+                }
+            }
+        })
+    }
+}
+
 private fun hookChat(scope: PluginScope) {
+    runCatching { hookEars(scope) }
     val c = runCatching { scope.classLoader.loadClass(MESSAGE_VIEW) }.getOrNull()
     if (c == null) { hookNote = "Discord's chat view was not found (Discord changed?)"; return }
     var n = 0
@@ -163,6 +197,7 @@ private fun begin(scope: PluginScope) {
 private fun state(): String = listOf(
     "enabled=$enabled", "running=$running", "guardTripped=$guardTripped", "intervalMs=$intervalMs",
     "restarts=${restarts.get()}", "animated=${animatedSeen.get()}", "binds=${binds.get()}", "sweeps=${sweeps.get()}",
+    "earMode=$earMode", "earsSeen=${synchronized(earsSeen) { earsSeen.joinToString(" | ") }}", "earsOut=${synchronized(earsOut) { earsOut.joinToString(" | ") }}",
     "attached=$attachedNow", "hook=${hookNote.replace(';', ',')}", "error=${lastError.replace(';', ',')}",
 ).joinToString(";")
 
@@ -184,6 +219,7 @@ val chatAnimator = plugin {
                     if (enabled) { guardTripped = false; handler.post { begin(scope) } } else running = false
                 }
                 "intervalMs" -> { intervalMs = (value.toLongOrNull() ?: 400L).coerceIn(200L, 3000L); saveCfg() }
+                "earMode" -> { earMode = (value.toIntOrNull() ?: 0).coerceIn(0, 3); earsOut.clear(); saveCfg() }
                 "start" -> { guardTripped = false; handler.post { begin(scope) } }
             }
             state()

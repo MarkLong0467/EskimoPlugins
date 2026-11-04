@@ -5,7 +5,7 @@
 	 * The work is done by the native part (a Kotlin plugin inside Discord): it keeps the animated profile pictures and
 	 * decorations in the chat playing. This file is only the settings screen. Keep `(function` as the first thing in this file.
 	 */
-	const VERSION = '1.0.0'
+	const VERSION = '1.1.0'
 	let info = {}
 	let listeners = []
 	const redraw = () => listeners.forEach((fn) => { try { fn() } catch (e) {} })
@@ -74,7 +74,14 @@
 				h(Design.TableRowGroup, { title: 'Settings' },
 					h(Design.TableSwitchRow, { key: 'enabled', label: 'Keep chat pictures animated', subLabel: 'Starts a few seconds after Discord opens', value: enabled, onValueChange: (v) => set('enabled', !!v) }),
 					h(Design.TableSwitchRow, { key: 'saver', label: 'Battery saver', subLabel: 'Checks once a second instead of about twice a second. A picture may take a moment to start after you scroll', value: saver, onValueChange: (v) => set('intervalMs', v ? 1000 : 400) })),
+				h(RN.View, { key: 'ears', style: { borderRadius: 14, padding: 14, gap: 8, backgroundColor: '#2b2d31' } },
+					h(Design.Text, { variant: 'text-sm/semibold' }, 'Ears (avatar decorations) - experiment'),
+					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'The chat asks for the still version of ears. Try the modes below one at a time. After picking one, leave the chat and open it again (or switch channels), then look at the ears. Tell me which mode makes them move.'),
+					...[['0', 'Mode 0: off'], ['1', 'Mode 1: ask for the animated file'], ['2', 'Mode 2: animated file as webp'], ['3', 'Mode 3: .webp with animated=true']].map(([m, label]) =>
+						h(Design.Button, { key: m, text: `${String(info.earMode || '0') === m ? '(selected) ' : ''}${label}`, variant: String(info.earMode || '0') === m ? 'primary' : 'secondary', size: 'sm', onPress: () => { set('earMode', m); toast('Open the chat again') } }))),
 				h(Design.TableRowGroup, { title: 'Details' },
+					info.earsSeen ? h(Design.TableRow, { key: 'e1', label: 'Ear addresses the chat gets', subLabel: info.earsSeen }) : null,
+					info.earsOut ? h(Design.TableRow, { key: 'e2', label: 'Ear addresses after the mode', subLabel: info.earsOut }) : null,
 					h(Design.TableRow, { key: 'a', label: 'Chat messages seen', subLabel: String(info.binds || 0) }),
 					h(Design.TableRow, { key: 'b', label: 'Messages on screen now', subLabel: String(info.attached || 0) }),
 					h(Design.TableRow, { key: 'c', label: 'Hook', subLabel: info.hook || 'not started' }),
