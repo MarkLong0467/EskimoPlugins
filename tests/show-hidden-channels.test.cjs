@@ -87,12 +87,20 @@ function load(settings = {}, options = {}) {
 		SelectedChannelStore: { getChannelId: () => '200000000000000001' },
 		UserStore: { getUser: (id) => ({ id, globalName: 'Ryan' }) },
 		GuildRoleStore: { getRole: (g, id) => ({ id, name: id.endsWith('1') ? 'Moderators' : 'Other' }) },
-		ChannelListStore: { emitChange: () => { state.emitted += 1 } },
+		ChannelListStore: {
+			emitChange: () => { state.emitted += 1 },
+			getGuild: (gid) => ({ guildChannelsVersion: 1, guildChannels: state.impls[gid] || (state.impls[gid] = makeImpl(gid)) }),
+			getGuildWithoutChangingGuildActionRows: (gid) => ({ guildChannelsVersion: 1, guildChannels: state.impls[gid] || (state.impls[gid] = makeImpl(gid)) }),
+		},
 	}
+	state.impls = {}
+	const makeImpl = (gid) => { const impl = { gid, updates: [], nonPositionalChannelUpdate: (c) => { impl.updates.push(c.id); if (options.badUpdate && c.id === V) throw new Error('boom'); return c.id === H } }; return impl }
+	if (options.noListStore) delete flux.ChannelListStore.getGuildWithoutChangingGuildActionRows
 	if (!options.noGated) flux.GatedChannelStore = originalGated
 	const transitionModule = { transitionToChannel: (id, opts) => { state.originalCalls.push(['transition', id]); return 'opened' }, transitionToThread() {} }
 	const preloadModule = { preload: (g, id) => { state.preloads.push(id) }, ensurePrivateChannel() {} }
 	const statesModule = { default: { clear: () => { state.cleared += 1 } }, ChannelListSections: {}, SECTION_INDEX_RECENTS: 3 }
+	if (options.noStates) statesModule.default = {}
 	const runtime = { jsx: (type, props, key) => ({ type, props: props || {}, key }), jsxs: (type, props, key) => ({ type, props: props || {}, key }) }
 	global.valenced = {
 		react: { React, ReactNative: { View: 'View', ScrollView: 'ScrollView', Pressable: 'Pressable', useWindowDimensions: () => ({ height: 800 }) }, ReactJSXRuntime: runtime },
@@ -110,7 +118,7 @@ function load(settings = {}, options = {}) {
 			if (f === 'jsx,jsxs') return [runtime]
 			if (f === 'transitionToChannel,transitionToThread') return options.noTransition ? [] : [transitionModule]
 			if (f === 'preload,ensurePrivateChannel') return [preloadModule]
-			if (f === 'ChannelListSections,SECTION_INDEX_RECENTS') return [statesModule]
+			if (f === 'ChannelListSections,SECTION_INDEX_RECENTS' || f === 'clearGuildId,nonPositionalChannelIdUpdate') return options.noStates ? [] : [statesModule]
 			if (f === 'isChannelGatedAndVisible,isChannelGated') return options.gatedByFinder ? [originalGated] : []
 			return []
 		} } },
@@ -316,11 +324,13 @@ const OC = '300000000000000009' // hidden category, name left out
 		findAll(app.screen(), (n) => n.props && n.props.title === 'Which servers')[0].props.onChange('whitelist')
 		check('the server mode is saved, and the list refreshes', app.data.cache.scopeMode === 'whitelist')
 		await sleep(300)
-		check('a changed rule rebuilds the channel list once', app.state.cleared >= 1 && app.state.emitted >= 1)
-		const before = app.state.cleared
-		app.json.set({}); app.plugin.SettingsComponent
+		const impl = app.state.impls[G1]
+		check('a changed rule updates every channel of the open server, not threads', impl && impl.updates.length >= 8 && !impl.updates.includes('999'))
+		check('...and tells Discord the list changed', app.state.emitted >= 1)
+		check('...without clearing everything', app.state.cleared === 0)
+		const before = impl.updates.length
 		press(app.screen(), 'Refresh the list')
-		check('"Refresh the list" rebuilds it at once', app.state.cleared === before + 1 && app.state.toasts.includes('Channel list rebuilt'))
+		check('"Refresh the list" does it again at once', impl.updates.length > before && app.state.toasts.includes('Channel list rebuilt'))
 		findAll(app.screen(), (n) => n.props && n.props.label === 'Voice channels' && n.props.onValueChange)[0].props.onValueChange(false)
 		check('a kind switch is saved', JSON.parse(app.data.cache.typesJson).voice === false)
 		findAll(app.screen(), (n) => n.props && n.props.label === 'Skip age-restricted channels')[0].props.onValueChange(true)
@@ -369,6 +379,33 @@ const OC = '300000000000000009' // hidden category, name left out
 		check('tapping an entry removes it', !JSON.parse(app.data.cache.channelAllowJson).includes(H))
 	}
 
+	// 7b. The list of other servers and fallbacks
+	{
+		const app = load()
+		const list = app.flux.ChannelListStore
+		const first = list.getGuild(G2)
+		check('another server\u2019s list is brought up to date when Discord asks for it', first.guildChannels.updates.length > 0 && first.guildChannels.__showHiddenVersion !== undefined)
+		const count = first.guildChannels.updates.length
+		list.getGuild(G2)
+		check('...only once until the rules change again', first.guildChannels.updates.length === count)
+		app.json.set({ marker: 'eye' })
+		app.plugin.SettingsComponent
+		findAll(app.screen(), (n) => n.props && n.props.label === 'Skip age-restricted channels')[0].props.onValueChange(true)
+		list.getGuild(G2)
+		check('...and again after a rule changed', first.guildChannels.updates.length > count)
+		const bad = load({}, { badUpdate: true })
+		press(bad.screen(), 'Refresh the list')
+		check('one channel failing to update does not stop the rest', bad.state.impls[G1].updates.length >= 8 && has(bad.screen(), '✓ Rebuilt') )
+		const fallback = load({}, { noListStore: true })
+		press(fallback.screen(), 'Refresh the list')
+		check('without the list store it falls back to clearing the lists', fallback.state.cleared === 1)
+		const none = load({}, { noListStore: true, noStates: true })
+		press(none.screen(), 'Refresh the list')
+		check('without either it says so', none.state.toasts.some((x) => /Could not rebuild/.test(x)))
+		press(none.screen(), 'Self-check')
+		check('...and the self-check says so', has(none.screen(), '✗ Can rebuild the channel list'))
+	}
+
 	// 8. Self-check, report, stale copy
 	{
 		const app = load()
@@ -379,7 +416,7 @@ const OC = '300000000000000009' // hidden category, name left out
 		const t = texts(app.screen()).join('|')
 		check('the self-check passes on a working setup', /✓ Found Discord’s "gated channel" question/.test(t) && /✓ Found the channel opener/.test(t) && /✓ Can rebuild the channel list/.test(t) && /✓ Can read your permissions/.test(t) && /✓ Alpha has hidden channels/.test(t) && /✓ Discord asked about hidden channels/.test(t) && /✓ Marked rows were drawn/.test(t), t)
 		press(app.screen(), 'Copy report')
-		check('the report lists settings, hooks and counts', /Show Hidden Channels report/.test(global.copied) && /version: 1\.1\.0/.test(global.copied) && /hooks: gated found; transition found; preload found; list rebuild found/.test(global.copied) && /taps caught 1/.test(global.copied) && /this server: Alpha/.test(global.copied), global.copied)
+		check('the report lists settings, hooks and counts', /Show Hidden Channels report/.test(global.copied) && /version: 1\.1\.1/.test(global.copied) && /hooks: gated found; transition found; preload found; list rebuild found/.test(global.copied) && /taps caught 1/.test(global.copied) && /this server: Alpha/.test(global.copied), global.copied)
 		const fresh = load()
 		press(fresh.screen(), 'Self-check')
 		check('before anything was drawn the self-check says what to do', /✗ Discord asked about hidden channels/.test(texts(fresh.screen()).join('|')))

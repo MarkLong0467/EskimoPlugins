@@ -33,7 +33,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.1.0'
+	const VERSION = '1.1.1'
 	const INSTANCE = {}
 	const VIEW_CHANNEL = 1024 // Permission bit 1 << 10
 
@@ -119,7 +119,7 @@
 		try { if (storage && typeof storage.set === 'function') storage.set(patch) } catch (e) {}
 		try { if (storage && storage.cache) Object.assign(storage.cache, patch) } catch (e) {}
 		cache.rules = null
-		if (refresh) scheduleRefresh()
+		if (refresh) { ruleVersion += 1; scheduleRefresh() }
 		redrawSettings()
 	}
 
@@ -209,7 +209,7 @@
 	// 3. Hooks
 	// ---------------------------------------------------------------------------------------------------
 	const hooks = { gated: 'not found', transition: 'not found', preload: 'not found', rows: 0, list: 'not found', patched: [], problems: [] }
-	const stats = { asked: 0, shown: new Set(), taps: 0, decorated: 0, refreshes: 0 }
+	const stats = { asked: 0, shown: new Set(), taps: 0, decorated: 0, refreshes: 0, listUpdates: 0 }
 	const log = []
 	function addLog(text, ok = true) {
 		log.unshift({ at: Date.now(), text, ok })
@@ -387,28 +387,86 @@
 		hooks.patched.push('channel rows (marker, dim, voice tap)')
 	}
 
-	/** Makes Discord build the channel list again, so a changed rule shows at once. */
+	/**
+	 * Makes the channel list of a server take new rules at once. Discord keeps a built list per server
+	 * (`ChannelListState.tsx`, `ChannelListImpl`) and only rebuilds a row when something about it changes. For every
+	 * channel of the server this asks `impl.nonPositionalChannelUpdate(channel)`, which works out the row's state
+	 * again (that is where the "can you see it" question is asked) and marks the list as changed when it differs.
+	 * Other servers are brought up to date the next time Discord asks for their list (`hookListStore`).
+	 */
 	let refreshTimer
+	let ruleVersion = 1
+	const listStore = () => { const l = store('ChannelListStore'); return l && typeof l.getGuildWithoutChangingGuildActionRows === 'function' ? l : null }
+	function updateGuildList(guildId, impl) {
+		let changed = 0
+		let failed = 0
+		const channels = store('ChannelStore').getMutableGuildChannelsForGuild(guildId) || {}
+		Object.keys(channels).forEach((id) => {
+			const channel = channels[id]
+			if (!channel || channel.type === 10 || channel.type === 11 || channel.type === 12) return
+			try { if (impl.nonPositionalChannelUpdate(channel)) changed += 1 } catch (e) { failed += 1 }
+		})
+		impl.__showHiddenVersion = ruleVersion
+		stats.listUpdates += changed
+		if (failed && !hooks.problems.some((x) => x.startsWith('list update'))) problem('list update', `${failed} channel(s) could not be updated`)
+		return changed
+	}
 	function listStates() {
-		const mod = findModule('ChannelListSections', 'SECTION_INDEX_RECENTS')
-		const states = mod && (mod.default || mod)
+		const finders = valenced.modules.finders
+		const mod = finders.lookupModule(finders.filters.withProps('ChannelListSections', 'SECTION_INDEX_RECENTS'))[0] || finders.lookupModule(finders.filters.withProps('clearGuildId', 'nonPositionalChannelIdUpdate'))[0]
+		const states = mod && (typeof mod.clear === 'function' ? mod : mod.default || mod)
 		return states && typeof states.clear === 'function' ? states : null
 	}
 	function refreshList() {
 		try {
+			ruleVersion += 1
+			const guildId = currentGuildId()
+			const list = listStore()
+			if (list && guildId) {
+				const impl = list.getGuildWithoutChangingGuildActionRows(guildId).guildChannels
+				if (impl && typeof impl.nonPositionalChannelUpdate === 'function') {
+					hooks.list = 'found (updates the open server)'
+					const changed = updateGuildList(guildId, impl)
+					if (changed && typeof list.emitChange === 'function') list.emitChange()
+					stats.refreshes += 1
+					addLog(`Rebuilt the list of ${guildName(guildId)}: ${changed} row(s) changed`)
+					return true
+				}
+			}
 			const states = listStates()
-			if (!states) { hooks.list = 'not found'; return false }
-			hooks.list = 'found'
-			states.clear()
-			const listStore = store('ChannelListStore')
-			if (listStore && typeof listStore.emitChange === 'function') listStore.emitChange()
-			stats.refreshes += 1
-			return true
+			if (states) {
+				hooks.list = 'found (clears all lists)'
+				states.clear()
+				if (list && typeof list.emitChange === 'function') list.emitChange()
+				stats.refreshes += 1
+				return true
+			}
+			hooks.list = list ? 'store found, no open server' : 'not found'
+			return false
 		} catch (e) { problem('refresh', e); return false }
 	}
 	function scheduleRefresh() {
 		clearTimeout(refreshTimer)
 		refreshTimer = setTimeout(refreshList, 250)
+	}
+	/** Brings the list of any other server up to date when Discord asks for it after the rules changed. */
+	function hookListStore(cleanup) {
+		const list = listStore()
+		if (!list || typeof list.getGuild !== 'function') return
+		let busy = false
+		cleanup(valenced.patcher.instead(list, 'getGuild', function (args, original) {
+			const result = Reflect.apply(original, this, args)
+			try {
+				const impl = result && result.guildChannels
+				if (!busy && impl && impl.__showHiddenVersion !== ruleVersion && typeof impl.nonPositionalChannelUpdate === 'function' && args[0]) {
+					busy = true
+					try { updateGuildList(args[0], impl) } finally { busy = false }
+					return Reflect.apply(original, this, args)
+				}
+			} catch (e) {}
+			return result
+		}))
+		hooks.patched.push('ChannelListStore.getGuild (keeps other servers up to date)')
 	}
 
 	// ---------------------------------------------------------------------------------------------------
@@ -828,7 +886,7 @@
 		add(hooks.gated === 'found', 'Found Discord’s "gated channel" question', hooks.gated === 'found' ? 'GatedChannelStore.isChannelGatedAndVisible is wrapped' : 'Without it no channel can be shown')
 		add(hooks.transition === 'found', 'Found the channel opener', hooks.transition === 'found' ? 'Taps on text channels are caught' : 'A tap would try to open the channel')
 		add(hooks.preload === 'found', 'Found the message preloader', hooks.preload === 'found' ? 'Revealed channels are not preloaded' : 'Optional: some failed requests may happen')
-		add(!!listStates(), 'Can rebuild the channel list', listStates() ? 'Rule changes show at once' : 'Switch server after changing a rule')
+		add(!!listStore() || !!listStates(), 'Can rebuild the channel list', listStore() || listStates() ? 'Rule changes show at once' : 'Switch server after changing a rule')
 		let canWorks = false
 		try { canWorks = typeof store('PermissionStore').can(BigInt(VIEW_CHANNEL), getChannel(store('SelectedChannelStore').getChannelId())) === 'boolean' } catch (e) {}
 		add(canWorks, 'Can read your permissions', canWorks ? 'PermissionStore.can works' : 'Open a server channel first, then run this again')
@@ -859,7 +917,7 @@
 			`tap: ${setting('tap')}; marker: ${setting('marker')} ${setting('markerPosition')}; dim ${setting('dim')}`,
 			`hooks: gated ${hooks.gated}; transition ${hooks.transition}; preload ${hooks.preload}; list rebuild ${hooks.list}`,
 			`patched: ${hooks.patched.join(', ') || '-'}`,
-			`asked ${stats.asked}, shown ${stats.shown.size}, rows drawn ${stats.decorated}, taps caught ${stats.taps}, refreshes ${stats.refreshes}`,
+			`asked ${stats.asked}, shown ${stats.shown.size}, rows drawn ${stats.decorated}, taps caught ${stats.taps}, refreshes ${stats.refreshes}, list rows changed ${stats.listUpdates}`,
 			here ? `this server: ${guildName(here)} ${JSON.stringify(hiddenIn(here))} names ${JSON.stringify(namesIn(here))}` : 'this server: none open',
 			hooks.problems.length ? `problems: ${hooks.problems.join(' | ')}` : '',
 		].filter(Boolean).join('\n')
@@ -881,7 +939,8 @@
 			attempt('channel opener', () => hookTransition(api.cleanup))
 			attempt('preloader', () => hookPreload(api.cleanup))
 			attempt('rows', () => hookRows(api.cleanup))
-			attempt('list rebuild', () => { if (listStates()) hooks.list = 'found' })
+			attempt('list store', () => hookListStore(api.cleanup))
+			attempt('list rebuild', () => { if (listStore() || listStates()) hooks.list = 'found' })
 			setTimeout(refreshList, 800) // so channel lists that were already built are drawn again with the hook in place
 			api.cleanup(() => {
 				clearTimeout(refreshTimer)
