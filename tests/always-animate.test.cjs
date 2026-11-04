@@ -230,7 +230,6 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	const once = app.rowsModule.generateMessageRowData({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64` })
 	check('...wrapped only once', (once.message.avatarURL.match(/animated=true/g) || []).length === 1, once.message.avatarURL)
 	check('a row that is not an object is passed on', app.rowsModule.generateMessageRowData(undefined).message.id === 'row')
-	findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === 'Run the self-check')[0].props.onPress()
 	check('the self-check passes once they are hooked', /AvatarUtils \(\d+ place/.test((() => { findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress(); return global.copied })()), global.copied)
 	const again = load({}, { viaCallbackOnly: true })
 	findAll(expand(again.plugin.SettingsComponent({ api: { jsonStorage: again.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()
@@ -253,8 +252,6 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	const fresh = load({ chatFormat2: undefined })
 	check('by default chat pictures are asked for as GIF', fresh.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64&animated=true` }).avatarURL === `https://cdn.discordapp.com/avatars/1/${hash}.gif?size=64`)
 	const radio = load()
-	findAll(expand(radio.plugin.SettingsComponent({ api: { jsonStorage: radio.json } })), (n) => n.props && n.props.title === 'Chat: kind of animated picture')[0].props.onChange('webp')
-	check('the screen can switch the format', radio.data.cache.chatFormat2 === 'webp')
 	radio.json.set({ chatFormat2: 'gif' })
 	findAll(expand(radio.plugin.SettingsComponent({ api: { jsonStorage: radio.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()
 	radio.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64`, avatarDecorationURL: 'https://cdn.discordapp.com/avatar-decoration-presets/a_abc.png?size=96&passthrough=false' })
@@ -312,7 +309,7 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	check('a native module that shows up a little later is hooked then', late.imageCalls.includes(true) && /animated png: NativeImageManagerModule/.test(report(late)))
 	const button = load()
 	button.imageCalls.length = 0
-	findAll(expand(button.plugin.SettingsComponent({ api: { jsonStorage: button.json } })), (n) => n.props && n.props.text === 'Refresh the pictures on screen')[0].props.onPress()
+	findAll(expand(button.plugin.SettingsComponent({ api: { jsonStorage: button.json } })), (n) => n.props && n.props.text === 'Refresh pictures')[0].props.onPress()
 	check('"Refresh the pictures on screen" tells the phone again', button.imageCalls.includes(true))
 }
 
@@ -363,28 +360,22 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	const sub = late.subs.find((x) => x.f === 'updateRows,scrollToBottom,clearRows')
 	check('a helper that is not loaded yet is hooked when it loads, and only once', !!sub && (sub.cb(late.chatUtils), sub.cb(late.chatUtils), late.chatUtils.updateRows('ref', update(message())), /updates 1, change ops 1/.test(report(late))))
 	check('while it is missing the report says not found', /chat json: not found/.test(report(load({}, { noChatUtils: true }))))
-	const hidden = load({ chat: false })
-	check('the chat row switches are hidden when the chat switch is off', !findAll(expand(hidden.plugin.SettingsComponent({ api: { jsonStorage: hidden.json } })), (n) => n.props && n.props.label === 'Switch on animation flags in chat rows').length)
-	const shown = load()
-	const flip = findAll(expand(shown.plugin.SettingsComponent({ api: { jsonStorage: shown.json } })), (n) => n.props && n.props.label === 'Experiment: add animation flags to chat rows')[0]
-	flip.props.onValueChange(true)
-	check('the experiment switch saves and warns', shown.data.cache.chatExtra === true && shown.toasts.some((x) => /Turn this off if it looks broken/.test(x)))
 }
 
 // 2c. Drawing the pictures on screen again
 {
 	const app = load()
 	const screenFind = (label) => findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === label)[0]
-	screenFind('Refresh the pictures on screen').props.onPress()
-	check('the button makes the stores that draw pictures announce a change', app.emitted.filter((x) => x !== 'AccessibilityStore').join() === 'GuildStore,GuildMemberStore,UserStore,MessageStore' && app.toasts.some((x) => /drawn again/.test(x)))
+	screenFind('Refresh pictures').props.onPress()
+	check('the button makes the stores that draw pictures announce a change', app.emitted.filter((x) => x !== 'AccessibilityStore').join() === 'GuildStore,GuildMemberStore,UserStore,MessageStore' && app.toasts.some((x) => /refreshed/.test(x)))
 	const lost = load({}, { noStores: true })
-	findAll(expand(lost.plugin.SettingsComponent({ api: { jsonStorage: lost.json } })), (n) => n.props && n.props.text === 'Refresh the pictures on screen')[0].props.onPress()
+	findAll(expand(lost.plugin.SettingsComponent({ api: { jsonStorage: lost.json } })), (n) => n.props && n.props.text === 'Refresh pictures')[0].props.onPress()
 	check('without the stores it says so', lost.toasts.some((x) => /Could not refresh/.test(x)))
 	const timed = load()
 	await new Promise((r) => setTimeout(r, 1700))
 	check('on its own the plugin draws the pictures again a moment after it starts', timed.emitted.length >= 3)
 	const toggled = load()
-	const row = findAll(expand(toggled.plugin.SettingsComponent({ api: { jsonStorage: toggled.json } })), (n) => n.props && n.props.label === 'Pictures' && n.props.onValueChange)[0]
+	const row = findAll(expand(toggled.plugin.SettingsComponent({ api: { jsonStorage: toggled.json } })), (n) => n.props && n.props.label === 'Profile pictures, banners and icons' && n.props.onValueChange)[0]
 	toggled.emitted.length = 0
 	row.props.onValueChange(false)
 	await new Promise((r) => setTimeout(r, 400))
@@ -421,10 +412,14 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	const screen = (settings) => { const a = load(settings); return { a, tree: expand(a.plugin.SettingsComponent({ api: { jsonStorage: a.json } })) } }
 	const { a, tree } = screen({})
 	const shown = texts(tree).join('|')
-	check('the screen shows all ten switches', ['Pictures', 'Emoji', 'Stickers', 'GIFs', 'Status emoji', 'Still pictures of animated things', 'Chat: pictures and decorations next to messages', 'Animated decorations (APNG)', 'Ignore "Reduce motion"', 'Everything else (advanced)'].every((t) => shown.includes(t)), shown.slice(0, 300))
-	check('each switch says what it covers and whether it was found', /AvatarUtils \(\d+ places?, \d+ functions\)/.test(shown) && /UserSettings\.AnimateEmoji/.test(shown), shown.slice(0, 400))
+	check('the screen shows all ten switches', ['Profile pictures, banners and icons', 'Emoji', 'Stickers', 'GIFs', 'Status emoji', 'Safety net', 'Pictures next to messages', 'Animated decorations', 'Ignore "Reduce motion"', 'Everything else'].every((t) => shown.includes(t)), shown.slice(0, 300))
+	const titles = findAll(tree, (n) => n.props && typeof n.props.title === 'string').map((n) => n.props.title)
+	check('the screen has the sections What animates, In the chat, More and Help', ['What animates', 'In the chat', 'More', 'Help'].every((s) => titles.includes(s)), titles.join('|'))
+	const allText = JSON.stringify(shown) + JSON.stringify(findAll(tree, (n) => n.props && (n.props.label || n.props.text)).map((n) => n.props.label || n.props.text))
+	check('no testing controls are on the screen', !/self-check|Experiment|Run the|Chat rows|kind of animated picture/i.test(allText), allText.slice(0, 200))
+	check('the two help buttons are there', ['Refresh pictures', 'Copy report'].every((s) => findAll(tree, (n) => n.props && n.props.text === s).length === 1))
 	const switches = findAll(tree, (n) => n.type === 'TableSwitchRow' && n.props.label)
-	check('there are ten feature switches, two chat row switches and three native switches', switches.length === 15, String(switches.length))
+	check('there are ten feature switches and three chat switches', switches.length === 13, String(switches.length))
 	switches.find((s) => s.props.label === 'GIFs').props.onValueChange(false)
 	check('a switch saves', a.data.cache.gifs === false)
 	const reportApp = load()
@@ -456,19 +451,6 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	check('a setting that already said true counts as used, not changed', true)
 }
 
-// 5. The state of each switch on the screen
-{
-	const app = load()
-	const before = texts(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } }))).join('|')
-	check('before anything happened the switches say Ready', /Ready, waiting/.test(before) && !/Working/.test(before), before.slice(0, 300))
-	app.avatarModule.getUserAvatarURL(user(true), false, 64)
-	const after = texts(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } }))).join('|')
-	check('after the plugin changed a picture, Pictures says Working with a count', /Working · \d+ of \d+/.test(after), after.slice(0, 300))
-	const off = load({ emoji: false })
-	check('a switch that is off says Off', /Off/.test(texts(expand(off.plugin.SettingsComponent({ api: { jsonStorage: off.json } }))).join('|')))
-	const lost = load({}, { noAvatarUtils: true })
-	check('something that was not found says Not found', /Not found/.test(texts(expand(lost.plugin.SettingsComponent({ api: { jsonStorage: lost.json } }))).join('|')))
-}
 
 console.log(failed ? `\n${failed} check(s) failed` : '\nAll checks passed')
 process.exit(failed ? 1 : 0)

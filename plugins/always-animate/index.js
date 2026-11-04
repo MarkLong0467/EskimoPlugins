@@ -21,7 +21,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '3.0.0'
+	const VERSION = '3.1.0'
 
 	// ---------------------------------------------------------------------------------------------------
 	// Small helpers
@@ -51,16 +51,16 @@
 	// ---------------------------------------------------------------------------------------------------
 	/** Every switch, in the order the settings screen shows them. `on` is the default. */
 	const FEATURES = [
-		{ key: 'pictures', on: true, title: 'Pictures', blurb: 'Profile pictures, server profile pictures, banners, avatar decorations and server icons.' },
-		{ key: 'emoji', on: true, title: 'Emoji', blurb: 'Animated emoji everywhere, as if "Animate emoji" were on.' },
-		{ key: 'stickers', on: true, title: 'Stickers', blurb: 'Animated stickers, as if "Animate stickers" were on.' },
-		{ key: 'gifs', on: true, title: 'GIFs', blurb: 'GIFs play by themselves, as if "Play GIFs automatically" were on.' },
-		{ key: 'statusEmoji', on: true, title: 'Status emoji', blurb: 'The emoji of a custom status.' },
-		{ key: 'chat', on: true, title: 'Chat: pictures and decorations next to messages', blurb: 'The profile picture and avatar decoration beside each message. Discord builds these from plain addresses, so they are fixed on the way to the chat.' },
-		{ key: 'addresses', on: true, title: 'Still pictures of animated things', blurb: 'A safety net: when a screen is about to show the still version of an animated server icon, profile picture or banner, it gets the animated one. This catches what the other switches miss, for example the server list.' },
-		{ key: 'apng', on: true, title: 'Animated decorations (APNG)', blurb: 'Avatar decorations like ears and frames are animated PNG pictures. Discord has the phone\u2019s image view decode them only for some accounts (the experiment 2026-10-android-fastimage-apng). This switches it on for you.' },
-		{ key: 'motion', on: true, title: 'Ignore "Reduce motion"', blurb: 'Discord switches animations off in the chat and elsewhere when your phone or Discord says "reduce motion" (or Game Mode is throttling). This makes Discord think motion is always fine.' },
-		{ key: 'everything', on: false, title: 'Everything else (advanced)', blurb: 'Switches on every `animate` or `canAnimate` property Discord gives its screens. This can animate things Discord keeps still on purpose.' },
+		{ key: 'pictures', on: true, title: 'Profile pictures, banners and icons', blurb: 'Animated profile pictures, banners and server icons play everywhere.' },
+		{ key: 'emoji', on: true, title: 'Emoji', blurb: 'Animated emoji always play.' },
+		{ key: 'stickers', on: true, title: 'Stickers', blurb: 'Animated stickers always play.' },
+		{ key: 'gifs', on: true, title: 'GIFs', blurb: 'GIFs play by themselves.' },
+		{ key: 'statusEmoji', on: true, title: 'Status emoji', blurb: 'The emoji in custom statuses.' },
+		{ key: 'chat', on: true, title: 'Pictures next to messages', blurb: 'Animated profile pictures and decorations beside each chat message.' },
+		{ key: 'addresses', on: true, title: 'Safety net', blurb: 'Swaps a still picture of an animated icon, profile picture or banner for the animated one. Catches what the other switches miss.' },
+		{ key: 'apng', on: true, title: 'Animated decorations', blurb: 'Lets Discord play animated avatar decorations (ears, frames) where it supports them.' },
+		{ key: 'motion', on: true, title: 'Ignore "Reduce motion"', blurb: 'Keeps animations on even when Discord or Game Mode asks to reduce motion.' },
+		{ key: 'everything', on: false, title: 'Everything else', blurb: 'Turns on every "animate" setting Discord has. May animate things Discord keeps still on purpose.' },
 	]
 	const defaults = { ...Object.fromEntries(FEATURES.map((f) => [f.key, f.on])), chatFormat2: 'gif', chatFlip: true, chatExtra: false }
 
@@ -694,29 +694,17 @@
 	// ---------------------------------------------------------------------------------------------------
 	function Card({ children }) {
 		const { View } = valenced.react.ReactNative
-		return h(View, { style: { borderRadius: 14, padding: 14, gap: 10, backgroundColor: '#2b2d31' } }, children)
+		return h(View, { style: { borderRadius: 14, padding: 16, gap: 10, backgroundColor: '#2b2d31' } }, children)
 	}
 	function Pill({ text, color }) {
 		const { View } = valenced.react.ReactNative
 		const { Text } = valenced.discord.design.Design
-		return h(View, { style: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999, backgroundColor: `${color}33` } }, h(Text, { variant: 'text-xs/bold', style: { color } }, text))
-	}
-	function Radio({ title, value, items, onChange }) {
-		const Design = valenced.discord.design.Design
-		return h(Design.TableRadioGroup, { title, value, onChange }, items.map((item) => h(Design.TableRadioRow, { key: String(item.v), label: item.l, subLabel: item.s, value: item.v })))
+		return h(View, { style: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: `${color}33` } }, h(Text, { variant: 'text-xs/bold', style: { color } }, text))
 	}
 	const GREEN = '#23a55a'
 	const RED = '#f23f43'
 	const AMBER = '#f0b232'
 	const GRAY = '#80848e'
-
-	/** How a feature is doing: Off, Not found, Ready (hooked, not used yet), Used (nothing needed changing) or Working. */
-	function featureState(feature) {
-		if (!setting(feature)) return { text: 'Off', color: GRAY }
-		if (!found[feature] || found[feature] === 'not found') return { text: 'Not found', color: RED }
-		if (forced[feature] > 0) return { text: `Working · ${forced[feature]} of ${seen[feature]}`, color: GREEN }
-		return seen[feature] > 0 ? { text: `Used ${seen[feature]} times, already animated`, color: GREEN } : { text: 'Ready, waiting for Discord to use it', color: AMBER }
-	}
 
 	function SettingsScreen({ api }) {
 		const { React, ReactNative: RN } = valenced.react
@@ -725,7 +713,6 @@
 		storage.use()
 
 		const [, setRedraws] = React.useState(0)
-		const [checks, setChecks] = React.useState(null)
 		React.useEffect(() => {
 			const redraw = () => setRedraws((n) => n + 1)
 			screenListeners.push(redraw)
@@ -734,82 +721,56 @@
 			return () => { clearInterval(nativeTimer); screenListeners = screenListeners.filter((l) => l !== redraw) }
 		}, [])
 
-		const featureRow = (feature) => {
-			const state = featureState(feature.key)
-			return h(
-				RN.View,
-				{ key: feature.key, style: { gap: 6 } },
-				h(Design.TableSwitchRow, { label: feature.title, subLabel: feature.blurb, value: !!setting(feature.key), onValueChange: (value) => { saveSettings({ [feature.key]: !!value }); if (PICTURE_SWITCHES.includes(feature.key)) scheduleRefresh() } }),
-				h(RN.View, { style: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 6 } },
-					h(Pill, { text: state.text, color: state.color }),
-					found[feature.key] && h(Design.Text, { variant: 'text-xs/medium', color: 'text-muted', numberOfLines: 1, style: { flex: 1 } }, found[feature.key])),
-			)
+		const feature = (key) => FEATURES.find((f) => f.key === key)
+		const toggle = (key) => {
+			const f = feature(key)
+			return h(Design.TableSwitchRow, { key, label: f.title, subLabel: f.blurb, value: !!setting(key), onValueChange: (value) => { saveSettings({ [key]: !!value }); if (PICTURE_SWITCHES.includes(key)) scheduleRefresh() } })
 		}
-		const onCount = FEATURES.filter((f) => setting(f.key)).length
 
-		const nativeSection = () => {
-			const i = nat.info
-			const on = i.enabled !== 'false'
-			const saver = Number(i.intervalMs || 400) >= 1000
-			const status = nat.error && !Object.keys(i).length ? nat.error : !on ? 'Off' : i.running === 'true' ? `On. Keeping ${i.animated || 0} animated pictures playing` : 'Waiting to start (a few seconds after Discord opens)'
-			const mode = String(i.earMode || '0')
-			return h(RN.View, { key: 'native', style: { gap: 10 } },
-				h(Design.Text, { variant: 'text-sm/semibold', color: 'text-muted' }, 'CHAT PHOTOS (NATIVE PART)'),
-				h(Design.TableRowGroup, { title: '' },
-					h(Design.TableRow, { key: 'nstatus', label: 'Status', subLabel: status }),
-					h(Design.TableSwitchRow, { key: 'non', label: 'Keep profile pictures animated in chat', subLabel: 'Works inside Discord\'s own chat. Starts a few seconds after Discord opens', value: on, onValueChange: (v) => nativeSet('enabled', !!v) }),
-					h(Design.TableSwitchRow, { key: 'nsaver', label: 'Battery saver', subLabel: 'Checks once a second instead of about twice a second', value: saver, onValueChange: (v) => nativeSet('intervalMs', v ? 1000 : 400) })),
-				i.guardTripped === 'true' && h(RN.View, { key: 'nguard', style: { gap: 8 } },
-					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'The last start did not finish before Discord closed, so it waited.'),
-					h(Design.Button, { text: 'Start now', variant: 'primary', size: 'sm', onPress: () => nativeSet('start', true) })),
-				h(Design.TableRowGroup, { key: 'nears', title: '' },
-					h(Design.TableSwitchRow, { key: 'nearson', label: 'Animate ears (avatar decorations) in chat', subLabel: 'Ears are animated PNGs, which Discord\'s chat cannot play. This downloads each one and draws it over the still ear', value: i.ears !== 'false', onValueChange: (v) => { nativeSet('ears', !!v); toast('Open the chat again') } }),
-					i.earApng ? h(Design.TableRow, { key: 'nearinfo', label: 'Ears', subLabel: `${i.earOverlays || 0} animated now. ${i.earApng}` }) : null))
-		}
-		const working = FEATURES.filter((f) => setting(f.key) && forced[f.key] > 0).length
+		const i = nat.info
+		const nativeKnown = Object.keys(i).length > 0
+		const chatOn = i.enabled !== 'false'
+		const earsOn = i.ears !== 'false'
+		const saver = Number(i.intervalMs || 400) >= 1000
+		const chatStatus = !nativeKnown ? { text: nat.error ? 'Chat part unavailable' : 'Chat part starting', color: nat.error ? RED : AMBER }
+			: !chatOn ? { text: 'Chat photos off', color: GRAY }
+			: i.running === 'true' ? { text: 'Chat photos on', color: GREEN }
+			: { text: 'Chat photos starting', color: AMBER }
 
 		return h(
 			RN.ScrollView,
-			{ style: { flex: 1 }, contentContainerStyle: { paddingBottom: 38 }, keyboardShouldPersistTaps: 'handled' },
+			{ style: { flex: 1 }, contentContainerStyle: { paddingBottom: 40 }, keyboardShouldPersistTaps: 'handled' },
 			h(
 				Design.Stack,
 				{ style: { paddingVertical: 20, paddingHorizontal: 12 }, spacing: 22 },
 				h(
 					Card,
-					null,
-					h(Design.Text, { variant: 'heading-lg/bold' }, `Always Animate ${VERSION}`),
-					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, `${onCount} of ${FEATURES.length} switches are on, ${working} already changed something. Pictures that were already on screen are drawn again after a switch changes or when you tap "Refresh the pictures on screen".`),
+					{ key: 'header' },
+					h(RN.View, { style: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' } },
+						h(Design.Text, { variant: 'heading-lg/bold' }, 'Always Animate'),
+						h(Design.Text, { variant: 'text-xs/medium', color: 'text-muted' }, `Version ${VERSION}`)),
+					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'Makes animated profile pictures, icons, emoji and stickers play on their own, including in the chat.'),
+					h(Pill, { text: chatStatus.text, color: chatStatus.color }),
+				),
+				i.guardTripped === 'true' && h(Card, { key: 'guard' },
+					h(Design.Text, { variant: 'text-sm/semibold' }, 'Chat photos did not start by themselves'),
+					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'The last start did not finish before Discord closed, so it waited this time.'),
+					h(Design.Button, { text: 'Start now', variant: 'primary', size: 'sm', onPress: () => nativeSet('start', true) })),
+				h(Design.TableRowGroup, { key: 'what', title: 'What animates' }, ['pictures', 'emoji', 'stickers', 'gifs', 'statusEmoji'].map(toggle)),
+				h(Design.TableRowGroup, { key: 'chat', title: 'In the chat' },
+					toggle('chat'),
+					h(Design.TableSwitchRow, { key: 'nchat', label: 'Keep chat photos playing', subLabel: 'Profile pictures keep moving while you read. Starts a few seconds after Discord opens.', value: chatOn, onValueChange: (v) => nativeSet('enabled', !!v) }),
+					h(Design.TableSwitchRow, { key: 'nears', label: 'Animate ears', subLabel: 'Avatar decorations next to messages. Reopen the chat after changing this.', value: earsOn, onValueChange: (v) => { nativeSet('ears', !!v); toast('Reopen the chat to see the change') } }),
+					h(Design.TableSwitchRow, { key: 'nsaver', label: 'Battery saver', subLabel: 'Checks the chat once a second instead of twice. A picture may take a moment to start after you scroll.', value: saver, onValueChange: (v) => nativeSet('intervalMs', v ? 1000 : 400) })),
+				h(Design.TableRowGroup, { key: 'more', title: 'More' }, ['apng', 'addresses', 'motion', 'everything'].map(toggle)),
+				h(RN.View, { key: 'help', style: { gap: 10 } },
+					h(Design.TableRowGroup, { title: 'Help' },
+						h(Design.TableRow, { key: 'tip', label: 'Something does not animate?', subLabel: 'Tap Refresh pictures, then close the screen and open it again. If it still does not, copy the report and send it to the plugin author.' }),
+						problems.length > 0 && h(Design.TableRow, { key: 'problems', label: 'Problems', subLabel: problems.join(' · ') })),
 					h(RN.View, { style: { flexDirection: 'row', gap: 10 } },
-						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Run the self-check', variant: 'primary', size: 'sm', onPress: () => setChecks(runSelfCheck()) })),
-						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Copy report', variant: 'secondary', size: 'sm', onPress: copyReport }))),
-					h(Design.Button, { text: 'Refresh the pictures on screen', variant: 'secondary', size: 'sm', onPress: () => { sendApng(); const n = refreshPictures(); toast(n ? 'Pictures are drawn again. Server icons and pictures should animate now.' : 'Could not refresh. Switch server or restart Discord.') } }),
-				),
-				checks && h(
-					Design.TableRowGroup,
-					{ title: 'Self-check' },
-					...checks.map((r, i) => h(Design.TableRow, { key: `check${i}`, label: `${r.ok ? '✓' : '✗'} ${r.label}`, subLabel: r.detail })),
-					h(Design.TableRow, { key: 'checkNote', label: 'What this shows', subLabel: 'The plugin asks Discord for a made-up animated picture as "still". A ✓ means the address came back animated (.gif), so the plugin works.' }),
-				),
-				h(RN.View, { style: { gap: 4 } },
-					h(Design.Text, { variant: 'text-sm/semibold', color: 'text-muted' }, 'WHAT ANIMATES'),
-					h(Design.TableRowGroup, { title: '' }, ...FEATURES.slice(0, 9).map(featureRow))),
-				nativeSection(),
-				setting('chat') && h(Design.TableRowGroup, { key: 'chatJson', title: 'Chat rows (what the native chat is sent)' },
-					h(Design.TableSwitchRow, { key: 'chatFlip', label: 'Switch on animation flags in chat rows', subLabel: 'Any animation switch in a row that is off is turned on. Nothing is added to the row', value: !!setting('chatFlip'), onValueChange: (value) => saveSettings({ chatFlip: !!value }) }),
-					h(Design.TableSwitchRow, { key: 'chatExtra', label: 'Experiment: add animation flags to chat rows', subLabel: 'Adds nine made-up animation flags (animateAvatar and so on). If the native chat does not know a field it may refuse the row: turn this off if the chat breaks', value: !!setting('chatExtra'), onValueChange: (value) => { saveSettings({ chatExtra: !!value }); toast(value ? 'Open the chat again. Turn this off if it looks broken.' : 'Off') } }),
-				),
-				setting('chat') && h(Radio, { key: 'chatFormat2', title: 'Chat: kind of animated picture', value: setting('chatFormat2'), onChange: (v) => { saveSettings({ chatFormat2: v }); scheduleRefresh() }, items: [
-					{ v: 'webp', l: 'Animated webp', s: 'What Discord uses for animated pictures' },
-					{ v: 'gif', l: 'GIF', s: 'Try this if the chat does not play the webp. Only for profile pictures' },
-				] }),
-				h(Design.TableRowGroup, { title: 'Advanced' }, featureRow(FEATURES[9])),
-				h(
-					Design.TableRowGroup,
-					{ title: 'Good to know' },
-					h(Design.TableRow, { key: 'k1', label: 'Battery and data', subLabel: 'Animated pictures use more battery and more data than still ones. Turn off what you do not need.' }),
-					h(Design.TableRow, { key: 'k2', label: 'Reduce Motion', subLabel: 'Your phone\'s Reduce Motion setting is not changed by this plugin.' }),
-					problems.length > 0 && h(Design.TableRow, { key: 'problems', label: 'Problems', subLabel: problems.join(' · ') }),
-				),
+						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Refresh pictures', variant: 'primary', size: 'md', onPress: () => { sendApng(); const n = refreshPictures(); toast(n ? 'Pictures refreshed' : 'Could not refresh. Switch server or restart Discord.') } })),
+						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Copy report', variant: 'secondary', size: 'md', onPress: copyReport })))),
+				h(Design.Text, { key: 'foot', variant: 'text-xs/medium', color: 'text-muted', style: { textAlign: 'center' } }, 'Animated pictures use more battery and data than still ones. Turn off what you do not need.'),
 			),
 		)
 	}
