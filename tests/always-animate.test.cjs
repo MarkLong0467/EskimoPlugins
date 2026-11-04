@@ -316,6 +316,13 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	check('"Refresh the pictures on screen" tells the phone again', button.imageCalls.includes(true))
 }
 
+// 2j. The native part is reachable or reported as not reachable
+{
+	const app = load()
+	const text = (() => { findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress(); return global.copied })()
+	check('the report has a line for the native chat part', /native chat part: /.test(text), text.split('\n').filter((l) => /native/.test(l)).join(' | '))
+}
+
 // 2h. The chat rows as they go to the native chat
 {
 	const message = (over = {}) => ({ id: '1', avatarURL: 'https://cdn.discordapp.com/avatars/1/a_abc.gif?size=64', avatarDecorationURL: 'https://cdn.discordapp.com/media/v1/collectibles-shop/1/animated', animateEmoji: false, gifAutoPlay: false, username: 'x', ...over })
@@ -417,7 +424,7 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	check('the screen shows all ten switches', ['Pictures', 'Emoji', 'Stickers', 'GIFs', 'Status emoji', 'Still pictures of animated things', 'Chat: pictures and decorations next to messages', 'Animated decorations (APNG)', 'Ignore "Reduce motion"', 'Everything else (advanced)'].every((t) => shown.includes(t)), shown.slice(0, 300))
 	check('each switch says what it covers and whether it was found', /AvatarUtils \(\d+ places?, \d+ functions\)/.test(shown) && /UserSettings\.AnimateEmoji/.test(shown), shown.slice(0, 400))
 	const switches = findAll(tree, (n) => n.type === 'TableSwitchRow' && n.props.label)
-	check('there are ten feature switches and two chat row switches', switches.length === 12, String(switches.length))
+	check('there are ten feature switches, two chat row switches and two native switches', switches.length === 14, String(switches.length))
 	switches.find((s) => s.props.label === 'GIFs').props.onValueChange(false)
 	check('a switch saves', a.data.cache.gifs === false)
 	const reportApp = load()

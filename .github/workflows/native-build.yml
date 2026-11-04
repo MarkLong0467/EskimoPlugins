@@ -1,0 +1,33 @@
+name: Build native parts
+# Builds the Kotlin part of Always Animate (lab/always-animate-native) and packages the plugin zip.
+on:
+  workflow_dispatch:
+concurrency:
+  group: native-build
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { repository: Valenced/valenced, path: valenced-src }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 25 }
+      - name: Build the Valenced API from its public source
+        working-directory: valenced-src
+        run: ./gradlew :core:publishToMavenLocal :android:api:publishToMavenLocal -x test --no-daemon
+      - name: Build the native part
+        run: ./valenced-src/gradlew -p lab :always-animate-native:dexJar --no-daemon
+      - name: Package
+        run: |
+          mkdir -p out
+          d=plugins/always-animate
+          cp lab/always-animate-native/build/outputs/plugin/plugin.jar "$d/plugin.jar"
+          v=$(sed -nE 's/.*"version": "([^"]+)".*/\1/p' "$d/manifest.json" | head -1)
+          (cd "$d" && zip -qX "../../out/marklong.always-animate@$v.zip" manifest.json index.js plugin.jar)
+      - uses: actions/upload-artifact@v4
+        with: { name: always-animate-zip, path: out/*.zip }
