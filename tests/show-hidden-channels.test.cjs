@@ -108,7 +108,11 @@ function load(settings = {}, options = {}) {
 	state.nativeCalls = []
 	state.identifies = 0
 	const capabilitiesModule = { getClientCapabilities: (o) => (o.useChannelObfuscation ? 1767423 : 1734655) }
-	state.socket = { _handleInvalidSession: (d) => { state.identifies += 1; state.lastInvalid = d } }
+	state.invalids = 0
+	state.socket = { sessionId: 'abc', _handleReconnect() { state.identifies += 1; state.sessionAtReconnect = this.sessionId; state.skippedVersions = null }, _handleInvalidSession: (d) => { state.invalids += 1; state.lastInvalid = d } }
+	state.versionCalls = []
+	const versionsModule = { canUseGuildVersions: () => { state.versionCalls.push('original'); return Promise.resolve(true) } }
+	state.versionsModule = versionsModule
 	flux.GatewayConnectionStore = { getSocket: () => (options.noSocket ? null : state.socket) }
 	const nativeModule = { setUseChannelObfuscation: (v) => { state.nativeCalls.push(v) } }
 	const statesModule = { default: { clear: () => { state.cleared += 1 } }, ChannelListSections: {}, SECTION_INDEX_RECENTS: 3 }
@@ -140,6 +144,7 @@ function load(settings = {}, options = {}) {
 			if (f === 'transitionToChannel,transitionToThread' || f === 'transitionToChannel') return options.noTransition || options.routeOnly || options.transitionOnDefault || !state.loaded ? [] : [transitionModule]
 			if (['isChannelMetadataObfuscationEnabled', 'useIsChannelMetadataObfuscationEnabled', 'isChannelMetadataIntegrityCheckEnabled'].includes(f)) return options.noExperiment ? [] : [options.experimentOnDefault ? { default: experiment } : experiment]
 			if (f === 'getClientCapabilities') return options.noCapabilities ? [] : [capabilitiesModule]
+			if (f === 'canUseGuildVersions') return options.noVersions ? [] : [{ default: versionsModule }]
 			if (f === 'setUseChannelObfuscation') return options.nativeByFinder ? [{ default: nativeModule }] : []
 			if (f === 'transitionTo,replaceWith') return options.routeOnly && state.loaded ? [routerModule] : []
 			if (f === 'preload,ensurePrivateChannel') return options.preloadOnDefault || !state.loaded ? [] : [preloadModule]
@@ -256,13 +261,25 @@ const OC = '300000000000000009' // hidden category, name left out
 		press(fine.screen(), 'Self-check')
 		check('the self-check shows it on a working setup', has(fine.screen(), '✓ Asking for real names') && has(fine.screen(), '3 of 3 switches answered no'), texts(fine.screen()).filter((x) => /switches|real names/i.test(x)).join('|'))
 		press(fine.screen(), 'Copy report')
-		check('the report has the real-names line', /real names: asked for; capabilities: found \(changed 0\); switches: 3 of 3 switches answered no; native flag: set to off; logged in again 0x/.test(global.copied), global.copied)
+		check('the report has the real-names line', /real names: asked for; capabilities: found \(changed 0\); switches: 3 of 3 switches answered no; saved versions: found \(skipped 0x\); native flag: set to off; logged in again 0x/.test(global.copied), global.copied)
 		const reconnect = load()
 		press(reconnect.screen(), 'Get the real names now')
 		check('the "get the real names now" button asks to be tapped twice', reconnect.state.identifies === 0 && has(reconnect.screen(), 'Tap again to log in again'))
 		press(reconnect.screen(), 'Tap again to log in again')
-		check('...then makes the socket log in again with a fresh IDENTIFY', reconnect.state.identifies === 1 && reconnect.state.lastInvalid === false && reconnect.state.toasts.some((x) => /Logging in again/.test(x)))
+		check('...then makes the socket reconnect with no session to resume (so it identifies from scratch)', reconnect.state.identifies === 1 && reconnect.state.sessionAtReconnect === null && reconnect.state.toasts.some((x) => /Logging in again/.test(x)))
+		check('...and for that login the saved server versions are not sent', (await reconnect.state.versionsModule.canUseGuildVersions()) === false)
 		check('...and remembers when', reconnect.data.cache.namesReconnectAt > 0)
+		const plainVersions = load()
+		check('without a reconnect Discord\u2019s own answer about the saved versions is kept', (await plainVersions.state.versionsModule.canUseGuildVersions()) === true)
+		const noVersions = load({}, { noVersions: true })
+		press(noVersions.screen(), 'Get the real names now'); press(noVersions.screen(), 'Tap again to log in again')
+		check('if the versions function is missing it still reconnects, and says what may go wrong', noVersions.state.identifies === 1 && has(noVersions.screen(), 'saved server versions cannot be skipped'))
+		await sleep(4300)
+		check('...and the automatic login waits for it (not done on its own)', noVersions.state.identifies === 1)
+		const oldSocket = load()
+		delete oldSocket.state.socket._handleReconnect
+		press(oldSocket.screen(), 'Get the real names now'); press(oldSocket.screen(), 'Tap again to log in again')
+		check('an older socket without _handleReconnect falls back to the invalid-session call', oldSocket.state.invalids === 1 && oldSocket.state.lastInvalid === false)
 		const nosock = load({}, { noSocket: true })
 		press(nosock.screen(), 'Get the real names now'); press(nosock.screen(), 'Tap again to log in again')
 		check('without a socket it says to restart instead', nosock.state.toasts.some((x) => /Close Discord completely/.test(x)))
@@ -317,12 +334,14 @@ const OC = '300000000000000009' // hidden category, name left out
 		check('...and the real opener takes over when it shows up', route.transitionModule.transitionToChannel(H) === undefined)
 		const auto = load({}, { viaCallbackOnly: true })
 		auto.state.loadModule('getClientCapabilities', auto.capabilitiesModule)
+		auto.state.loadModule('canUseGuildVersions', { default: auto.state.versionsModule })
 		await sleep(4300)
-		check('the automatic login again waits until the capabilities function is hooked', auto.state.identifies === 1 && auto.data.cache.namesReconnectAt > 0)
+		check('the automatic login again waits until the capabilities and versions functions are hooked', auto.state.identifies === 1 && auto.data.cache.namesReconnectAt > 0)
 		const early = load({}, { viaCallbackOnly: true })
 		await sleep(4300)
 		check('...and does not happen while it is missing', early.state.identifies === 0 && !early.data.cache.namesReconnectAt)
 		early.state.loadModule('getClientCapabilities', early.capabilitiesModule)
+		early.state.loadModule('canUseGuildVersions', { default: early.state.versionsModule })
 		await sleep(8000)
 		check('...but it happens later once the function is there', early.state.identifies === 1)
 	}
@@ -578,7 +597,7 @@ const OC = '300000000000000009' // hidden category, name left out
 		const t = texts(app.screen()).join('|')
 		check('the self-check passes on a working setup', /✓ Found Discord’s "gated channel" question/.test(t) && /✓ Found the channel opener/.test(t) && /✓ Can rebuild the channel list/.test(t) && /✓ Can read your permissions/.test(t) && /✓ Alpha has hidden channels/.test(t) && /✓ Discord asked about hidden channels/.test(t) && /✓ Marked rows were drawn/.test(t), t)
 		press(app.screen(), 'Copy report')
-		check('the report lists settings, hooks and counts', /Show Hidden Channels report/.test(global.copied) && /version: 1\.2\.2/.test(global.copied) && /hooks: gated found; transition found; preload found; list rebuild found/.test(global.copied) && /taps caught 1/.test(global.copied) && /this server: Alpha/.test(global.copied), global.copied)
+		check('the report lists settings, hooks and counts', /Show Hidden Channels report/.test(global.copied) && /version: 1\.2\.3/.test(global.copied) && /hooks: gated found; transition found; preload found; list rebuild found/.test(global.copied) && /taps caught 1/.test(global.copied) && /this server: Alpha/.test(global.copied), global.copied)
 		const fresh = load()
 		press(fresh.screen(), 'Self-check')
 		check('before anything was drawn the self-check says what to do', /✗ Discord asked about hidden channels/.test(texts(fresh.screen()).join('|')))

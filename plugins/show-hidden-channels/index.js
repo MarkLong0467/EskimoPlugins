@@ -31,9 +31,12 @@
 	 * `modules/gateway/native/fast_connect.tsx`) build the message with
 	 * `GatewayCapabilities.getClientCapabilities({ useChannelObfuscation })`, which adds one bit (32768) to the
 	 * capabilities number. The plugin makes that function always get `false`. To log in again without a restart,
-	 * the socket is told its session is invalid (`GatewaySocket._handleInvalidSession(false)`), which makes it send
-	 * a fresh IDENTIFY; Discord then sends every server again, now with the names. This is done once on its own
-	 * after the switch is on, and the settings have a button for it.
+	 * the session id is cleared and the socket reconnects (`GatewaySocket._handleReconnect()`), which makes it send a
+	 * fresh IDENTIFY. That message also carries the version of every server the phone has saved
+	 * (`KvCacheVersion.canUseGuildVersions()`), and the server then only sends servers that changed, so the saved
+	 * channels, still without names, would stay. For this one login the plugin answers "no" there, so the server
+	 * sends every server in full, now with the names. This is done once on its own after the switch is on, and
+	 * the settings have a button for it.
 	 *
 	 * Names. Discord's servers now send channels you may not see "obfuscated" (`ChannelFlags.OBFUSCATED`,
 	 * `records/ChannelRecord.tsx`): the name, topic and permission settings are left out, and the app writes
@@ -48,7 +51,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.2.2'
+	const VERSION = '1.2.3'
 	const INSTANCE = {}
 	const AUTO_RECONNECT_MS = 4000
 	const lateTimers = []
@@ -227,8 +230,8 @@
 	// ---------------------------------------------------------------------------------------------------
 	// 3. Hooks
 	// ---------------------------------------------------------------------------------------------------
-	const hooks = { gated: 'not found', transition: 'not found', preload: 'not found', rows: 0, list: 'not found', names: 'not found', capabilities: 'not found', native: 'not found', patched: [], problems: [] }
-	const stats = { asked: 0, shown: new Set(), taps: 0, decorated: 0, refreshes: 0, listUpdates: 0, capabilities: 0, reconnects: 0 }
+	const hooks = { gated: 'not found', transition: 'not found', preload: 'not found', rows: 0, list: 'not found', names: 'not found', capabilities: 'not found', fullSync: 'not found', native: 'not found', patched: [], problems: [] }
+	const stats = { asked: 0, shown: new Set(), taps: 0, decorated: 0, refreshes: 0, listUpdates: 0, capabilities: 0, reconnects: 0, fullSyncs: 0 }
 	const log = []
 	function addLog(text, ok = true) {
 		log.unshift({ at: Date.now(), text, ok })
@@ -322,6 +325,7 @@
 			})
 		})
 		hookCapabilities(cleanup)
+		hookFullSync(cleanup)
 		hookNativeModule(cleanup)
 		tellNativeModule()
 	}
@@ -341,13 +345,31 @@
 		})
 	}
 
-	/** Makes the gateway log in again (a fresh IDENTIFY on the open connection), so the server sends the names now. */
+	/** For one login the saved server versions are not sent, so the server sends every server in full. */
+	const fullSync = { until: 0 }
+	function hookFullSync(cleanup) {
+		watchModules(cleanup, ['canUseGuildVersions'], (mod) => {
+			holdersOf(mod).forEach((holder) => {
+				if (patchOnce(cleanup, holder, 'canUseGuildVersions', function (args, original) {
+					if (Date.now() < fullSync.until) { stats.fullSyncs += 1; return Promise.resolve(false) }
+					return Reflect.apply(original, this, args)
+				})) { hooks.fullSync = 'found'; if (!hooks.patched.includes('KvCacheVersion.canUseGuildVersions')) hooks.patched.push('KvCacheVersion.canUseGuildVersions') }
+			})
+		})
+	}
+
+	/** Makes the gateway log in again from scratch (new session, no saved server versions), so the server sends the names now. */
 	function reconnectNow(reason) {
 		try {
 			const connection = store('GatewayConnectionStore')
 			const socket = connection && typeof connection.getSocket === 'function' ? connection.getSocket() : null
 			if (!socket || typeof socket._handleInvalidSession !== 'function') { addLog('Could not log in again: the gateway socket was not found', false); return false }
-			socket._handleInvalidSession(false)
+			if (hooks.fullSync !== 'found') addLog('The saved server versions cannot be skipped, so the server may only send what changed', false)
+			fullSync.until = Date.now() + 40000
+			if (typeof socket._handleReconnect === 'function') {
+				socket.sessionId = null // no resume: the next connection must identify again
+				socket._handleReconnect()
+			} else socket._handleInvalidSession(false)
 			stats.reconnects += 1
 			if (hooks.capabilities === 'found' || hooks.names !== 'not found') saveSettings({ namesReconnectAt: Date.now() }, false)
 			addLog(`Logged in to Discord again (${reason})`)
@@ -1044,7 +1066,7 @@
 		try { canWorks = typeof store('PermissionStore').can(BigInt(VIEW_CHANNEL), getChannel(store('SelectedChannelStore').getChannelId())) === 'boolean' } catch (e) {}
 		add(canWorks, 'Can read your permissions', canWorks ? 'PermissionStore.can works' : 'Open a server channel first, then run this again')
 		const asks = hooks.names !== 'not found' || hooks.capabilities === 'found'
-		add(!!setting('realNames') && asks, 'Asking for real names', !setting('realNames') ? 'Turned off in the settings' : !asks ? 'Neither the capabilities function nor the experiment switches were found' : `capabilities: ${hooks.capabilities}${stats.capabilities ? ` (changed ${stats.capabilities} login)` : ''}; switches: ${hooks.names}; native flag: ${hooks.native}; logged in again: ${stats.reconnects}x`)
+		add(!!setting('realNames') && asks, 'Asking for real names', !setting('realNames') ? 'Turned off in the settings' : !asks ? 'Neither the capabilities function nor the experiment switches were found' : `capabilities: ${hooks.capabilities}${stats.capabilities ? ` (changed ${stats.capabilities} login)` : ''}; switches: ${hooks.names}; saved versions skipped: ${hooks.fullSync}${stats.fullSyncs ? ` (${stats.fullSyncs}x)` : ''}; native flag: ${hooks.native}; logged in again: ${stats.reconnects}x`)
 		const here = currentGuildId()
 		if (here) {
 			const counts = hiddenIn(here)
@@ -1070,7 +1092,7 @@
 			`words: block [${r.blockWords.join(', ')}] only [${r.onlyWords.join(', ')}]; skip NSFW ${r.skipNsfw}`,
 			`names: ${setting('labelMode')} "${setting('labelTemplate')}"; categories ${setting('nameCategories')} "${setting('categoryTemplate')}"`,
 			`tap: ${setting('tap')}; marker: ${setting('marker')} ${setting('markerPosition')}; dim ${setting('dim')}`,
-			`real names: ${setting('realNames') ? 'asked for' : 'off'}; capabilities: ${hooks.capabilities} (changed ${stats.capabilities}); switches: ${hooks.names}; native flag: ${hooks.native}; logged in again ${stats.reconnects}x, last ${setting('namesReconnectAt') ? new Date(setting('namesReconnectAt')).toLocaleTimeString() : 'never'}`,
+			`real names: ${setting('realNames') ? 'asked for' : 'off'}; capabilities: ${hooks.capabilities} (changed ${stats.capabilities}); switches: ${hooks.names}; saved versions: ${hooks.fullSync} (skipped ${stats.fullSyncs}x); native flag: ${hooks.native}; logged in again ${stats.reconnects}x, last ${setting('namesReconnectAt') ? new Date(setting('namesReconnectAt')).toLocaleTimeString() : 'never'}`,
 			`hooks: gated ${hooks.gated}; transition ${hooks.transition}; preload ${hooks.preload}; list rebuild ${hooks.list}`,
 			`patched: ${hooks.patched.join(', ') || '-'}`,
 			`asked ${stats.asked}, shown ${stats.shown.size}, rows drawn ${stats.decorated}, taps caught ${stats.taps}, refreshes ${stats.refreshes}, list rows changed ${stats.listUpdates}`,
@@ -1101,7 +1123,7 @@
 			// Once, on its own: log in again so the names arrive without a restart
 			;[AUTO_RECONNECT_MS, AUTO_RECONNECT_MS * 3, AUTO_RECONNECT_MS * 6].forEach((ms) => lateTimers.push(setTimeout(() => {
 				if (globalThis.__showHiddenChannelsInstance !== INSTANCE) return
-				if (setting('realNames') && hooks.capabilities === 'found' && !setting('namesReconnectAt')) reconnectNow('the first time, to get the real names')
+				if (setting('realNames') && hooks.capabilities === 'found' && hooks.fullSync === 'found' && !setting('namesReconnectAt')) reconnectNow('the first time, to get the real names')
 			}, ms)))
 			attempt('list store', () => hookListStore(api.cleanup))
 			attempt('list rebuild', () => { if (listStore() || listStates()) hooks.list = 'found' })

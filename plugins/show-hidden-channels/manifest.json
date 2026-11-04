@@ -8,7 +8,7 @@
 		"ShowHiddenChannels for Vencord, Equicord and Aliucord (the idea; code written from scratch for Valenced)",
 		"Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
 	],
-	"version": "1.2.2",
+	"version": "1.2.3",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"
