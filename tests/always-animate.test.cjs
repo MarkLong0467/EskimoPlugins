@@ -37,6 +37,7 @@ function load(settings = {}, options = {}) {
 	const emitted = []
 	const subs = []
 	const chatModule = { default: function createMessageContent(input) { return { id: 'row', ...(input || {}) } } }
+	const rowsModule = { generateMessageRowData: (input) => ({ type: 'MESSAGE', message: { id: 'row', ...(input || {}) } }) }
 	const React = {
 		useState: (initial) => { const state = [initial]; return [initial, (v) => { state[0] = v }] },
 		useEffect: () => {},
@@ -57,6 +58,7 @@ function load(settings = {}, options = {}) {
 				lookupModule: (f) => {
 					if (options.viaCallbackOnly && f !== 'jsx,jsxs') return []
 					if (typeof f === 'function') return []
+					if (f === 'generateMessageRowData') return options.noRows || options.noChat ? [] : [rowsModule]
 					if (f === 'name:createMessageContent') return options.noChat ? [] : [options.chatOnDefault ? { default: chatModule } : chatModule]
 					if (f === 'jsx,jsxs') return [runtime]
 					if (f === 'getUserAvatarURL,getGuildIconURL') return avatarModule ? [avatarModule] : []
@@ -72,7 +74,7 @@ function load(settings = {}, options = {}) {
 	const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'always-animate', 'index.js'), 'utf8')
 	const plugin = new Function('valenced', 'plugin', `return ${source}`)(global.valenced, global.plugin).default
 	plugin.start({ cleanup: (fn) => fn, jsonStorage: json })
-	return { plugin, data, json, runtime, log, avatarUtils, avatarModule, accessibility, toasts, emitted, subs, chatModule }
+	return { plugin, data, json, runtime, log, avatarUtils, avatarModule, accessibility, toasts, emitted, subs, chatModule, rowsModule }
 }
 const user = (animated) => ({ id: '123456789012345678', avatar: `${animated ? 'a_' : ''}0123456789abcdef`, discriminator: '0' })
 const texts = (node, out = []) => {
@@ -190,7 +192,7 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	const def = load({}, { chatOnDefault: true })
 	check('the chat function is found on a default export too', /animated=true/.test(def.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp` }).avatarURL))
 	findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()
-	check('the report counts chat rows', /chat: on; createMessageContent \(the chat rows\); Discord used it \d+ time\(s\), changed \d+/.test(global.copied) && !/chat: on; createMessageContent \(the chat rows\); Discord used it 0 /.test(global.copied), global.copied)
+	check('the report counts chat rows', /chat: on; (createMessageContent|generateMessageRowData) \(the chat rows\); Discord used it \d+ time\(s\), changed \d+/.test(global.copied) && !/chat: on; \w+ \(the chat rows\); Discord used it 0 /.test(global.copied), global.copied)
 }
 
 // 2e. Modules that Discord loads after the plugin started
@@ -200,7 +202,8 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	const stillUrl = () => app.avatarModule.getUserAvatarURL(user(true), false, 64)
 	check('nothing is hooked before the modules exist, and the settings say "not found"', /\.webp\?/.test(stillUrl()) && /pictures: on; not found/.test((() => { findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress(); return global.copied })()))
 	const sub = (key) => app.subs.find((x) => x.f === key)
-	check('the plugin subscribed to what it needs', !!sub('getUserAvatarURL,getGuildIconURL') && !!sub('AnimateEmoji,AnimateStickers,GifAutoPlay') && !!sub('name:createMessageContent') && app.subs.some((x) => typeof x.f === 'function'))
+	check('the plugin subscribed to what it needs', !!sub('getUserAvatarURL,getGuildIconURL') && !!sub('AnimateEmoji,AnimateStickers,GifAutoPlay') && !!sub('name:createMessageContent') && !!sub('generateMessageRowData'))
+	check('...and uses only filters Valenced knows (no custom filter functions)', app.subs.every((x) => typeof x.f === 'string'))
 	sub('getUserAvatarURL,getGuildIconURL').cb(app.avatarModule)
 	check('the picture functions are hooked when they load', /\.gif\?|animated=true/.test(stillUrl()) || !/\.webp\?size=64$/.test(stillUrl()))
 	const url = stillUrl()
@@ -209,10 +212,13 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	sub('AnimateEmoji,AnimateStickers,GifAutoPlay').cb(app.accessibility)
 	check('the three settings are hooked when they load', app.accessibility.AnimateEmoji.getSetting() === true && app.accessibility.AnimateStickers.getSetting() === true && app.accessibility.GifAutoPlay.getSetting() === true)
 	sub('AnimateEmoji,AnimateStickers,GifAutoPlay').cb(app.accessibility)
-	const funcSub = app.subs.find((x) => typeof x.f === 'function')
-	check('the chat function is also recognised by what the module exports', funcSub.f({ default: function createMessageContent() {} }) === true && funcSub.f({ default: function other() {} }) === false && funcSub.f(null) === false && funcSub.f({ default: { default: function createMessageContent() {} } }) === true)
-	funcSub.cb(app.chatModule)
-	check('...and hooked when it loads that way', /animated=true/.test(app.chatModule.default({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64` }).avatarURL))
+	sub('generateMessageRowData').cb(app.rowsModule)
+	const hooked = app.rowsModule.generateMessageRowData({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64`, avatarDecorationURL: 'https://cdn.discordapp.com/avatar-decoration-presets/a_abc.png?size=96&passthrough=false' })
+	check('the chat rows are hooked through generateMessageRowData when it loads', /animated=true/.test(hooked.message.avatarURL) && /passthrough=true/.test(hooked.message.avatarDecorationURL), JSON.stringify(hooked))
+	sub('generateMessageRowData').cb(app.rowsModule)
+	const once = app.rowsModule.generateMessageRowData({ avatarURL: `https://cdn.discordapp.com/avatars/1/${hash}.webp?size=64` })
+	check('...wrapped only once', (once.message.avatarURL.match(/animated=true/g) || []).length === 1, once.message.avatarURL)
+	check('a row that is not an object is passed on', app.rowsModule.generateMessageRowData(undefined).message.id === 'row')
 	findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === 'Run the self-check')[0].props.onPress()
 	check('the self-check passes once they are hooked', /AvatarUtils \(\d+ place/.test((() => { findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress(); return global.copied })()), global.copied)
 	const again = load({}, { viaCallbackOnly: true })

@@ -21,7 +21,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.2.1'
+	const VERSION = '1.2.2'
 
 	// ---------------------------------------------------------------------------------------------------
 	// Small helpers
@@ -296,28 +296,42 @@
 	 * of the author's picture (`avatarURL`) and decoration (`avatarDecorationURL`) already worked out. This is the
 	 * last place to make both animated.
 	 */
+	const chatSeen = new WeakSet()
 	function animateChatRow(row) {
 		if (!row || typeof row !== 'object') return row
 		let changed = false
 		if (typeof row.avatarURL === 'string') { const next = animatedAddress(row.avatarURL); if (next !== row.avatarURL) { row.avatarURL = next; changed = true } }
 		if (typeof row.avatarDecorationURL === 'string') { const next = animatedDecoration(row.avatarDecorationURL); if (next !== row.avatarDecorationURL) { row.avatarDecorationURL = next; changed = true } }
-		countSeen('chat', changed)
+		if (changed || !chatSeen.has(row)) { chatSeen.add(row); countSeen('chat', changed) }
 		return row
 	}
 	function hookChatRows(cleanup) {
+		// 1. `generateMessageRowData(...)` (MessageWithContent.tsx) returns { type, message: <the row data>, ... }. It is a
+		//    named export, so it can be found by name, and the row data is in `.message`.
+		const patchedRows = new WeakSet()
+		watchModules(cleanup, (filters) => filters.withProps('generateMessageRowData'), (mod) => {
+			;[mod, mod && mod.default].forEach((holder) => {
+				if (!holder || (typeof holder !== 'object' && typeof holder !== 'function') || typeof holder.generateMessageRowData !== 'function' || patchedRows.has(holder)) return
+				patchedRows.add(holder)
+				cleanup(valenced.patcher.after(holder, 'generateMessageRowData', (result) => {
+					if (!setting('chat')) return result
+					try { if (result && typeof result === 'object') animateChatRow(result.message) } catch (e) { reportProblem('chat row', e) }
+					return result
+				}))
+				found.chat = 'generateMessageRowData (the chat rows)'
+			})
+		})
+		// 2. `createMessageContent` itself, a default export found by its name (the same row data, also used by reply previews).
 		const patched = new WeakSet()
-		const attach = (mod) => {
+		watchModules(cleanup, (filters) => filters.withName('createMessageContent'), (mod) => {
 			;[mod, mod && mod.default].forEach((holder) => {
 				if (!holder || (typeof holder !== 'object' && typeof holder !== 'function')) return
 				if (typeof holder.default !== 'function' || patched.has(holder) || (holder.default.name && holder.default.name !== 'createMessageContent')) return
 				patched.add(holder)
 				cleanup(valenced.patcher.after(holder, 'default', (result) => { if (!setting('chat')) return result; try { return animateChatRow(result) } catch (e) { reportProblem('chat row', e); return result } }))
-				found.chat = 'createMessageContent (the chat rows)'
+				if (!found.chat || found.chat === 'not found') found.chat = 'createMessageContent (the chat rows)'
 			})
-		}
-		watchModules(cleanup, (filters) => filters.withName('createMessageContent'), attach)
-		// A second way to find it, by looking at what each module exports (the function is its default export)
-		watchModules(cleanup, () => (exports) => !!(exports && ((exports.default && typeof exports.default === 'function' && exports.default.name === 'createMessageContent') || (exports.default && exports.default.default && exports.default.default.name === 'createMessageContent'))), attach)
+		})
 		if (!found.chat) found.chat = 'not found'
 	}
 
