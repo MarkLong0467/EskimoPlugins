@@ -1,0 +1,184 @@
+// Mock tests for Always Animate. Run with: node tests/always-animate.test.cjs
+const fs = require('fs')
+const path = require('path')
+let failed = 0
+const check = (name, ok, extra) => {
+	console.log(`${ok ? 'ok   ' : 'FAIL '}${name}${ok || extra === undefined ? '' : `  -> ${extra}`}`)
+	if (!ok) failed += 1
+}
+
+/** A small fake of Discord's AvatarUtils: animated pictures give a .gif address only when "canAnimate" is true. */
+function makeAvatarUtils(log) {
+	const extension = (animatedHash, canAnimate) => (animatedHash && canAnimate ? 'gif' : 'webp')
+	const utils = {
+		getUserAvatarURL(user, canAnimate, size) { log.push(['getUserAvatarURL', canAnimate]); return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${extension(user.avatar.startsWith('a_'), canAnimate)}?size=${size}` },
+		getUserAvatarSource(user, canAnimate, size) { log.push(['getUserAvatarSource', canAnimate]); return { uri: utils.getUserAvatarURL(user, canAnimate, size) } },
+		getGuildMemberAvatarURL(member, canAnimate) { log.push(['getGuildMemberAvatarURL', canAnimate]); return 'x' },
+		getGuildMemberAvatarSource(member, author, canAnimate) { log.push(['getGuildMemberAvatarSource', canAnimate]); return 'x' },
+		getAnimatableSourceWithFallback(canAnimate, make) { log.push(['getAnimatableSourceWithFallback', canAnimate]); return make(canAnimate) },
+		getGuildMemberAvatarURLSimple(options) { log.push(['getGuildMemberAvatarURLSimple', options.canAnimate]); return `https://cdn.discordapp.com/guilds/${options.guildId}/users/${options.userId}/avatars/${options.avatar}.${extension(true, options.canAnimate)}` },
+		getUserBannerURL(options) { log.push(['getUserBannerURL', options.canAnimate]); return `banner.${extension(true, options.canAnimate)}` },
+		getGuildIconURL(options) { log.push(['getGuildIconURL', options.canAnimate]); return `https://cdn.discordapp.com/icons/${options.id}/${options.icon}.${extension(options.icon.startsWith('a_'), options.canAnimate)}?size=${options.size}` },
+		getAvatarDecorationURL(options) { log.push(['getAvatarDecorationURL', options.canAnimate]); return 'decoration' },
+	}
+	return utils
+}
+
+/** Loads a fresh copy of the plugin against a fake Discord. */
+function load(settings = {}, options = {}) {
+	const log = []
+	const avatarUtils = makeAvatarUtils(log)
+	const named = options.sameObject ? avatarUtils : { ...avatarUtils } // the module as a whole and its default object
+	const avatarModule = options.noAvatarUtils ? null : (options.sameObject ? avatarUtils : Object.assign(named, { default: avatarUtils }))
+	const settingsObject = (initial) => ({ getSetting: () => initial, useSetting: () => initial, updateSetting() {} })
+	const accessibility = { AnimateEmoji: settingsObject(false), AnimateStickers: settingsObject(false), GifAutoPlay: settingsObject(false) }
+	const runtime = { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) }
+	const toasts = []
+	const React = {
+		useState: (initial) => { const state = [initial]; return [initial, (v) => { state[0] = v }] },
+		useEffect: () => {},
+		cloneElement: (element, props) => ({ ...element, props: { ...element.props, ...props } }),
+	}
+	global.valenced = {
+		react: { React, ReactNative: { View: 'V', ScrollView: 'S' }, ReactJSXRuntime: runtime },
+		externals: { ReactNativeClipboard: { Clipboard: { setString: (text) => { global.copied = text } } } },
+		discord: { actions: { ToastActionCreators: { open: (k, o) => toasts.push(o.text) } }, design: { Design: new Proxy({}, { get: (_, key) => key }) } },
+		patcher: {
+			after: (object, key, fn) => { const original = object[key]; object[key] = function (...a) { const r = original.apply(this, a); const x = fn.call(this, r); return x === undefined ? r : x }; return () => { object[key] = original } },
+			instead: (object, key, fn) => { const original = object[key]; object[key] = function (...a) { return fn.call(this, a, original) }; return () => { object[key] = original } },
+		},
+		modules: {
+			finders: {
+				filters: { withProps: (...n) => n.join() },
+				lookupModule: (f) => {
+					if (f === 'jsx,jsxs') return [runtime]
+					if (f === 'getUserAvatarURL,getGuildIconURL') return avatarModule ? [avatarModule] : []
+					if (f === 'AnimateEmoji,AnimateStickers,GifAutoPlay') return options.noSettings ? [] : [accessibility]
+					return []
+				},
+			},
+		},
+	}
+	global.plugin = (definition) => definition
+	const data = { cache: { ...settings } }
+	const json = { get cache() { return data.cache }, use() { return data.cache }, set(patch) { Object.assign(data.cache, patch) } }
+	const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'always-animate', 'index.js'), 'utf8')
+	const plugin = new Function('valenced', 'plugin', `return ${source}`)(global.valenced, global.plugin).default
+	plugin.start({ cleanup: (fn) => fn, jsonStorage: json })
+	return { plugin, data, json, runtime, log, avatarUtils, avatarModule, accessibility, toasts }
+}
+const user = (animated) => ({ id: '123456789012345678', avatar: `${animated ? 'a_' : ''}0123456789abcdef`, discriminator: '0' })
+const texts = (node, out = []) => {
+	if (Array.isArray(node)) node.forEach((n) => texts(n, out))
+	else if (typeof node === 'string') out.push(node)
+	else if (node && typeof node === 'object') {
+		if (node.props && typeof node.props.label === 'string') out.push(node.props.label)
+		if (node.props && typeof node.props.subLabel === 'string') out.push(node.props.subLabel)
+		if (node.props && typeof node.props.text === 'string') out.push(`[${node.props.text}]`)
+		texts(node.props && node.props.children, out)
+	}
+	return out
+}
+const expand = (node) => (Array.isArray(node) ? node.map(expand) : node && typeof node === 'object' && typeof node.type === 'function' ? expand(node.type(node.props)) : node && typeof node === 'object' ? { ...node, props: { ...node.props, children: expand(node.props && node.props.children) } } : node)
+const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEach((n) => findAll(n, test, out)); else if (tree && typeof tree === 'object') { if (test(tree)) out.push(tree); findAll(tree.props && tree.props.children, test, out) } return out }
+
+// 1. Pictures
+{
+	const app = load()
+	const url = app.avatarModule.getUserAvatarURL(user(true), false, 64)
+	check('a picture that was asked for as still comes back animated', /\.gif\?/.test(url), url)
+	check('...through the default object too', /\.gif\?/.test(app.avatarModule.default.getUserAvatarURL(user(true), false, 64)))
+	check('a picture that is not animated stays as it is', /\.webp\?/.test(app.avatarModule.getUserAvatarURL(user(false), false, 64)))
+	check('the "source" form is animated too', /\.gif/.test(app.avatarModule.getUserAvatarSource(user(true), false, 64).uri))
+	check('a server icon (options object)', /\.gif\?/.test(app.avatarModule.getGuildIconURL({ id: '1', icon: 'a_abc', size: 64, canAnimate: false })))
+	check('a server profile picture (options object)', /\.gif$/.test(app.avatarModule.getGuildMemberAvatarURLSimple({ guildId: '1', userId: '2', avatar: 'a_x', canAnimate: false })))
+	check('a banner', app.avatarModule.getUserBannerURL({ canAnimate: false }).endsWith('.gif'))
+	app.log.length = 0
+	app.avatarModule.getGuildMemberAvatarSource({}, {}, false)
+	app.avatarModule.getAnimatableSourceWithFallback(false, (x) => x)
+	app.avatarModule.getGuildMemberAvatarURL({}, false)
+	check('functions that take the answer as a plain argument get true at the right place', app.log.every(([, flag]) => flag === true) && app.log.length === 3, JSON.stringify(app.log))
+	const options = { id: '1', icon: 'a_abc', size: 64, canAnimate: false }
+	app.avatarModule.getGuildIconURL(options)
+	check('the object Discord passed in is not changed', options.canAnimate === false)
+	const same = load({}, { sameObject: true })
+	same.log.length = 0
+	same.avatarModule.getUserAvatarURL(user(true), false, 64)
+	check('when the module and its default are one object it is wrapped once', same.log.length === 1 && same.log[0][1] === true, JSON.stringify(same.log))
+	const off = load({ pictures: false })
+	check('with the switch off nothing is changed', /\.webp\?/.test(off.avatarModule.getUserAvatarURL(user(true), false, 64)))
+	const missing = load({}, { noAvatarUtils: true })
+	check('if AvatarUtils is not found the plugin still starts', true)
+}
+
+// 2. Emoji, stickers, GIFs
+{
+	const app = load()
+	check('animated emoji, stickers and GIFs read as on', app.accessibility.AnimateEmoji.getSetting() === true && app.accessibility.AnimateStickers.getSetting() === true && app.accessibility.GifAutoPlay.getSetting() === true)
+	check('the hook form (useSetting) too', app.accessibility.AnimateEmoji.useSetting() === true && app.accessibility.GifAutoPlay.useSetting() === true)
+	const some = load({ emoji: true, stickers: false, gifs: false })
+	check('each switch works on its own', some.accessibility.AnimateEmoji.getSetting() === true && some.accessibility.AnimateStickers.getSetting() === false && some.accessibility.GifAutoPlay.getSetting() === false)
+	const none = load({}, { noSettings: true })
+	check('if the settings are not found the plugin still starts', true)
+}
+
+// 3. Status emoji and everything else
+{
+	function ActivityEmoji() {}
+	function Thing() {}
+	const app = load()
+	const emoji = app.runtime.jsx(ActivityEmoji, { emoji: { id: '1', name: 'x', animated: true, animate: false } })
+	check('the status emoji is told to animate', emoji.props.emoji.animate === true && emoji.props.emoji.id === '1')
+	const keep = app.runtime.jsx(ActivityEmoji, { emoji: { id: '1', animate: true } })
+	check('one that already animates is left alone', keep.props.emoji.animate === true)
+	const other = app.runtime.jsx(Thing, { animate: false })
+	check('other things are left alone by default', other.props.animate === false)
+	const everything = load({ everything: true })
+	check('with "everything" on, animate and canAnimate are forced', everything.runtime.jsx(Thing, { animate: false, canAnimate: false, shouldAnimate: false, label: 'a' }).props.animate === true && everything.runtime.jsx(Thing, { canAnimate: false }).props.canAnimate === true)
+	check('...but not a property that was never false', everything.runtime.jsx(Thing, { label: 'a' }).props.animate === undefined)
+	check('...and not the properties of plain views', everything.runtime.jsx('View', { animate: false }).props.animate === false)
+	const noStatus = load({ statusEmoji: false })
+	check('the status emoji switch works', noStatus.runtime.jsx(ActivityEmoji, { emoji: { animate: false } }).props.emoji.animate === false)
+}
+
+// 4. Self-check, report and screen
+{
+	const screen = (settings) => { const a = load(settings); return { a, tree: expand(a.plugin.SettingsComponent({ api: { jsonStorage: a.json } })) } }
+	const { a, tree } = screen({})
+	const shown = texts(tree).join('|')
+	check('the screen shows all six switches', ['Pictures', 'Emoji', 'Stickers', 'GIFs', 'Status emoji', 'Everything else (advanced)'].every((t) => shown.includes(t)), shown.slice(0, 300))
+	check('each switch says what it covers and whether it was found', /AvatarUtils \(\d+ places?, \d+ functions\)/.test(shown) && /UserSettings\.AnimateEmoji/.test(shown), shown.slice(0, 400))
+	const switches = findAll(tree, (n) => n.type === 'TableSwitchRow' && n.props.label)
+	check('there are six switches', switches.length === 6, String(switches.length))
+	switches.find((s) => s.props.label === 'GIFs').props.onValueChange(false)
+	check('a switch saves', a.data.cache.gifs === false)
+	const reportApp = load()
+	reportApp.avatarModule.getUserAvatarURL(user(true), false, 64)
+	const reportScreen = expand(reportApp.plugin.SettingsComponent({ api: { jsonStorage: reportApp.json } }))
+	findAll(reportScreen, (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()
+	check('the report lists every switch, the checks and the counts', /Always Animate report/.test(global.copied) && /pictures: on; AvatarUtils/.test(global.copied) && /check - A profile picture, asked for as "still": ok/.test(global.copied) && /changed \d+ time/.test(global.copied), global.copied)
+	check('the self-check passes when the plugin works', /A server icon, asked for as "still": ok/.test(global.copied) && !/FAIL/.test(global.copied), global.copied)
+	const broken = load({ pictures: false })
+	findAll(expand(broken.plugin.SettingsComponent({ api: { jsonStorage: broken.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()
+	check('the self-check fails when the switch is off, so it really tests the plugin', /A profile picture, asked for as "still": FAIL/.test(global.copied), global.copied)
+	const lost = load({}, { noAvatarUtils: true })
+	findAll(expand(lost.plugin.SettingsComponent({ api: { jsonStorage: lost.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()
+	check('the report says when AvatarUtils was not found', /pictures: on; not found/.test(global.copied) && /AvatarUtils was not found/.test(global.copied), global.copied)
+}
+
+// 5. The state of each switch on the screen
+{
+	const app = load()
+	const before = texts(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } }))).join('|')
+	check('before anything happened the switches say Ready', /Ready/.test(before) && !/Working/.test(before), before.slice(0, 300))
+	app.avatarModule.getUserAvatarURL(user(true), false, 64)
+	const after = texts(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } }))).join('|')
+	check('after the plugin changed a picture, Pictures says Working with a count', /Working · \d+/.test(after), after.slice(0, 300))
+	const off = load({ emoji: false })
+	check('a switch that is off says Off', /Off/.test(texts(expand(off.plugin.SettingsComponent({ api: { jsonStorage: off.json } }))).join('|')))
+	const lost = load({}, { noAvatarUtils: true })
+	check('something that was not found says Not found', /Not found/.test(texts(expand(lost.plugin.SettingsComponent({ api: { jsonStorage: lost.json } }))).join('|')))
+}
+
+console.log(failed ? `\n${failed} check(s) failed` : '\nAll checks passed')
+process.exit(failed ? 1 : 0)

@@ -1,0 +1,23 @@
+{
+	"format": 1,
+	"id": "marklong.always-animate",
+	"name": "Always Animate",
+	"description": "Animates everything that can be animated: profile pictures, banners, server icons, avatar decorations, emoji, stickers, GIFs and status emoji. Pick what you want in the settings and run the self-check to see it work.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [
+		"AlwaysAnimate for Vencord by FieryFlames (the idea; code written from scratch for Valenced)",
+		"Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
+	],
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
