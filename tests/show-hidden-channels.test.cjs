@@ -101,11 +101,15 @@ function load(settings = {}, options = {}) {
 	const routerModule = { transitionTo: (route) => { state.originalCalls.push(['route', route]); return 'routed' }, replaceWith() {}, back() {} }
 	const preloadModule = { preload: (g, id) => { state.preloads.push(id) }, ensurePrivateChannel() {} }
 	state.loaded = !options.late
+	state.originalAsked = []
+	const experiment = { isChannelMetadataObfuscationEnabled: (where) => { state.originalAsked.push(where); return true }, useIsChannelMetadataObfuscationEnabled: (where) => { state.originalAsked.push(`hook ${where}`); return true }, isChannelMetadataIntegrityCheckEnabled: () => true }
+	state.nativeCalls = []
+	const nativeModule = { setUseChannelObfuscation: (v) => { state.nativeCalls.push(v) } }
 	const statesModule = { default: { clear: () => { state.cleared += 1 } }, ChannelListSections: {}, SECTION_INDEX_RECENTS: 3 }
 	if (options.noStates) statesModule.default = {}
 	const runtime = { jsx: (type, props, key) => ({ type, props: props || {}, key }), jsxs: (type, props, key) => ({ type, props: props || {}, key }) }
 	global.valenced = {
-		react: { React, ReactNative: { View: 'View', ScrollView: 'ScrollView', Pressable: 'Pressable', useWindowDimensions: () => ({ height: 800 }) }, ReactJSXRuntime: runtime },
+		react: { React, ReactNative: { View: 'View', ScrollView: 'ScrollView', Pressable: 'Pressable', useWindowDimensions: () => ({ height: 800 }), NativeModules: options.nativeByFinder || options.noNative ? {} : { NativeFastConnectModule: nativeModule } }, ReactJSXRuntime: runtime },
 		externals: { ReactNativeClipboard: { Clipboard: { setString: (t) => { state.copied.push(t); global.copied = t } } } },
 		discord: {
 			flux: { Stores: flux },
@@ -125,6 +129,8 @@ function load(settings = {}, options = {}) {
 				return all.filter((m) => { try { return f(m) } catch (e) { return false } })
 			}
 			if (f === 'transitionToChannel,transitionToThread' || f === 'transitionToChannel') return options.noTransition || options.routeOnly || options.transitionOnDefault || !state.loaded ? [] : [transitionModule]
+			if (f === 'isChannelMetadataObfuscationEnabled,useIsChannelMetadataObfuscationEnabled') return options.noExperiment ? [] : [options.experimentOnDefault ? { default: experiment } : experiment]
+			if (f === 'setUseChannelObfuscation') return options.nativeByFinder ? [{ default: nativeModule }] : []
 			if (f === 'transitionTo,replaceWith') return options.routeOnly && state.loaded ? [routerModule] : []
 			if (f === 'preload,ensurePrivateChannel') return options.preloadOnDefault || !state.loaded ? [] : [preloadModule]
 			if (f === 'ChannelListSections,SECTION_INDEX_RECENTS' || f === 'clearGuildId,nonPositionalChannelIdUpdate') return options.noStates ? [] : [statesModule]
@@ -140,7 +146,7 @@ function load(settings = {}, options = {}) {
 	plugin.start({ cleanup: (fn) => fn, jsonStorage: json })
 	const screen = () => expandAt({ type: plugin.SettingsComponent, props: { api: { jsonStorage: json } } }, 'root')
 	const asked = (id) => originalGated.isChannelGatedAndVisible(channels[id].guild_id, id)
-	return { plugin, data, json, runtime, state, channels, visible, flux, screen, asked, transitionModule, routerModule, preloadModule }
+	return { plugin, data, json, runtime, state, channels, visible, flux, screen, asked, transitionModule, routerModule, preloadModule, experiment, nativeModule }
 }
 const H = '200000000000000002' // staff-chat, hidden, in category MODS
 const V = '200000000000000003' // secret voice
@@ -208,6 +214,37 @@ const OC = '300000000000000009' // hidden category, name left out
 		const lost = load({}, { noTransition: true })
 		press(lost.screen(), 'Self-check')
 		check('without the opener, the self-check says so', has(lost.screen(), '✗ Found the channel opener'))
+	}
+
+	// 3a. Asking Discord for the real names (the experiment switches)
+	{
+		const app = load()
+		check('the app\u2019s question "may the server hide names" is answered no', app.experiment.isChannelMetadataObfuscationEnabled('GatewaySocket') === false)
+		check('...also the hook form and the integrity check', app.experiment.useIsChannelMetadataObfuscationEnabled('App') === false && app.experiment.isChannelMetadataIntegrityCheckEnabled('x') === false)
+		check('...but Discord\u2019s own function still runs first (the hook form must keep its hooks)', app.state.originalAsked.includes('GatewaySocket') && app.state.originalAsked.includes('hook App'))
+		check('the native fast-connect flag is set to off', app.state.nativeCalls[0] === false && app.state.nativeCalls.length >= 1)
+		const off = load({ realNames: false })
+		check('with the switch off Discord\u2019s answer is kept', off.experiment.isChannelMetadataObfuscationEnabled('GatewaySocket') === true && off.experiment.isChannelMetadataIntegrityCheckEnabled('x') === true)
+		check('...and the native flag is left alone', off.state.nativeCalls.length === 0)
+		const onDefault = load({}, { experimentOnDefault: true })
+		check('the switches are found on a default export too', onDefault.experiment.isChannelMetadataObfuscationEnabled('x') === false)
+		const viaFinder = load({}, { nativeByFinder: true })
+		check('the native module is also found by a module search', viaFinder.state.nativeCalls[0] === false)
+		const lost = load({}, { noExperiment: true, noNative: true })
+		check('if the switches are not found the plugin still starts', !!lost.plugin)
+		press(lost.screen(), 'Self-check')
+		check('...and the self-check says so', has(lost.screen(), '✗ Asking for real names'))
+		const fine = load()
+		press(fine.screen(), 'Self-check')
+		check('the self-check shows it on a working setup', has(fine.screen(), '✓ Asking for real names') && has(fine.screen(), '3 of 3 switches answered no'), texts(fine.screen()).filter((x) => /switches|real names/i.test(x)).join('|'))
+		press(fine.screen(), 'Copy report')
+		check('the report has the real-names line', /real names: asked for; switches: 3 of 3 switches answered no; native flag: set to off/.test(global.copied), global.copied)
+		const toggle = load({ realNames: false })
+		findAll(toggle.screen(), (n) => n.props && n.props.label === 'Ask Discord for the real names')[0].props.onValueChange(true)
+		check('turning the switch on in the settings saves it, sets the flag and says to restart', toggle.data.cache.realNames === true && toggle.state.nativeCalls.includes(false) && toggle.state.toasts.some((x) => /Close Discord completely/.test(x)))
+		check('...and the switches answer no from then on', toggle.experiment.isChannelMetadataObfuscationEnabled('x') === false)
+		findAll(toggle.screen(), (n) => n.props && n.props.label === 'Ask Discord for the real names')[0].props.onValueChange(false)
+		check('turning it off gives Discord\u2019s answer back', toggle.experiment.isChannelMetadataObfuscationEnabled('x') === true)
 	}
 
 	// 3b. Modules that load late, and the route fallback
@@ -461,7 +498,7 @@ const OC = '300000000000000009' // hidden category, name left out
 		const t = texts(app.screen()).join('|')
 		check('the self-check passes on a working setup', /✓ Found Discord’s "gated channel" question/.test(t) && /✓ Found the channel opener/.test(t) && /✓ Can rebuild the channel list/.test(t) && /✓ Can read your permissions/.test(t) && /✓ Alpha has hidden channels/.test(t) && /✓ Discord asked about hidden channels/.test(t) && /✓ Marked rows were drawn/.test(t), t)
 		press(app.screen(), 'Copy report')
-		check('the report lists settings, hooks and counts', /Show Hidden Channels report/.test(global.copied) && /version: 1\.1\.2/.test(global.copied) && /hooks: gated found; transition found; preload found; list rebuild found/.test(global.copied) && /taps caught 1/.test(global.copied) && /this server: Alpha/.test(global.copied), global.copied)
+		check('the report lists settings, hooks and counts', /Show Hidden Channels report/.test(global.copied) && /version: 1\.2\.0/.test(global.copied) && /hooks: gated found; transition found; preload found; list rebuild found/.test(global.copied) && /taps caught 1/.test(global.copied) && /this server: Alpha/.test(global.copied), global.copied)
 		const fresh = load()
 		press(fresh.screen(), 'Self-check')
 		check('before anything was drawn the self-check says what to do', /✗ Discord asked about hidden channels/.test(texts(fresh.screen()).join('|')))
