@@ -2,13 +2,15 @@
 	"format": 1,
 	"id": "marklong.always-animate",
 	"name": "Always Animate",
-	"description": "Animates everything that can be animated: profile pictures, banners, server icons, avatar decorations, emoji, stickers, GIFs and status emoji. Pick what you want in the settings and run the self-check to see it work.",
+	"description": "Keeps animated profile pictures, banners, server icons, avatar decorations (ears), emoji, stickers, GIFs and nameplates playing, including in the chat. Works inside Discord's native chat, which normal plugins cannot reach.",
 	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
 	"contributors": [
-		"AlwaysAnimate for Vencord by FieryFlames (the idea; code written from scratch for Valenced)",
+		"fluttershy_simper67 (the implementation: picture, emoji, sticker and cosmetic animation, the chat bridge and the native frame player for avatar decorations; Always Animate for Valenced 1.0.0-beta16)",
+		"AlwaysAnimate for Vencord by FieryFlames (the idea)",
 		"Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
 	],
-	"version": "3.1.0",
+	"icon": "ActivityIcon",
+	"version": "4.0.0",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"
@@ -19,6 +21,6 @@
 	},
 	"dist": {
 		"script": "index.js",
-		"android": { "path": "plugin.jar", "class": "marklong.alwaysanimate.AlwaysAnimateNative" }
+		"android": { "path": "android/always-animate.jar", "class": "dev.fluttershy.alwaysanimate.AlwaysAnimateNative" }
 	}
 }

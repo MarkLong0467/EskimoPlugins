@@ -20,11 +20,19 @@
 - Always look modules up with `getModules`, not once at start (Show Hidden Channels and Always Animate both failed "not found" with a one-time lookup).
 - Discord's chat (`DCDChat`, `DCDMessageView`) is drawn natively from one `row` attribute; plugins can change the data in the row (`generateMessageRowData(...).message`) but not how the native view plays pictures.
 
-## Native parts (Kotlin) and the chat
+## Native parts and the chat
 
-- A plugin can ship a native part: `dist.android = { path: "plugin.jar", class: "<package>.<File>" }` in the manifest, and a Kotlin file with `val x = plugin { start { ... } stop { ... } }` (`@file:JvmName`). The JS side calls it with `valenced.modules.native.callNativeMethod(name, args)`; the native side registers with `registerNativeMethod(name) { args -> ... }`.
-- It cannot be built in the sandbox (needs JDK 25 + Android SDK). `.github/workflows/native-build.yml` builds `app.valenced:api` and `core` from the public Valenced source into mavenLocal, then builds `lab/always-animate-native`. No token is needed.
-- Inside the scope of `plugin { start { ... } }`, `enabled` is the plugin scope's own property: do not name your own variable `enabled`.
-- Never do heavy work (DexKit scans, hooks) at startup without a guard: a start that hangs locks Discord. The native part writes a "starting" mark and clears it 20 seconds later; if it is still there at the next launch, it does not auto-start. Valenced's own recovery mode also turns every plugin off after 3 crashes.
-- Discord's native chat (Android): `com.discord.chat.presentation.message.MessageView` binds each message (`b(Message, ...)`, `f(...)`); avatars and decorations are Fresco `SimpleDraweeView`s (`DraweeView` base names are scrambled; find the controller by what it returns: a zero-argument method that returns something with a zero-argument method returning `android.graphics.drawable.Animatable`). The animation exists but is not kept running: restarting it every ~400 ms (main thread) makes profile pictures animate in chat.
-- Avatar decorations ("ears") are APNG (animated PNG) files; Fresco cannot play APNG, so they stay still in the native chat. The server returns APNG whatever the `Accept` header or `format=` says. Always Animate 3.0.0 draws them with Discord's own decoder (`com.linecorp.apng.decoder.Apng`, reached by reflection: `Apng.Companion.decode(InputStream, boolean, boolean)`, `drawWithIndex(frame, canvas, srcRect, dstRect, paint)`) as an overlay on the parent view, with the still ear hidden. Built and tested by the user on a phone (as 2.1.0).
+- A plugin can ship a native part: `dist.android = { path: "android/x.jar", class: "<package>.<Class>" }` in the manifest. The jar is a DEX jar
+  (Always Animate's is built from Java with Android's `dx`; Kotlin built with the Valenced API from source also works).
+  The JS side can call native methods registered by the plugin, and a native part can write a status file in the plugin's storage dir
+  that the JS settings screen reads (`valenced.modules.native.fs.readFile(valenced.plugins.constants.pluginStorageDirFor(id) + '/file')`).
+- The sandbox cannot build Android code (needs JDK 25 + Android SDK). GitHub Actions can: build `app.valenced:api` and `core` from the
+  public Valenced source into mavenLocal, then build the plugin; no token needed. (Done for the Kotlin versions 1.x to 3.x of Always Animate.)
+- Never do heavy work (DexKit scans, hooks) at startup without a guard: a start that hangs locks Discord. Valenced's own recovery mode turns
+  every plugin off after 3 crashes.
+- Inside `plugin { start { ... } }` (Kotlin), `enabled` is the plugin scope's own property: do not name your own variable `enabled`.
+- Discord's native chat (Android): `com.discord.chat.presentation.message.MessageView` binds each message; avatars and decorations are Fresco
+  `SimpleDraweeView`s whose animation exists but is not kept running (restarting it every ~400 ms makes profile pictures animate).
+- Avatar decorations ("ears") are APNG (animated PNG) files; Fresco cannot play APNG, so they stay still in the native chat. The server returns
+  APNG whatever the `Accept` header or `format=` says. They can be decoded with the decoder in Discord (`com.linecorp.apng.decoder.Apng`) and
+  drawn over the still ear; Always Animate 4.0.0 does this with fluttershy_simper67's native frame player.

@@ -1,807 +1,803 @@
-(function (exports) {
-	/*
-	 * Always Animate for Valenced
-	 *
-	 * Animates everything that can be animated. The idea comes from AlwaysAnimate for Vencord. The code is written from
-	 * scratch for Valenced, using the decompiled Discord app (Wumpus-Central/discord-mobile-datamining, version 354).
-	 *
-	 * What the decompiled app shows, and what this plugin does about it:
-	 *
-	 * 1. Pictures. `discord_app/utils/AvatarUtils.tsx` builds every avatar, banner, server icon and decoration address.
-	 *    Each function is told whether the picture "canAnimate". When it is false Discord asks for a still picture,
-	 *    even if the picture is animated. The plugin wraps those functions and says true.
-	 * 2. Emoji, stickers and GIFs. `UserSettings.AnimateEmoji`, `AnimateStickers` and `GifAutoPlay` are the three
-	 *    accessibility settings. The plugin makes them read "on".
-	 * 3. Status emoji. `modules/activity_status/native/ActivityEmoji.tsx` animates only when its `emoji.animate` is true.
-	 *    The plugin sets it.
-	 * 4. Anything else with an `animate` or `canAnimate` property can be forced too (an option, off by default).
-	 *
-	 * The file reads top to bottom:  1 Settings  2 Counting  3 Pictures  4 Emoji, stickers, GIFs  5 Status emoji
-	 *                                6 Everything else  7 Self-check  8 Settings screen  9 The plugin
-	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
-	 */
+(function () {
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * Always Animate for Valenced.
+ * Implementation (picture, emoji, sticker and cosmetic animation, the chat bridge and the native frame player for
+ * avatar decorations): fluttershy_simper67, Always Animate for Valenced 1.0.0-beta16.
+ * Settings screen additions, the GIF and "Reduce motion" switches and "Refresh pictures": MarkLong0467.
+ * Mobile reimplementation inspired by Vencord AlwaysAnimate, Fiery / Vendicated and contributors (2023).
+ * Uses Valenced's documented runtime API; no desktop webpack patches.
+ */
+  'use strict';
+  var VERSION = '4.0.0';
+  var defaults = { images: true, emojis: true, stickers: true, cosmetics: true, gifs: true, motion: true };
+  var storage;
+  var stats = {};
+  var retryNativeBridges;
+  var retryNativeImage;
+  var IMAGE_METHODS = [
+    'getUserAvatarURL', 'getGuildMemberAvatarURL', 'getGuildIconURL',
+    'getGuildBannerURL', 'getUserBannerURL', 'getAvatarURL', 'getBannerURL',
+    'getGuildMemberAvatarURLSimple', 'getAvatarDecorationURL'
+  ];
+  var MEDIA_NAME = /avatar|emoji|guildicon|servericon|guildbanner|profilebanner|userbanner|nameplate|rolegradient|gradientrole/i;
+  var YES_FLAGS = ['animate', 'canAnimate', 'shouldAnimate', 'animateEmoji',
+    'animateAvatar', 'animateGradient', 'isAnimationEnabled'];
+  var NO_FLAGS = ['disableAnimation', 'disableAnimations', 'forceStatic'];
 
-	const VERSION = '3.1.0'
+  function enabled(key) {
+    return !storage || !storage.cache || storage.cache[key] !== false;
+  }
 
-	// ---------------------------------------------------------------------------------------------------
-	// Small helpers
-	// ---------------------------------------------------------------------------------------------------
-	const toast = (text) => {
-		try { valenced.discord.actions.ToastActionCreators.open('MARKLONG_ALWAYS_ANIMATE', { text: String(text) }) } catch (e) {}
-	}
-	/** Builds a React element with the JSX runtime, so the file needs no build step. */
-	function h(type, props, ...children) {
-		const runtime = valenced.react.ReactJSXRuntime
-		const { key, ...rest } = props || {}
-		if (children.length === 1) rest.children = children[0]
-		else if (children.length > 1) rest.children = children
-		return (children.length > 1 ? runtime.jsxs : runtime.jsx)(type, rest, key)
-	}
-	/** The name of a React component, from the element that was just made. */
-	function componentName(element) {
-		const type = element && element.type
-		if (!type || typeof type === 'string') return ''
-		const inner = type.type || type.render || type
-		return type.displayName || type.name || (inner && (inner.displayName || inner.name)) || ''
-	}
-	const isPlainObject = (value) => !!value && typeof value === 'object' && !Array.isArray(value)
+  function animatedDecorationURL(url) {
+    if (typeof url !== 'string' || !/^https:\/\/(?:cdn\.discordapp\.com|media\.discordapp\.net)\//i.test(url)) return url;
+    if (/\/media\/v1\/collectibles-shop\/\d+\/(?:[a-z0-9_-]+\/)*static(?:[?#]|$)/i.test(url))
+      return url.replace(/\/static(?=[?#]|$)/i, '/animated');
+    if (!/\/avatar-decoration-presets\/[a-z0-9_]+\.png(?:[?#]|$)/i.test(url)) return url;
+    var result = url.replace(/([?&])format=[^&#]*(?=&|#|$)/gi, '$1')
+      .replace(/\?&/g, '?').replace(/&&+/g, '&').replace(/[?&](?=#|$)/g, '');
+    if (/[?&]passthrough=/i.test(result)) return result.replace(/([?&]passthrough=)[^&#]*/i, '$1true');
+    var hash = result.indexOf('#'), fragment = hash < 0 ? '' : result.slice(hash);
+    if (hash >= 0) result = result.slice(0, hash);
+    return result + (result.indexOf('?') >= 0 ? '&' : '?') + 'passthrough=true' + fragment;
+  }
 
-	// ---------------------------------------------------------------------------------------------------
-	// 1. Settings
-	// ---------------------------------------------------------------------------------------------------
-	/** Every switch, in the order the settings screen shows them. `on` is the default. */
-	const FEATURES = [
-		{ key: 'pictures', on: true, title: 'Profile pictures, banners and icons', blurb: 'Animated profile pictures, banners and server icons play everywhere.' },
-		{ key: 'emoji', on: true, title: 'Emoji', blurb: 'Animated emoji always play.' },
-		{ key: 'stickers', on: true, title: 'Stickers', blurb: 'Animated stickers always play.' },
-		{ key: 'gifs', on: true, title: 'GIFs', blurb: 'GIFs play by themselves.' },
-		{ key: 'statusEmoji', on: true, title: 'Status emoji', blurb: 'The emoji in custom statuses.' },
-		{ key: 'chat', on: true, title: 'Pictures next to messages', blurb: 'Animated profile pictures and decorations beside each chat message.' },
-		{ key: 'addresses', on: true, title: 'Safety net', blurb: 'Swaps a still picture of an animated icon, profile picture or banner for the animated one. Catches what the other switches miss.' },
-		{ key: 'apng', on: true, title: 'Animated decorations', blurb: 'Lets Discord play animated avatar decorations (ears, frames) where it supports them.' },
-		{ key: 'motion', on: true, title: 'Ignore "Reduce motion"', blurb: 'Keeps animations on even when Discord or Game Mode asks to reduce motion.' },
-		{ key: 'everything', on: false, title: 'Everything else', blurb: 'Turns on every "animate" setting Discord has. May animate things Discord keeps still on purpose.' },
-	]
-	const defaults = { ...Object.fromEntries(FEATURES.map((f) => [f.key, f.on])), chatFormat2: 'gif', chatFlip: true, chatExtra: false }
+  // Only Discord CDN resources with an animated a_ hash are eligible.
+  // Never guess that a static avatar, external image or attachment has a GIF.
+  function animatedURL(url) {
+    if (typeof url !== 'string') return url;
+    var decoration = animatedDecorationURL(url);
+    if (decoration !== url) return decoration;
+    if (!/^https:\/\/(?:cdn\.discordapp\.com|media\.discordapp\.net)\/(?:avatars\/|icons\/|banners\/|guilds\/[^/]+\/users\/[^/]+\/(?:avatars|banners)\/)/i.test(url)) return url;
+    var result = url.replace(/(\/a_[a-z0-9_]+)\.(?:png|webp|avif|jpe?g)(?=[?#]|$)/i, '$1.gif');
+    // A CDN format override can still request a static response from a .gif URL.
+    if (/\/a_[a-z0-9_]+\.gif(?:[?#]|$)/i.test(result)) {
+      result = result.replace(/([?&])(?:format=(?:webp|png|avif|jpe?g)|animated=false)(?=&|#|$)/gi, '$1')
+        .replace(/\?&/g, '?').replace(/&&+/g, '&').replace(/[?&](?=#|$)/g, '');
+    }
+    return result;
+  }
 
-	let storage
-	let screenListeners = []
-	const redrawSettings = () => screenListeners.slice().forEach((redraw) => { try { redraw() } catch (e) {} })
+  function mapSource(value) {
+    if (typeof value === 'string') return animatedURL(value);
+    if (Array.isArray(value)) {
+      var next = value.map(mapSource);
+      return next.some(function (x, i) { return x !== value[i]; }) ? next : value;
+    }
+    if (value && typeof value === 'object' && typeof value.uri === 'string') {
+      var uri = animatedURL(value.uri);
+      if (uri !== value.uri) return Object.assign({}, value, { uri: uri });
+    }
+    return value;
+  }
 
-	function setting(key) {
-		const saved = storage && storage.cache && storage.cache[key]
-		return saved !== undefined ? saved : defaults[key]
-	}
-	function saveSettings(patch) {
-		try { if (storage && typeof storage.set === 'function') storage.set(patch) } catch (e) {}
-		try { if (storage && storage.cache) Object.assign(storage.cache, patch) } catch (e) {}
-		redrawSettings()
-	}
+  function typeName(type) {
+    if (!type || typeof type === 'string') return '';
+    return type.displayName || (type.type && (type.type.displayName || type.type.name)) ||
+      (type.render && (type.render.displayName || type.render.name)) || type.name || '';
+  }
 
-	// ---------------------------------------------------------------------------------------------------
-	// 2. Counting, so the settings screen can say what really happened
-	// ---------------------------------------------------------------------------------------------------
-	const forced = Object.fromEntries(FEATURES.map((f) => [f.key, 0])) // how many times each feature changed something
-	const seen = Object.fromEntries(FEATURES.map((f) => [f.key, 0])) // how many times Discord used the thing that was wrapped
-	const perFunction = {} // pictures only: function name -> { seen, changed }
-	let selfCheckRunning = false // the plugin's own test calls are not counted
-	const found = {} // what was found in Discord: { pictures: 'AvatarUtils (2 holders, 19 functions)', ... }
-	const problems = []
-	function countSeen(feature, changed, detail) {
-		if (selfCheckRunning) return
-		seen[feature] += 1
-		if (changed) forced[feature] += 1
-		if (detail) {
-			const entry = perFunction[detail] || (perFunction[detail] = { seen: 0, changed: 0 })
-			entry.seen += 1
-			if (changed) entry.changed += 1
-		}
-		if (seen[feature] <= 3 || seen[feature] % 50 === 0) redrawSettings()
-	}
-	function reportProblem(what, error) {
-		const text = `${what}: ${String((error && error.message) || error).slice(0, 80)}`
-		if (!problems.includes(text) && problems.length < 6) problems.push(text)
-	}
+  function mediaProps(type, props) {
+    if (!props || typeof props !== 'object') return props;
+    if (props.hidden === true || props.visible === false || props.isHidden === true) return props;
+    var name = typeName(type);
+    // Native Image/FastImage components can have anonymous or minified names.
+    // The URL itself is sufficient to identify an animated Discord asset.
+    var sourceKeys = ['source', 'src', 'uri', 'avatarURL', 'iconURL', 'bannerURL', 'bannerSource'];
+    var named = MEDIA_NAME.test(name);
+    if (!named) {
+      if (!enabled('images')) return props;
+      var imageProps = props;
+      sourceKeys.forEach(function (key) {
+        var mapped = mapSource(props[key]);
+        if (mapped !== props[key]) {
+          if (imageProps === props) imageProps = Object.assign({}, props);
+          imageProps[key] = mapped;
+        }
+      });
+      if (imageProps !== props) stats.renders = (stats.renders || 0) + 1;
+      return imageProps;
+    }
+    var group = /emoji/i.test(name) ? 'emojis' : /nameplate|gradient/i.test(name) ? 'cosmetics' : 'images';
+    if (!enabled(group)) return props;
+    var next = props;
+    function set(key, value) {
+      if (next[key] === value) return;
+      if (next === props) next = Object.assign({}, props);
+      next[key] = value;
+    }
+    // These components default to false when the caller omits animate.
+    // Merely changing existing boolean props never reached that default.
+    set('animate', true);
+    YES_FLAGS.forEach(function (key) {
+      if (typeof props[key] === 'boolean') set(key, true);
+    });
+    NO_FLAGS.forEach(function (key) {
+      if (typeof props[key] === 'boolean') set(key, false);
+    });
+    if (group === 'cosmetics' && typeof props.loop === 'boolean') set('loop', true);
+    if (group === 'images') {
+      sourceKeys.forEach(function (key) {
+        if (props[key] !== undefined) set(key, mapSource(props[key]));
+      });
+    }
+    if (next !== props) stats.renders = (stats.renders || 0) + 1;
+    return next;
+  }
 
-	// ---------------------------------------------------------------------------------------------------
-	// Finding Discord's code. `getModules` reports the modules that match now and the ones loaded later (many are
-	// loaded only when a screen first needs them, which can be after this plugin started); a plain lookup covers
-	// the ones that were loaded before. Everything that is hooked is hooked only once.
-	// ---------------------------------------------------------------------------------------------------
-	const watchers = []
-	function watchModules(cleanup, makeFilter, attach) {
-		const finders = valenced.modules.finders
-		const run = (mod) => { try { attach(mod) } catch (e) { reportProblem('hook', e) } }
-		let filter
-		try { filter = makeFilter(finders.filters) } catch (e) { reportProblem('filter', e); return }
-		try { if (typeof finders.getModules === 'function') cleanup(finders.getModules(filter, run)) } catch (e) { reportProblem('watch', e) }
-		const again = () => { try { finders.lookupModule(filter).forEach(run) } catch (e) {} }
-		again()
-		watchers.push(again)
-	}
-	/** Looks again for everything that has not been found yet. Hooks that are already in place are skipped. */
-	function lookAgain() { watchers.slice().forEach((again) => { try { again() } catch (e) {} }) }
+  // Makes the screens that are already drawn draw their pictures again (server list, profile pictures...).
+  function refreshPictures() {
+    var count = 0;
+    try {
+      var stores = valenced.discord.flux.Stores;
+      ['GuildStore', 'GuildMemberStore', 'UserStore', 'MessageStore', 'AccessibilityStore'].forEach(function (name) {
+        var store = stores && stores[name];
+        if (store && typeof store.emitChange === 'function') { store.emitChange(); count += 1; }
+      });
+    } catch (_) {}
+    return count;
+  }
 
-	// ---------------------------------------------------------------------------------------------------
-	// 3. Pictures: AvatarUtils
-	// ---------------------------------------------------------------------------------------------------
-	/**
-	 * Where each AvatarUtils function takes its "may it animate" answer.
-	 *   flag: a true/false at that argument position      options: an object with a `canAnimate` property at that position
-	 */
-	const PICTURE_FUNCTIONS = {
-		// the user's picture: (user, canAnimate, size, png, webp) and its "source" form
-		getUserAvatarURL: { flag: 1 },
-		getUserAvatarSource: { flag: 1 },
-		getGuildMemberAvatarURL: { flag: 1 },
-		getGuildMemberAvatarSource: { flag: 2 },
-		getAnimatableSourceWithFallback: { flag: 0 },
-		// everything that takes an options object
-		getGuildMemberAvatarURLSimple: { options: 0 },
-		getUserBannerURL: { options: 0 },
-		getGuildMemberBannerURL: { options: 0 },
-		getAvatarDecorationURL: { options: 0 },
-		getGuildIconURL: { options: 0 },
-		getGuildIconSource: { options: 0 },
-		getGuildBannerURL: { options: 0 },
-		getGuildBannerSource: { options: 0 },
-		getGuildSplashURL: { options: 0 },
-		getGuildSplashSource: { options: 0 },
-		getGuildHomeHeaderURL: { options: 0 },
-		getGuildHomeHeaderSource: { options: 0 },
-		getGuildDiscoverySplashURL: { options: 0 },
-		getGuildDiscoverySplashSource: { options: 0 },
-		getGuildTemplateIconURL: { options: 0 },
-		getGuildTemplateIconSource: { options: 0 },
-		getApplicationIconURL: { options: 0 },
-		getApplicationIconSource: { options: 0 },
-		getChannelIconURL: { options: 0 },
-		getChannelIconSource: { options: 0 },
-	}
+  function SettingsComponent() {
+    var React = valenced.react.React;
+    var RN = valenced.react.ReactNative;
+    var Design = valenced.discord && valenced.discord.design && valenced.discord.design.Design || {};
+    var h = React.createElement;
+    var redraw = React.useState(0)[1];
+    var expanded = React.useState(false);
+    var fullReport = React.useState(false);
+    var native = React.useState(null);
+    var loading = React.useState(true);
+    var notice = React.useState('');
+    var mounted = React.useRef(true);
+    var request = React.useRef(0);
+    var light = false;
+    try {
+      var theme = valenced.discord.flux.Stores.ThemeStore.theme;
+      light = theme === 'light';
+    } catch (_) {
+      try { light = RN.Appearance.getColorScheme() === 'light'; } catch (_) {}
+    }
+    var colours = light ? { text: '#202127', muted: '#626671', card: '#f2f3f5', line: '#dcdfe5' } :
+      { text: '#f2f3f5', muted: '#b5bac1', card: '#25262c', line: '#3b3e46' };
+    var features = [
+      { key: 'images', label: 'Avatars & frames', detail: 'Chat avatars, decorations, server icons and banners.' },
+      { key: 'emojis', label: 'Emoji', detail: 'Animated emoji in chat and custom statuses.' },
+      { key: 'stickers', label: 'Stickers', detail: 'Keep animated stickers looping in chat.' },
+      { key: 'cosmetics', label: 'Nameplates & roles', detail: 'Nameplates and gradient roles, where supported.' },
+      { key: 'gifs', label: 'GIFs', detail: 'GIFs play by themselves.' },
+      { key: 'motion', label: 'Ignore \u201cReduce motion\u201d', detail: 'Keep animations on when Discord or Game Mode asks to reduce motion.' }
+    ];
+    var count = features.filter(function (feature) { return enabled(feature.key); }).length;
+    function text(value, muted, style, extra) {
+      if (Design.Text) return h(Design.Text, Object.assign({
+        variant: muted ? 'text-sm/normal' : 'text-md/normal',
+        style: style
+      }, muted ? { color: 'text-muted' } : {}, extra || {}), value);
+      return h(RN.Text, Object.assign({ style: Object.assign({
+        color: muted ? colours.muted : colours.text, fontSize: muted ? 13 : 16
+      }, style || {}) }, extra || {}), value);
+    }
+    function group(children, key) {
+      if (Design.TableRowGroup) return h(Design.TableRowGroup, { key: key, title: '' }, children);
+      return h(RN.View, { key: key, style: { backgroundColor: colours.card, borderRadius: 16, overflow: 'hidden' } }, children);
+    }
+    function change(key, value) {
+      var patch = {}; patch[key] = value;
+      storage.set(patch);
+      if (key === 'images' && retryNativeImage) retryNativeImage();
+      redraw(function (value) { return value + 1; });
+    }
+    function report() {
+      return JSON.stringify({ build: VERSION, android: native[0], javascript: stats }, null, 2);
+    }
+    function readStatus() {
+      var token = ++request.current;
+      loading[1](true);
+      var task;
+      try {
+        var path = valenced.plugins.constants.pluginStorageDirFor('marklong.always-animate') + '/native-avatar-status.json';
+        task = valenced.modules.native.fs.readFile(path);
+      } catch (error) { task = Promise.reject(error); }
+      return Promise.resolve(task).then(function (value) {
+        var data = JSON.parse(value);
+        if (mounted.current && token === request.current) { native[1](data); notice[1](''); }
+      }).catch(function () {
+        if (mounted.current && token === request.current) native[1]({ unavailable: true });
+      }).then(function () {
+        if (mounted.current && token === request.current) loading[1](false);
+      });
+    }
+    function copyReport() {
+      try {
+        valenced.externals.ReactNativeClipboard.Clipboard.setString(report());
+        notice[1]('Report copied.');
+      } catch (_) { notice[1]('Open the full report to select and copy its text.'); fullReport[1](true); }
+    }
+    React.useEffect(function () {
+      mounted.current = true; readStatus();
+      return function () { mounted.current = false; request.current++; };
+    }, []);
+    var data = native[0];
+    var ready = !!data && (data.decorationState === 'ready' || data.state === 'ready');
+    var status = !count ? 'Paused' : loading[0] ? 'Checking playback' : ready ? 'Playback ready' : 'Status unavailable';
+    var statusNote = !count ? 'Turn on an animation below to get started.' :
+      ready ? 'Your animation settings are active.' :
+      loading[0] ? 'Reading the latest playback status.' : 'Reopen Discord after installing the update.';
+    var dot = !count || loading[0] ? '#949ba4' : ready ? '#3ba55c' : '#f0b232';
+    function button(label, action, disabled) {
+      if (Design.Button) return h(Design.Button, { text: label, variant: 'secondary', size: 'sm', onPress: action, disabled: !!disabled });
+      return h(RN.Pressable, { onPress: action, disabled: !!disabled, accessibilityRole: 'button', accessibilityLabel: label,
+        style: { borderWidth: 1, borderColor: colours.line, borderRadius: 10, paddingVertical: 11, paddingHorizontal: 14, opacity: disabled ? 0.5 : 1 }
+      }, text(label, false, { fontSize: 14, textAlign: 'center', fontWeight: '600' }));
+    }
+    function detail(label, value) {
+      return h(RN.View, { key: label, style: { flexDirection: 'row', justifyContent: 'space-between', gap: 16, paddingVertical: 6 } },
+        text(label, true, { flex: 1 }), text(String(value), false, { fontSize: 14, fontWeight: '600' }));
+    }
+    return h(RN.ScrollView, { contentContainerStyle: { padding: 16, paddingBottom: 32 }, showsVerticalScrollIndicator: false },
+      h(RN.View, { style: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 16, marginBottom: 10 } },
+        h(RN.View, { style: { width: 48, height: 48, borderRadius: 15, backgroundColor: '#5865f2', alignItems: 'center', justifyContent: 'center' }, accessible: false },
+          h(RN.Text, { style: { color: '#ffffff', fontFamily: 'sans-serif', fontSize: 34, lineHeight: 42 } }, '\u221e')),
+        h(RN.View, { style: { flex: 1 } },
+          text('Always Animate', false, { fontSize: 22, lineHeight: 28, fontWeight: '700' }),
+          text('Keep your Discord moving.', true, { marginTop: 3, lineHeight: 18 })),
+        text(count + '/' + features.length + ' on', true, { fontSize: 12, fontWeight: '600' })),
+      group(h(RN.View, { style: { padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 } },
+        h(RN.View, { style: { width: 9, height: 9, borderRadius: 5, backgroundColor: dot }, accessible: false }),
+        h(RN.View, { style: { flex: 1 } }, text(status, false, { fontSize: 15, fontWeight: '600' }),
+          text(statusNote, true, { marginTop: 3, lineHeight: 18 }))), 'status'),
+      text('ANIMATIONS', true, { fontSize: 11, fontWeight: '700', letterSpacing: 1, marginTop: 24, marginBottom: 9, marginLeft: 4 }),
+      group(features.map(function (feature, index) {
+        if (Design.TableSwitchRow) return h(Design.TableSwitchRow, {
+          key: feature.key, label: feature.label, subLabel: feature.detail,
+          value: enabled(feature.key), onValueChange: function (value) { change(feature.key, value); },
+          accessibilityLabel: feature.label
+        });
+        return h(RN.View, { key: feature.key, style: { flexDirection: 'row', alignItems: 'center', gap: 14,
+          paddingHorizontal: 16, paddingVertical: 15, borderTopWidth: index ? 1 : 0, borderTopColor: colours.line } },
+          h(RN.View, { style: { flex: 1 } }, text(feature.label, false, { fontWeight: '600', lineHeight: 22 }),
+            text(feature.detail, true, { marginTop: 4, lineHeight: 18 })),
+          h(RN.Switch, { value: enabled(feature.key), onValueChange: function (value) { change(feature.key, value); }, accessibilityLabel: feature.label }));
+      }), 'features'),
+      text('Reopen a chat or profile after changing a switch.', true, { marginTop: 10, marginHorizontal: 4, lineHeight: 18 }),
+      h(RN.View, { style: { marginTop: 12 } }, button('Refresh pictures', function () {
+        var done = refreshPictures();
+        notice[1](done ? 'Pictures refreshed.' : 'Could not refresh. Switch server or restart Discord.');
+        if (!expanded[0]) expanded[1](true);
+      })),
+      text('SUPPORT', true, { fontSize: 11, fontWeight: '700', letterSpacing: 1, marginTop: 24, marginBottom: 9, marginLeft: 4 }),
+      group([
+        h(RN.Pressable, { key: 'expand', onPress: function () { expanded[1](!expanded[0]); }, accessibilityRole: 'button',
+          accessibilityLabel: 'Troubleshooting', accessibilityState: { expanded: expanded[0] },
+          style: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 } },
+          h(RN.View, { style: { flex: 1 } }, text('Troubleshooting', false, { fontSize: 15, fontWeight: '600' }),
+            text('Playback status and help with reporting a problem.', true, { marginTop: 4, lineHeight: 18 })),
+          text(expanded[0] ? '\u2212' : '+', true, { fontSize: 23, fontFamily: 'sans-serif' })),
+        expanded[0] ? h(RN.View, { key: 'details', style: { padding: 16, paddingTop: 0, gap: 6 } },
+          detail('Version', VERSION),
+          detail('Frame player', data && data.decorationState === 'ready' ? 'Ready' : loading[0] ? 'Checking' : 'Unavailable'),
+          detail('Frame images loaded', data && data.decorationLoaded || 0),
+          detail('Playback errors', (data && data.errors || 0) + (data && data.decorationErrors || 0) + (stats.errors || 0)),
+          h(RN.View, { style: { flexDirection: 'row', gap: 10, marginTop: 10 } },
+            h(RN.View, { style: { flex: 1 } }, button('Copy report', copyReport, loading[0])),
+            h(RN.View, { style: { flex: 1 } }, button(loading[0] ? 'Refreshing\u2026' : 'Refresh status', readStatus, loading[0]))),
+          notice[0] ? text(notice[0], true, { marginTop: 6, lineHeight: 18 }, { accessibilityLiveRegion: 'polite' }) : null,
+          h(RN.Pressable, { onPress: function () { fullReport[1](!fullReport[0]); }, accessibilityRole: 'button',
+            accessibilityLabel: fullReport[0] ? 'Hide full report' : 'Show full report', accessibilityState: { expanded: fullReport[0] },
+            style: { paddingVertical: 13 } }, text(fullReport[0] ? 'Hide full report' : 'Show full report', true, { fontSize: 13, textDecorationLine: 'underline' })),
+          fullReport[0] ? h(RN.ScrollView, { nestedScrollEnabled: true, style: { maxHeight: 260 }, contentContainerStyle: { paddingVertical: 4 } },
+            text(report(), true, { fontFamily: 'monospace', fontSize: 11, lineHeight: 16 }, { selectable: true })) : null) : null
+      ], 'support'),
+      text('Always Animate \u00b7 ' + VERSION, true, { fontSize: 11, textAlign: 'center', marginTop: 22 }));
+  }
 
-	/** The arguments with "may animate" set to true. Returns the same array when nothing needs to change. */
-	function withAnimationAllowed(args, where) {
-		if (where.flag !== undefined) {
-			if (args[where.flag] === true) return args
-			const next = args.slice()
-			next[where.flag] = true
-			return next
-		}
-		const options = args[where.options]
-		if (!isPlainObject(options) || options.canAnimate === true) return args
-		const next = args.slice()
-		next[where.options] = { ...options, canAnimate: true }
-		return next
-	}
+  return { default: plugin({
+    jsonStorage: { load: true, default: defaults },
+    init: function (api) {
+      storage = api.jsonStorage;
+      stats = { jsx: 0, urls: 0, rows: 0, direct: 0, errors: 0 };
+      if (api.plugin && api.plugin.startedLate) api.plugin.requireReload();
+      var active = true;
+      api.cleanup(function () { active = false; });
+      var finders = valenced.modules.finders;
+      var filters = finders.filters;
+      var patcher = valenced.patcher;
+      var hooked = new WeakMap();
+      var rowHooked = new WeakSet();
+      var emojiStore;
+      function hook(target, key, kind, callback) {
+        if (!target || typeof target[key] !== 'function') return;
+        var keys = hooked.get(target);
+        if (!keys) { keys = new Set(); hooked.set(target, keys); }
+        if (keys.has(key)) return;
+        try {
+          api.cleanup(patcher[kind](target, key, callback));
+          keys.add(key);
+          return true;
+        } catch (error) {
+          stats.errors++;
+          stats.lastError = 'Could not attach ' + key + ': ' + String(error.message || error);
+          if (api.plugin && api.plugin.reportError) api.plugin.reportError(error);
+          return false;
+        }
+      }
+      var imageManager, imageManagerDesired, sendingImageFlag = false;
+      var imageManagers = new WeakSet();
+      function connectImageManager(mod) {
+        if (!active || !mod || typeof mod.setFastImageApngEnabled !== 'function') return;
+        imageManager = mod;stats.apngManager = true;
+        if (!imageManagers.has(mod)) {
+          imageManagers.add(mod);
+          if (hook(mod, 'setFastImageApngEnabled', 'before', function (args) {
+            if (sendingImageFlag || !active) return args;
+            if (typeof args[0] === 'boolean') imageManagerDesired = args[0];
+            if (!enabled('images')) return args;
+            stats.apngOverrides = (stats.apngOverrides || 0) + (args[0] === true ? 0 : 1);
+            var next = args.slice(); next[0] = true; return next;
+          })) stats.apngHook = true;
+        }
+      }
+      function enableImageDecoder() {
+        if (!active) return;
+        if (!imageManager) {
+          try { connectImageManager(valenced.modules.native.getNativeModule('NativeImageManagerModule')); } catch (_) {}
+          var RN = valenced.react && valenced.react.ReactNative;
+          try { connectImageManager(RN && RN.NativeModules && RN.NativeModules.NativeImageManagerModule); } catch (_) {}
+          try { if (RN && RN.TurboModuleRegistry && typeof RN.TurboModuleRegistry.get === 'function')
+            connectImageManager(RN.TurboModuleRegistry.get('NativeImageManagerModule')); } catch (_) {}
+        }
+        if (!imageManager) return;
+        var value = enabled('images') ? true : imageManagerDesired;
+        if (typeof value !== 'boolean') return;
+        try {
+          sendingImageFlag = true;
+          var result = imageManager.setFastImageApngEnabled(value);
+          stats.apngCalls = (stats.apngCalls || 0) + 1;stats.apngLastSent = value;stats.apngError = '';
+          if (result && typeof result.catch === 'function') result.catch(function (error) { stats.apngError = String(error.message || error); });
+        } catch (error) { stats.apngError = String(error.message || error); }
+        finally { sendingImageFlag = false; }
+      }
+      retryNativeImage = enableImageDecoder;
+      api.cleanup(finders.getModules(filters.withProps('setFastImageApngEnabled'), function (mod) {
+        connectImageManager(mod);enableImageDecoder();
+      }));
+      enableImageDecoder();
+      var imageDecoderTimers = [];
+      if (typeof setTimeout === 'function') [1000,3000,8000].forEach(function (ms) { imageDecoderTimers.push(setTimeout(enableImageDecoder,ms)); });
+      api.cleanup(function () {
+        if (typeof clearTimeout === 'function') imageDecoderTimers.forEach(clearTimeout);
+        // Restore Discord's last observed request; do not guess an unreadable
+        // experiment value if Discord never called this API during our lifetime.
+        if (imageManager && typeof imageManagerDesired === 'boolean') {
+          try{sendingImageFlag=true;imageManager.setFastImageApngEnabled(imageManagerDesired);}catch (_){}finally{sendingImageFlag=false;}
+        }
+        retryNativeImage=undefined;
+      });
+      var userStore, memberStore;
+      api.cleanup(finders.getModules(filters.withProps('getUser', 'getCurrentUser'), function (mod) {
+        if (active) { userStore = mod; stats.decorationUserStore = true; }
+      }));
+      api.cleanup(finders.getModules(filters.withProps('getMember', 'getMembers'), function (mod) {
+        if (active) { memberStore = mod; stats.decorationMemberStore = true; }
+      }));
+      function decorationAsset(data) {
+        if (!data || typeof data !== 'object') return null;
+        var asset = data.asset;
+        return typeof asset === 'string' && /^[a-z0-9_]+$/i.test(asset) ? asset : null;
+      }
+      function decorationData(object) {
+        if (!object || typeof object !== 'object') return undefined;
+        if (object.avatarDecorationData !== undefined) return object.avatarDecorationData;
+        if (object.avatar_decoration_data !== undefined) return object.avatar_decoration_data;
+        if (object.avatarDecoration !== undefined) return object.avatarDecoration;
+        return undefined;
+      }
+      function withChatDecoration(message) {
+        if (!enabled('images') || !message || typeof message !== 'object' || Array.isArray(message)) return message;
+        // Only native message records: never add schema fields to arbitrary
+        // author objects, text AST nodes, image attachments or embeds.
+        if (!Object.prototype.hasOwnProperty.call(message, 'avatarURL') &&
+            !Object.prototype.hasOwnProperty.call(message, 'avatar_url') &&
+            !Object.prototype.hasOwnProperty.call(message, 'avatarDecorationURL')) return message;
+        stats.decorationMessages = (stats.decorationMessages || 0) + 1;
+        // createMessageContent deliberately omits both avatar URLs on grouped
+        // continuations. A cached asset must never create a floating frame.
+        var shownAvatar = message.avatarURL || message.avatar_url;
+        if (message.isFirst === false || message.showAvatar === false || message.shouldShowAvatar === false ||
+            typeof shownAvatar !== 'string' || !shownAvatar.length) return message;
+        var current = message.avatarDecorationURL;
+        if (typeof current === 'string' && current.length) return message;
+        var author = message.author || message.user;
+        var id = message.authorId || message.author_id || message.userId || message.user_id || (author && author.id);
+        if (!id) {
+          var avatar = message.avatarURL || message.avatar_url || '';
+          var match = /^https:\/\/(?:cdn\.discordapp\.com|media\.discordapp\.net)\/avatars\/(\d+)\//.exec(avatar) ||
+            /^https:\/\/(?:cdn\.discordapp\.com|media\.discordapp\.net)\/guilds\/\d+\/users\/(\d+)\/avatars\//.exec(avatar);
+          if (match) id = match[1];
+        }
+        var data = decorationData(message);
+        if (data === undefined) data = decorationData(author);
+        try {
+          var guild = message.guildId || message.guild_id;
+          if (data === undefined && id && guild && memberStore) {
+            var memberData = decorationData(memberStore.getMember(guild, id));
+            // Null per-server data falls back to the global decoration.
+            if (memberData != null) data = memberData;
+          }
+          if (data === undefined && id && userStore) {
+            var cachedUser = userStore.getUser(id);
+            if (cachedUser) stats.decorationUserHits = (stats.decorationUserHits || 0) + 1;
+            data = decorationData(cachedUser);
+          }
+        } catch (_) { stats.decorationLookupErrors = (stats.decorationLookupErrors || 0) + 1; }
+        var asset = decorationAsset(data);
+        var sku = data && (data.skuId || data.sku_id);
+        var address = sku && /^\d+$/.test(String(sku)) ?
+          'https://cdn.discordapp.com/media/v1/collectibles-shop/' + sku + '/animated' :
+          asset ? 'https://cdn.discordapp.com/avatar-decoration-presets/' + asset + '.png?size=256&passthrough=true' : null;
+        if (!address) return message;
+        stats.decorationAssets = (stats.decorationAssets || 0) + 1;
+        stats.decorationInjected = (stats.decorationInjected || 0) + 1;
+        return Object.assign({}, message, { avatarDecorationURL: address });
+      }
+      // The final handoff is independent of RowManager's cached generated rows.
+      // Current clients use updateRows(ref, { rows }); older NativeChatModule /
+      // DCDChatManager clients use updateRows(ref, JSON.stringify(rows)).
+      function rewriteChatPayload(payload) {
+        var asJSON = typeof payload === 'string';
+        var root = payload;
+        if (asJSON) {
+          if (!/^\s*[\[{]/.test(payload)) return payload;
+          try { root = JSON.parse(payload); } catch (_) { return payload; }
+        }
+        if (!root || typeof root !== 'object') return payload;
+        var budget = 20000;
+        var ancestors = new WeakSet();
+        function walk(value, avatarContext, depth, fieldName) {
+          if (--budget < 0 || depth > 20) return value;
+          if (typeof value === 'string') {
+            // Some native wrappers serialize rows inside their rows/data field.
+            if (/^(?:rows|data)$/i.test(fieldName || '') && /^\s*[\[{]/.test(value)) {
+              try { var decoded = JSON.parse(value); var nested = walk(decoded, false, depth + 1);
+                return nested === decoded ? value : JSON.stringify(nested);
+              } catch (_) { return value; }
+            }
+            if (!enabled('images')) return value;
+            if (avatarContext) {
+              stats.bridgeAvatarFields = (stats.bridgeAvatarFields || 0) + 1;
+              if (/^a_[a-z0-9_]+$/i.test(value)) stats.bridgeHashes = (stats.bridgeHashes || 0) + 1;
+              if (/^https:\/\/(?:cdn\.discordapp\.com|media\.discordapp\.net)\/(?:avatars\/|guilds\/[^/]+\/users\/[^/]+\/avatars\/)/i.test(value) && !/\/a_/.test(value)) stats.bridgeStatic = (stats.bridgeStatic || 0) + 1;
+            }
+            if (avatarContext) {
+              var decoratedURL = animatedDecorationURL(value);
+              if (decoratedURL !== value) { stats.decorationURLChanges = (stats.decorationURLChanges || 0) + 1; return decoratedURL; }
+            }
+            if (!avatarContext || !/^https:\/\/(?:cdn\.discordapp\.com|media\.discordapp\.net)\/(?:avatars\/|guilds\/[^/]+\/users\/[^/]+\/avatars\/)/i.test(value) || !/\/a_[a-z0-9_]+\./i.test(value)) return value;
+            stats.bridgeAnimated = (stats.bridgeAnimated || 0) + 1;
+            var url = animatedURL(value);
+            if (/\.gif(?:[?#]|$)/i.test(url)) stats.bridgeGifs = (stats.bridgeGifs || 0) + 1;
+            if (url !== value) stats.bridgeChanges = (stats.bridgeChanges || 0) + 1;
+            return url;
+          }
+          if (!value || typeof value !== 'object' || ancestors.has(value)) return value;
+          ancestors.add(value);
+          var copy = value;
+          if (Array.isArray(value)) {
+            value.forEach(function (item, i) {
+              var next = walk(item, avatarContext, depth + 1);
+              if (next !== item) { if (copy === value) copy = value.slice(); copy[i] = next; }
+            });
+          } else {
+            if (fieldName === 'message' || Object.prototype.hasOwnProperty.call(value, 'avatarURL'))
+              copy = mapMessage(value, 0);
+            copy = withChatDecoration(copy);
+            var avatarNode = avatarContext || value.type === 'avatar';
+            Object.keys(value).forEach(function (key) {
+              // Chat text, attachments and embeds must keep their exact contents.
+              if (/^(?:content|attachments|embeds)$/i.test(key)) return;
+              var next = walk(value[key], avatarNode || /avatar/i.test(key), depth + 1, key);
+              if (next !== value[key]) { if (copy === value) copy = Object.assign({}, value); copy[key] = next; }
+            });
+          }
+          ancestors.delete(value);
+          return copy;
+        }
+        var result = walk(root, false, 0);
+        return result === root ? payload : asJSON ? JSON.stringify(result) : result;
+      }
+      function attachChatBridge(mod) {
+        if (!active || !mod || typeof mod.updateRows !== 'function') return;
+        if (hook(mod, 'updateRows', 'before', function (args) {
+          if (!active || (!enabled('images') && !enabled('emojis') && !enabled('stickers'))) return args;
+          stats.bridgeCalls = (stats.bridgeCalls || 0) + 1;
+          try {
+            var payload = rewriteChatPayload(args[1]);
+            if (payload === args[1]) return args;
+            var next = args.slice(); next[1] = payload; return next;
+          } catch (error) {
+            stats.errors++;
+            stats.lastError = 'Avatar handoff: ' + String(error.message || error);
+            return args;
+          }
+        })) stats.bridges = (stats.bridges || 0) + 1;
+      }
+      api.cleanup(finders.getModules(filters.withProps('updateRows', 'clearRows', 'scrollToBottom'), attachChatBridge));
+      retryNativeBridges = function () {
+        if (!active) return;
+        ['NativeChatModule', 'DCDChatManager'].forEach(function (name) {
+          try { attachChatBridge(valenced.modules.native.getNativeModule(name)); } catch (_) {}
+        });
+      };
+      retryNativeBridges();
+      api.cleanup(function () { retryNativeBridges = undefined; });
+      // User.getAvatarURL is an instance method, so withProps('getAvatarURL')
+      // does not find it on the constructor export.
+      if (typeof filters.createFilterGenerator === 'function') {
+        var withUserAvatarModel = filters.createFilterGenerator(function (_, id, mod) {
+          return !!(mod && mod.prototype && typeof mod.prototype.getAvatarURL === 'function');
+        }, function () { return 'alwaysAnimate.userAvatarModel'; });
+        api.cleanup(finders.getModules(withUserAvatarModel(), function (User) {
+          if (hook(User.prototype, 'getAvatarURL', 'after', function (result) {
+            return active && enabled('images') ? mapSource(result) : result;
+          })) stats.userModels = (stats.userModels || 0) + 1;
+        }));
+      }
+      // Patch the actual mobile Avatar memo component, including when the
+      // caller captured its reference before a JSX factory could be patched.
+      api.cleanup(finders.getModules(filters.withProps('getStatusSize'), function (mod) {
+        if (!active) return;
+        var avatar = mod.default;
+        if (avatar && typeof avatar.type === 'function') {
+          if (hook(avatar, 'type', 'before', function (args) {
+            if (!active || !enabled('images') || !args[0]) return args;
+            var next = args.slice();
+            next[0] = Object.assign({}, args[0], { animate: true });
+            stats.renders = (stats.renders || 0) + 1;
+            return next;
+          })) stats.direct++;
+        }
+      }));
+      api.cleanup(finders.getModules(filters.withName('GuildIcon'), function (GuildIcon) {
+        if (!active || !GuildIcon.prototype) return;
+        if (hook(GuildIcon.prototype, 'render', 'instead', function (args, original) {
+          if (!active || !enabled('images')) return original.apply(this, args);
+          var previous = this.props;
+          this.props = Object.assign({}, previous, { animate: true });
+          stats.renders = (stats.renders || 0) + 1;
+          try { return original.apply(this, args); }
+          finally { this.props = previous; }
+        })) stats.direct++;
+      }));
+      // The mobile ImageResolver uses an explicit second argument for user
+      // avatars and canAnimate in the other two options objects.
+      ['getUserAvatarURL', 'getGuildMemberAvatarURLSimple', 'getAvatarDecorationURL'].forEach(function (key) {
+        api.cleanup(finders.getModules(filters.withProps(key), function (mod) {
+          if (!active) return;
+          // Use a separate registration key so before and after may coexist.
+          var unpatch;
+          try {
+            unpatch = patcher.before(mod, key, function (args) {
+              if (!active || !enabled('images')) return args;
+              var next = args.slice();
+              if (key === 'getUserAvatarURL') next[1] = true;
+              else if (args[0] && typeof args[0] === 'object')
+                next[0] = Object.assign({}, args[0], { canAnimate: true });
+              return next;
+            });
+            api.cleanup(unpatch);
+            stats.direct++;
+          } catch (error) {
+            stats.errors++;
+            stats.lastError = 'Could not attach ' + key + ': ' + String(error.message || error);
+          }
+        }));
+      });
+      // Match Discord's normal emoji setting path. Do not change relationship
+      // stores, block filtering, visibility flags or the static emoji fallback.
+      api.cleanup(finders.getModules(filters.withProps('AnimateEmoji'), function (mod) {
+        var root = mod && (mod.AnimateEmoji ? mod : mod.default);
+        var target = root && root.AnimateEmoji;
+        if (!target) return;
+        ['getSetting', 'useSetting'].forEach(function (method) {
+          if (hook(target, method, 'after', function (result) {
+            return active && enabled('emojis') ? true : result;
+          })) stats.emojiSettings = (stats.emojiSettings || 0) + 1;
+        });
+      }));
+      api.cleanup(finders.getModules(filters.withProps('getCustomEmojiById'), function (mod) {
+        if (active) emojiStore = mod;
+      }));
+      function isAnimatedEmoji(node) {
+        if (node.animated === true || /\.gif(?:[?#]|$)/i.test(node.src || '')) return true;
+        try { return !!(emojiStore && node.id && emojiStore.getCustomEmojiById(node.id)?.animated); }
+        catch (_) { return false; }
+      }
+      function mapNodes(nodes, depth, emojiInfo) {
+        if (!Array.isArray(nodes) || depth > 16) return nodes;
+        var changed = false;
+        var next = nodes.map(function (node) {
+          if (!node || typeof node !== 'object') return node;
+          // Leave spoiler subtrees hidden until Discord reveals them.
+          if (/spoiler/i.test(node.type || '')) return node;
+          var out = node;
+          if (enabled('emojis') && node.type === 'customEmoji' && isAnimatedEmoji(node)) {
+            if (emojiInfo) emojiInfo.animated = true;
+            var src = node.src;
+            if (typeof src === 'string' && /^https:\/\/(?:cdn\.discordapp\.com|media\.discordapp\.net)\/emojis\/\d+\.(?:png|webp|gif)(?:[?#]|$)/i.test(src)) {
+              src = src.replace(/\.(?:png|webp)(?=[?#]|$)/i, '.gif');
+              if (node.src !== src) out = Object.assign({}, node, { src: src });
+            }
+          }
+          var content = mapNodes(node.content, depth + 1, emojiInfo);
+          if (content !== node.content) out = Object.assign({}, out, { content: content });
+          if (out !== node) changed = true;
+          return out;
+        });
+        return changed ? next : nodes;
+      }
+      function mapMessage(message, depth) {
+        if (!message || depth > 4) return message;
+        var out = message;
+        function set(key, value) {
+          if (value === message[key]) return;
+          if (out === message) out = Object.assign({}, message);
+          out[key] = value;
+        }
+        if (enabled('images')) {
+          ['avatarURL', 'guildAvatarURL', 'avatarDecorationURL'].forEach(function (key) {
+            if (typeof message[key] === 'string') set(key, animatedURL(message[key]));
+          });
+        }
+        if (enabled('emojis')) {
+          var emojiInfo = { animated: false };
+          set('content', mapNodes(message.content, 0, emojiInfo));
+          if ('animateEmoji' in message || emojiInfo.animated) set('animateEmoji', true);
+        }
+        if (enabled('stickers') && Array.isArray(message.stickers)) {
+          var changed = false;
+          var stickers = message.stickers.map(function (sticker) {
+            if (!sticker || [2, 3, 4].indexOf(sticker.format_type) < 0 || sticker.renderMode === 0) return sticker;
+            changed = true;
+            return Object.assign({}, sticker, { renderMode: 0 });
+          });
+          if (changed) set('stickers', stickers);
+        }
+        var reply = message.referencedMessage;
+        if (reply && reply.message) {
+          var transformed = mapMessage(reply.message, depth + 1);
+          if (transformed !== reply.message) set('referencedMessage', Object.assign({}, reply, { message: transformed }));
+        }
+        return out;
+      }
+      // Native Android chat rows bypass React; use the same RowManager hook
+      // used by Valenced community plugins, and preserve cached row objects.
+      api.cleanup(finders.getModules(filters.withName('RowManager'), function (RowManager) {
+        if (!active || !RowManager.prototype || rowHooked.has(RowManager.prototype)) return;
+        var proto = RowManager.prototype;
+        if (typeof proto.generate !== 'function') return;
+        rowHooked.add(proto);
+        hook(proto, 'generate', 'after', function (row) {
+          if (!active || !row || !row.message || (row.type !== 1 && row.rowType !== 1)) return row;
+          var message = mapMessage(row.message, 0);
+          if (message !== row.message) stats.rowChanges = (stats.rowChanges || 0) + 1;
+          return message === row.message ? row : Object.assign({}, row, { message: message });
+        });
+        stats.rows++;
+      }));
+      // Catch both already-loaded and future JSX factories without requiring
+      // every Discord module or running a polling timer.
+      api.cleanup(finders.getModules(filters.withProps('jsx', 'jsxs'), function (runtime) {
+        if (!active) return;
+        ['jsx', 'jsxs'].forEach(function (key) {
+          hook(runtime, key, 'before', function (args) {
+            if (!active) return args;
+            var props = mediaProps(args[0], args[1]);
+            if (props === args[1]) return args;
+            var next = args.slice(); next[1] = props; return next;
+          });
+        });
+        stats.jsx++;
+      }));
+      api.cleanup(finders.getModules(filters.withProps('createElement', 'useState'), function (React) {
+        if (!active) return;
+        hook(React, 'createElement', 'before', function (args) {
+          if (!active) return args;
+          var props = mediaProps(args[0], args[1]);
+          if (props === args[1]) return args;
+          var next = args.slice(); next[1] = props; return next;
+        });
+      }));
+      IMAGE_METHODS.forEach(function (key) {
+        api.cleanup(finders.getModules(filters.withProps(key), function (mod) {
+          if (!active) return;
+          if (hook(mod, key, 'after', function (result) {
+            var next = active && enabled('images') ? mapSource(result) : result;
+            if (next !== result) stats.urlChanges = (stats.urlChanges || 0) + 1;
+            return next;
+          })) stats.urls++;
+        }));
+      });
+      // getEmojiURL's options.animated is deliberately left intact: forcing
+      // static emoji IDs to GIF would request files which do not exist.
 
-	/** Wraps one function of a module so that `canAnimate` is true whenever the switch is on. */
-	function allowAnimationIn(holder, name, where, cleanup) {
-		const original = holder[name]
-		if (typeof original !== 'function' || original.__alwaysAnimate) return false
-		try {
-			cleanup(valenced.patcher.instead(holder, name, function (args, callOriginal) {
-				if (!setting('pictures')) return Reflect.apply(callOriginal, this, args)
-				const next = withAnimationAllowed(args, where)
-				countSeen('pictures', next !== args, name)
-				return Reflect.apply(callOriginal, this, next)
-			}))
-			try { holder[name].__alwaysAnimate = true } catch (e) {}
-			return true
-		} catch (e) {
-			reportProblem(`could not wrap ${name}`, e) // for example a function that cannot be replaced
-			return false
-		}
-	}
+      // ----- Extras by MarkLong0467: GIFs, "Reduce motion" and a redraw of the pictures already on screen -----
+      (function () {
+        // GIFs: Discord's "Play GIFs automatically" setting answers yes while the switch is on.
+        var patchedGifSettings = new WeakSet();
+        api.cleanup(finders.getModules(filters.withProps('AnimateEmoji', 'AnimateStickers', 'GifAutoPlay'), function (mod) {
+          var root = mod && (mod.AnimateEmoji ? mod : mod.default);
+          var target = root && root.GifAutoPlay;
+          if (!target || patchedGifSettings.has(target)) return;
+          patchedGifSettings.add(target);
+          ['getSetting', 'useSetting'].forEach(function (method) {
+            if (typeof target[method] !== 'function') return;
+            try {
+              api.cleanup(patcher.after(target, method, function (result) { return enabled('gifs') ? true : result; }));
+            } catch (error) {
+              stats.errors++;
+              stats.lastError = 'Could not attach GifAutoPlay.' + method + ': ' + String(error && error.message || error);
+            }
+          });
+        }));
 
-	/** AvatarUtils can be reached as the module itself and as its `default` object. Both get the same treatment. */
-	function holdersOf(modules) {
-		const holders = []
-		modules.forEach((mod) => {
-			;[mod, mod && mod.default].forEach((holder) => { if (holder && typeof holder === 'object' && !holders.includes(holder)) holders.push(holder) })
-		})
-		return holders
-	}
-	const avatarHolders = [] // every AvatarUtils object that was found, for the self-check
-	function allowPictureAnimations(cleanup) {
-		watchModules(cleanup, (filters) => filters.withProps('getUserAvatarURL', 'getGuildIconURL'), (mod) => {
-			holdersOf([mod]).forEach((holder) => {
-				if (!avatarHolders.includes(holder)) avatarHolders.push(holder)
-				Object.keys(PICTURE_FUNCTIONS).forEach((name) => allowAnimationIn(holder, name, PICTURE_FUNCTIONS[name], cleanup))
-			})
-			const wrapped = avatarHolders.reduce((total, holder) => total + Object.keys(PICTURE_FUNCTIONS).filter((name) => holder[name] && holder[name].__alwaysAnimate).length, 0)
-			found.pictures = `AvatarUtils (${avatarHolders.length} place${avatarHolders.length === 1 ? '' : 's'}, ${wrapped} functions)`
-		})
-		if (!found.pictures) found.pictures = 'not found'
-	}
+        // "Reduce motion": AccessibilityStore.useReducedMotion / prefersReducedMotion are getters on the store's
+        // prototype; the store gets its own getters in front of them that answer "no" while the switch is on.
+        function descriptorOf(object, name) {
+          for (var o = object; o; o = Object.getPrototypeOf(o)) {
+            var d = Object.getOwnPropertyDescriptor(o, name);
+            if (d) return d;
+          }
+          return null;
+        }
+        try {
+          var allStores = valenced.discord && valenced.discord.flux && valenced.discord.flux.Stores;
+          var store = allStores && allStores.AccessibilityStore;
+          if (store) {
+            var names = ['useReducedMotion', 'prefersReducedMotion'];
+            var own = {};
+            names.forEach(function (name) {
+              var original = descriptorOf(store, name);
+              if (!original) return;
+              own[name] = Object.getOwnPropertyDescriptor(store, name);
+              try {
+                Object.defineProperty(store, name, {
+                  configurable: true,
+                  enumerable: original.enumerable,
+                  get: function () {
+                    var real = original.get ? original.get.call(store) : original.value;
+                    return enabled('motion') ? false : real;
+                  }
+                });
+              } catch (error) {
+                stats.errors++;
+                stats.lastError = 'Could not override ' + name + ': ' + String(error && error.message || error);
+              }
+            });
+            api.cleanup(function () {
+              names.forEach(function (name) {
+                try { if (own[name]) Object.defineProperty(store, name, own[name]); else delete store[name]; } catch (_) {}
+              });
+            });
+            try { if (typeof store.emitChange === 'function') store.emitChange(); } catch (_) {}
+          }
+        } catch (error) {
+          stats.errors++;
+          stats.lastError = 'Reduce motion: ' + String(error && error.message || error);
+        }
 
-	// ---------------------------------------------------------------------------------------------------
-	// 4. Emoji, stickers and GIFs: three accessibility settings
-	// ---------------------------------------------------------------------------------------------------
-	/** `UserSettings.<name>` has `getSetting()` and `useSetting()`. Both are made to answer true while the switch is on. */
-	const ACCESSIBILITY_SETTINGS = [
-		{ name: 'AnimateEmoji', feature: 'emoji' },
-		{ name: 'AnimateStickers', feature: 'stickers' },
-		{ name: 'GifAutoPlay', feature: 'gifs' },
-	]
-	const accessibilityRoots = []
-	const patchedSettings = new WeakSet()
-	function allowAccessibilityAnimations(cleanup) {
-		watchModules(cleanup, (filters) => filters.withProps('AnimateEmoji', 'AnimateStickers', 'GifAutoPlay'), (mod) => {
-			const root = mod && (mod.AnimateEmoji ? mod : mod.default)
-			if (!root) return
-			if (!accessibilityRoots.includes(root)) accessibilityRoots.push(root)
-			ACCESSIBILITY_SETTINGS.forEach(({ name, feature }) => {
-				const target = root[name]
-				if (!target) { found[feature] = found[feature] || 'not found'; return }
-				if (patchedSettings.has(target)) return
-				patchedSettings.add(target)
-				const methods = ['getSetting', 'useSetting'].filter((method) => typeof target[method] === 'function')
-				methods.forEach((method) => {
-					cleanup(valenced.patcher.after(target, method, (result) => {
-						if (!setting(feature)) return result
-						countSeen(feature, result !== true)
-						return true
-					}))
-				})
-				found[feature] = `UserSettings.${name} (${methods.join(', ')})`
-			})
-		})
-		ACCESSIBILITY_SETTINGS.forEach(({ feature }) => { if (!found[feature]) found[feature] = 'not found' })
-	}
-
-	// ---------------------------------------------------------------------------------------------------
-	// 5. Status emoji and 6. everything else: elements as they are made
-	// ---------------------------------------------------------------------------------------------------
-	const ANIMATION_PROPS = ['animate', 'canAnimate', 'shouldAnimate']
-
-	/** The status emoji only animates when its own `emoji.animate` is true. */
-	function animateStatusEmoji(element) {
-		const props = element.props
-		if (componentName(element) !== 'ActivityEmoji' || !isPlainObject(props.emoji)) return element
-		if (props.emoji.animate === true) { countSeen('statusEmoji', false); return element }
-		countSeen('statusEmoji', true)
-		return valenced.react.React.cloneElement(element, { emoji: { ...props.emoji, animate: true } })
-	}
-	/** Any screen that was told not to animate is told to. */
-	function animateEverything(element) {
-		const props = element.props
-		if (!isPlainObject(props) || typeof element.type === 'string') return element
-		const switchedOff = ANIMATION_PROPS.filter((name) => props[name] === false)
-		if (!switchedOff.length) return element
-		countSeen('everything', true)
-		const patch = Object.fromEntries(switchedOff.map((name) => [name, true]))
-		return valenced.react.React.cloneElement(element, patch)
-	}
-
-	// A picture's address says if it is the still or the animated one: an animated picture has a hash that starts with
-	// "a_" and, when asked for as animated, ends in .gif or .webp?animated=true. Discord's server list (GuildsBarGuild)
-	// asks for the animated one only for the open server.
-	const STILL_ADDRESS = /(\/a_[0-9a-f]{6,})\.(png|jpe?g|webp)(\?[^#]*)?$/i
-	function animatedAddress(uri) {
-		if (typeof uri !== 'string' || uri.indexOf('/a_') < 0 || !/discord(app)?\.(com|net)|discordapp/.test(uri)) return uri
-		const m = uri.match(STILL_ADDRESS)
-		if (!m) return uri
-		const query = m[3] || ''
-		if (/[?&]animated=true/.test(query)) return uri
-		const head = uri.slice(0, m.index) + m[1]
-		return m[2].toLowerCase() === 'webp' ? `${head}.webp${query ? `${query}&animated=true` : '?animated=true'}` : `${head}.gif${query}`
-	}
-	// Decorations: a preset decoration is .../avatar-decoration-presets/<asset>.png?size=..&passthrough=false and
-	// passthrough=true is the animated one. A shop decoration ends in /static or /animated.
-	function animatedDecoration(uri) {
-		if (typeof uri !== 'string') return uri
-		if (uri.indexOf('avatar-decoration-presets') >= 0 && /[?&]passthrough=false/.test(uri)) return uri.replace(/([?&]passthrough=)false/, '$1true')
-		return uri.replace(/(\/media\/v1\/collectibles-shop\/[^?#]*\/)static(?=[?#]|$)/, '$1animated')
-	}
-	/**
-	 * Discord's chat is drawn natively from a row of plain data: `createMessageContent` returns it, with the address
-	 * of the author's picture (`avatarURL`) and decoration (`avatarDecorationURL`) already worked out. This is the
-	 * last place to make both animated.
-	 */
-	const chatSeen = new WeakSet()
-	let chatSample = '' // the first address pair that was changed, for the report
-	let chatAvatarSample = '' // the first animated profile picture address that went to the chat
-	const chatCounts = { rows: 0, animatedAvatars: 0, decorations: 0 }
-	function animateChatRow(row) {
-		if (!row || typeof row !== 'object') return row
-		let changed = false
-		if (typeof row.avatarURL === 'string') {
-			let next = animatedAddress(row.avatarURL)
-			if (setting('chatFormat2') === 'gif') next = asGif(next)
-			if (next !== row.avatarURL) { row.avatarURL = next; changed = true }
-		}
-		if (typeof row.avatarDecorationURL === 'string') { const next = animatedDecoration(row.avatarDecorationURL); if (next !== row.avatarDecorationURL) { row.avatarDecorationURL = next; changed = true } }
-		if (!chatSeen.has(row)) {
-			const hasDecoration = typeof row.avatarDecorationURL === 'string' && row.avatarDecorationURL
-			const animatedAvatar = typeof row.avatarURL === 'string' && /\/a_[0-9a-f]{6,}\./i.test(row.avatarURL)
-			chatCounts.rows += 1
-			if (animatedAvatar) { chatCounts.animatedAvatars += 1; if (!chatAvatarSample) chatAvatarSample = String(row.avatarURL).replace(/^https?:\/\//, '').slice(0, 90) }
-			if (hasDecoration) chatCounts.decorations += 1
-		}
-		if (changed && !chatSample) chatSample = `${String(row.avatarURL || '').replace(/^https?:\/\//, '').slice(0, 80)} | ${String(row.avatarDecorationURL || '').replace(/^https?:\/\//, '').slice(-60)}`
-		if (changed || !chatSeen.has(row)) { chatSeen.add(row); countSeen('chat', changed) }
-		return row
-	}
-	function hookChatRows(cleanup) {
-		// 1. `generateMessageRowData(...)` (MessageWithContent.tsx) returns { type, message: <the row data>, ... }. It is a
-		//    named export, so it can be found by name, and the row data is in `.message`.
-		const patchedRows = new WeakSet()
-		watchModules(cleanup, (filters) => filters.withProps('generateMessageRowData'), (mod) => {
-			;[mod, mod && mod.default].forEach((holder) => {
-				if (!holder || (typeof holder !== 'object' && typeof holder !== 'function') || typeof holder.generateMessageRowData !== 'function' || patchedRows.has(holder)) return
-				patchedRows.add(holder)
-				cleanup(valenced.patcher.after(holder, 'generateMessageRowData', (result) => {
-					if (!setting('chat')) return result
-					try { if (result && typeof result === 'object') animateChatRow(result.message) } catch (e) { reportProblem('chat row', e) }
-					return result
-				}))
-				found.chat = 'generateMessageRowData (the chat rows)'
-			})
-		})
-		// 2. `createMessageContent` itself, a default export found by its name (the same row data, also used by reply previews).
-		const patched = new WeakSet()
-		watchModules(cleanup, (filters) => filters.withName('createMessageContent'), (mod) => {
-			;[mod, mod && mod.default].forEach((holder) => {
-				if (!holder || (typeof holder !== 'object' && typeof holder !== 'function')) return
-				if (typeof holder.default !== 'function' || patched.has(holder) || (holder.default.name && holder.default.name !== 'createMessageContent')) return
-				patched.add(holder)
-				cleanup(valenced.patcher.after(holder, 'default', (result) => { if (!setting('chat')) return result; try { return animateChatRow(result) } catch (e) { reportProblem('chat row', e); return result } }))
-				if (!found.chat || found.chat === 'not found') found.chat = 'createMessageContent (the chat rows)'
-			})
-		})
-		if (!found.chat) found.chat = 'not found'
-	}
-
-	/** The same animated picture as a .gif address: the chat may play that kind where it ignores animated webp. */
-	function asGif(uri) {
-		if (typeof uri !== 'string' || uri.indexOf('/a_') < 0) return uri
-		const m = uri.match(/(\/a_[0-9a-f]{6,})\.(png|jpe?g|webp)(\?[^#]*)?$/i)
-		if (!m) return uri
-		const query = (m[3] || '').replace(/([?&])animated=true&?/, '$1').replace(/[?&]$/, '')
-		return `${uri.slice(0, m.index)}${m[1]}.gif${query}`
-	}
-
-	/** Rewrites the `source` of an image element when it points at the still version of an animated picture. */
-	function animateAddresses(element) {
-		const props = element.props
-		const source = props && props.source
-		if (!source || typeof source !== 'object') return element
-		let changed = false
-		const fix = (one) => {
-			if (!one || typeof one !== 'object' || typeof one.uri !== 'string') return one
-			const next = animatedAddress(one.uri)
-			if (next === one.uri) return one
-			changed = true
-			return { ...one, uri: next }
-		}
-		const fixed = Array.isArray(source) ? source.map(fix) : fix(source)
-		if (!changed) return element
-		countSeen('addresses', true)
-		return valenced.react.React.cloneElement(element, { source: fixed })
-	}
-
-	// "Reduce motion": `AccessibilityStore.useReducedMotion` is `GameModeStore.isThrottling || prefersReducedMotion`
-	// (modules/a11y/AccessibilityStore.tsx). Rows of the chat are built with it (`createMessageContent` reads it for
-	// attachments and embeds) and many screens read it. Both are getters on the store's prototype, so the store itself
-	// gets its own getters in front of them, which answer "no" while the switch is on.
-	const motionWas = { reduced: undefined, prefers: undefined, found: false, overridden: 0 }
-	function descriptorOf(object, name) {
-		for (let o = object; o; o = Object.getPrototypeOf(o)) { const d = Object.getOwnPropertyDescriptor(o, name); if (d) return d }
-		return null
-	}
-	function ignoreReducedMotion(cleanup) {
-		let store
-		try { store = valenced.discord.flux.Stores.AccessibilityStore } catch (e) {}
-		if (!store) { found.motion = 'not found'; return }
-		const names = ['useReducedMotion', 'prefersReducedMotion']
-		const own = {}
-		names.forEach((name) => {
-			const original = descriptorOf(store, name)
-			if (!original) return
-			own[name] = Object.getOwnPropertyDescriptor(store, name)
-			const read = () => (original.get ? original.get.call(store) : original.value)
-			try { motionWas[name === 'useReducedMotion' ? 'reduced' : 'prefers'] = read() } catch (e) {}
-			try {
-				Object.defineProperty(store, name, {
-					configurable: true,
-					enumerable: original.enumerable,
-					get() {
-						const real = read()
-						if (!setting('motion')) return real
-						if (real) countSeen('motion', true); else countSeen('motion', false)
-						return false
-					},
-				})
-				motionWas.found = true
-			} catch (e) { reportProblem(`could not override ${name}`, e) }
-		})
-		found.motion = motionWas.found ? 'AccessibilityStore (useReducedMotion, prefersReducedMotion)' : 'not found'
-		cleanup(() => { names.forEach((name) => { try { if (own[name]) Object.defineProperty(store, name, own[name]); else delete store[name] } catch (e) {} }) })
-		try { if (typeof store.emitChange === 'function') store.emitChange() } catch (e) {}
-	}
-
-	// ---------------------------------------------------------------------------------------------------
-	// The last stop in JavaScript: the chat rows as the JSON that goes to the native chat
-	// ---------------------------------------------------------------------------------------------------
-	// `NativeChatUtils.updateRows(chatRef, { rows, ... })` (modules/chat/native/NativeChatUtils.tsx) turns `rows` into JSON
-	// and hands it to the native chat (`NativeChatModule.updateRows`). `rows` is a list of changes (INSERT, UPDATE...)
-	// whose rows hold the message data that `createMessageContent` made. This looks at them just before they leave:
-	//  - it records which fields a row really has (the report shows them), so it is known what the native chat is told;
-	//  - it flips any switch in a row that is false and is about animation (animate..., autoPlay...), like "everything";
-	//  - as an experiment (off by default) it adds animation flags the row does not have yet.
-	const chatJson = { updates: 0, ops: 0, opKeys: new Set(), holderKeys: new Set(), samples: {}, flipped: 0, flippedKeys: new Set(), added: 0, depthPaths: new Set() }
-	const ANIMATION_KEY = /anim|autoplay|auto_play|gifplay/i
-	const AVATAR_SAMPLE_KEY = /avatar|anim|play|motion|gif|decor|nameplate/i
-	const EXTRA_FLAGS = ['animateAvatar', 'animateAvatars', 'animatedAvatar', 'shouldAnimateAvatar', 'avatarAnimated', 'animateAvatarDecoration', 'animateDecoration', 'avatarDecorationAnimated', 'autoPlayAvatars']
-	function visitChatRow(node, path, depth, seen) {
-		if (!node || typeof node !== 'object' || depth > 5 || seen.count > 400) return
-		seen.count += 1
-		if (Array.isArray(node)) { node.slice(0, 20).forEach((child, i) => visitChatRow(child, `${path}[]`, depth + 1, seen)); return }
-		if ('avatarURL' in node || 'avatarDecorationURL' in node) {
-			chatJson.depthPaths.add(path)
-			Object.keys(node).forEach((key) => {
-				chatJson.holderKeys.add(key)
-				if (AVATAR_SAMPLE_KEY.test(key) && !(key in chatJson.samples)) {
-					const value = node[key]
-					chatJson.samples[key] = typeof value === 'string' ? value.replace(/^https?:\/\//, '').slice(0, 70) : JSON.stringify(value) === undefined ? String(value) : String(JSON.stringify(value)).slice(0, 40)
-				}
-			})
-			if (setting('chatFlip')) {
-				Object.keys(node).forEach((key) => { if (ANIMATION_KEY.test(key) && node[key] === false) { node[key] = true; chatJson.flipped += 1; chatJson.flippedKeys.add(key) } })
-			}
-			if (setting('chatExtra')) {
-				EXTRA_FLAGS.forEach((key) => { if (!(key in node)) { node[key] = true; chatJson.added += 1 } })
-			}
-		}
-		Object.keys(node).forEach((key) => {
-			const child = node[key]
-			if (child && typeof child === 'object') visitChatRow(child, `${path}.${key}`, depth + 1, seen)
-		})
-	}
-	function hookChatUpdates(cleanup) {
-		const patched = new WeakSet()
-		watchModules(cleanup, (filters) => filters.withProps('updateRows', 'scrollToBottom', 'clearRows'), (mod) => {
-			;[mod, mod && mod.default].forEach((holder) => {
-				if (!holder || (typeof holder !== 'object' && typeof holder !== 'function') || typeof holder.updateRows !== 'function' || patched.has(holder)) return
-				patched.add(holder)
-				cleanup(valenced.patcher.instead(holder, 'updateRows', function (args, original) {
-					try {
-						const update = args[1]
-						const list = update && Array.isArray(update.rows) ? update.rows : null
-						if (list) {
-							chatJson.updates += 1
-							list.slice(0, 60).forEach((op) => {
-								chatJson.ops += 1
-								if (op && typeof op === 'object') Object.keys(op).forEach((key) => chatJson.opKeys.add(key))
-								visitChatRow(op, 'op', 0, { count: 0 })
-							})
-						}
-					} catch (e) { reportProblem('chat json', e) }
-					return Reflect.apply(original, this, args)
-				}))
-				found.chatJson = 'NativeChatUtils.updateRows (the rows as they go to the native chat)'
-			})
-		})
-		if (!found.chatJson) found.chatJson = 'not found'
-	}
-
-	// ---------------------------------------------------------------------------------------------------
-	// Animated PNG: NativeImageManagerModule.setFastImageApngEnabled
-	// ---------------------------------------------------------------------------------------------------
-	// Found with Chat Scout: the native module has `setFastImageApngEnabled`. In the decompiled app
-	// (components_native/common/FastImageApngExperiment.tsx) it is called once with the result of the experiment
-	// "2026-10-android-fastimage-apng", which is off by default. Avatar decorations are animated PNGs, and the
-	// native image view only decodes animated PNGs when this is on. The call is wrapped so any later call by Discord
-	// also says "true", and it is made now and again a few times.
-	const apng = { found: false, calls: 0, discordAsked: [], lastSent: undefined, error: '' }
-	function nativeImageManager() {
-		try {
-			const RN = valenced.react.ReactNative
-			const mod = RN && RN.NativeModules && RN.NativeModules.NativeImageManagerModule
-			if (mod && typeof mod.setFastImageApngEnabled === 'function') return mod
-			const reg = RN && RN.TurboModuleRegistry && typeof RN.TurboModuleRegistry.get === 'function' ? RN.TurboModuleRegistry.get('NativeImageManagerModule') : null
-			return reg && typeof reg.setFastImageApngEnabled === 'function' ? reg : null
-		} catch (e) { return null }
-	}
-	let apngModule = null
-	let sendingApng = false
-	function sendApng() {
-		if (!setting('apng')) return
-		try {
-			const mod = apngModule || nativeImageManager()
-			if (!mod) return
-			apngModule = mod
-			sendingApng = true
-			try { mod.setFastImageApngEnabled(true) } finally { sendingApng = false }
-			apng.calls += 1
-			apng.lastSent = true
-		} catch (e) { apng.error = String((e && e.message) || e).slice(0, 80); reportProblem('apng', e) }
-	}
-	function hookApng(cleanup) {
-		const mod = nativeImageManager()
-		if (!mod) { found.apng = 'not found'; return }
-		apngModule = mod
-		apng.found = true
-		found.apng = 'NativeImageManagerModule.setFastImageApngEnabled'
-		try {
-			cleanup(valenced.patcher.instead(mod, 'setFastImageApngEnabled', function (args, original) {
-				if (sendingApng) return Reflect.apply(original, this, args)
-				apng.discordAsked.push(args[0])
-				if (apng.discordAsked.length > 6) apng.discordAsked.shift()
-				if (setting('apng')) { apng.lastSent = true; countSeen('apng', args[0] !== true); return Reflect.apply(original, this, [true, ...args.slice(1)]) }
-				return Reflect.apply(original, this, args)
-			}))
-		} catch (e) { reportProblem('could not wrap setFastImageApngEnabled', e) }
-		sendApng()
-	}
-
-	/** Makes the pictures that are already on screen be drawn again, now that the plugin is in place. */
-	function refreshPictures() {
-		let count = 0
-		try {
-			const stores = valenced.discord.flux.Stores
-			;['GuildStore', 'GuildMemberStore', 'UserStore', 'MessageStore', 'AccessibilityStore'].forEach((name) => {
-				const store = stores && stores[name]
-				if (store && typeof store.emitChange === 'function') { store.emitChange(); count += 1 }
-			})
-		} catch (e) { reportProblem('refresh', e) }
-		refreshed.count += count ? 1 : 0
-		refreshed.at = Date.now()
-		return count
-	}
-	const refreshed = { count: 0, at: 0 }
-	const PICTURE_SWITCHES = ['pictures', 'addresses', 'chat', 'apng', 'motion', 'everything']
-	let refreshTimer
-	/** After a switch changed, the pictures on screen are drawn again once things have settled. */
-	function scheduleRefresh() {
-		clearTimeout(refreshTimer)
-		refreshTimer = setTimeout(refreshPictures, 300)
-	}
-
-	function animateElements(cleanup) {
-		const finders = valenced.modules.finders
-		const runtime = finders.lookupModule(finders.filters.withProps('jsx', 'jsxs'))[0] || valenced.react.ReactJSXRuntime
-		const onNewElement = (element) => {
-			if (!element || !element.props) return element
-			let result = element
-			if (setting('addresses')) result = animateAddresses(result)
-			if (setting('statusEmoji')) result = animateStatusEmoji(result)
-			if (setting('everything')) result = animateEverything(result)
-			return result
-		}
-		let hooked = 0
-		;['jsx', 'jsxs'].forEach((name) => {
-			if (runtime && typeof runtime[name] === 'function') { cleanup(valenced.patcher.after(runtime, name, onNewElement)); hooked += 1 }
-		})
-		found.addresses = hooked ? 'every picture address' : 'not found'
-		found.statusEmoji = hooked ? 'every new screen element (ActivityEmoji)' : 'not found'
-		found.everything = hooked ? 'every new screen element' : 'not found'
-	}
-
-	// ---------------------------------------------------------------------------------------------------
-	// 7. Self-check: asks Discord for a made-up animated picture and looks at the address it gives back
-	// ---------------------------------------------------------------------------------------------------
-	const FAKE_USER = { id: '123456789012345678', avatar: 'a_0123456789abcdef0123456789abcdef', discriminator: '0', username: 'check' }
-	const FAKE_ICON = { id: '123456789012345678', icon: 'a_0123456789abcdef0123456789abcdef', size: 64, canAnimate: false }
-
-	function addressOf(value) {
-		if (typeof value === 'string') return value
-		if (value && typeof value.uri === 'string') return value.uri
-		if (Array.isArray(value)) return addressOf(value[0])
-		return ''
-	}
-	/** @returns {{ label: string, ok: boolean, detail: string }[]} */
-	function runSelfCheck() {
-		selfCheckRunning = true
-		try { return runSelfCheckNow() } finally { selfCheckRunning = false }
-	}
-	function runSelfCheckNow() {
-		const results = []
-		const finders = valenced.modules.finders
-		lookAgain()
-		const utils = avatarHolders[0]
-		const check = (label, make) => {
-			if (!utils) { results.push({ label, ok: false, detail: 'AvatarUtils was not found' }); return }
-			try {
-				const address = addressOf(make(utils))
-				const animated = /\.gif(\?|$)|animated=true/.test(address)
-				results.push({ label, ok: animated, detail: address ? address.replace(/^https?:\/\//, '').slice(0, 70) : 'no address came back' })
-			} catch (e) { results.push({ label, ok: false, detail: `error: ${String((e && e.message) || e).slice(0, 60)}` }) }
-		}
-		check('A profile picture, asked for as "still"', (u) => u.getUserAvatarURL(FAKE_USER, false, 64))
-		check('A server icon, asked for as "still"', (u) => u.getGuildIconURL({ ...FAKE_ICON }))
-		results.push(...settingChecks())
-		return results
-	}
-	function settingChecks() {
-		const finders = valenced.modules.finders
-		const root = accessibilityRoots[0]
-		return ACCESSIBILITY_SETTINGS.map(({ name, feature }) => {
-			const label = `Setting "${name}" reads`
-			if (!root || !root[name] || typeof root[name].getSetting !== 'function') return { label, ok: false, detail: 'not found' }
-			try {
-				const value = root[name].getSetting()
-				return { label, ok: value === true || !setting(feature), detail: String(value) + (setting(feature) ? '' : ' (this switch is off)') }
-			} catch (e) { return { label, ok: false, detail: `error: ${String((e && e.message) || e).slice(0, 60)}` } }
-		})
-	}
-
-	// ---------------------------------------------------------------------------------------------------
-	// 7b. The native part (Kotlin, inside Discord): keeps animated profile pictures playing in the native chat
-	// ---------------------------------------------------------------------------------------------------
-	const nat = { info: {}, error: '' }
-	function nativeCaller() {
-		const n = valenced.modules && valenced.modules.native
-		if (n && typeof n.callNativeMethod === 'function') return n.callNativeMethod
-		if (valenced.native && typeof valenced.native.callNativeMethod === 'function') return valenced.native.callNativeMethod
-		return null
-	}
-	const parseState = (text) => { const out = {}; String(text).split(';').forEach((part) => { const i = part.indexOf('='); if (i > 0) out[part.slice(0, i)] = part.slice(i + 1) }); return out }
-	async function nativeCall(name, args) {
-		const fn = nativeCaller()
-		if (!fn) throw new Error('The native part is not reachable. Restart Discord.')
-		return parseState(await fn(`marklong.always-animate.${name}`, args || []))
-	}
-	async function nativeRefresh() {
-		try { nat.info = await nativeCall('state'); nat.error = '' } catch (e) { nat.error = String((e && e.message) || e).slice(0, 100) }
-		redrawSettings()
-	}
-	async function nativeSet(key, value) {
-		try { nat.info = await nativeCall('set', [key, String(value)]); nat.error = '' } catch (e) { nat.error = String((e && e.message) || e).slice(0, 100); toast('Could not change that') }
-		redrawSettings()
-	}
-	function nativeReportLines() {
-		const i = nat.info
-		if (nat.error && !Object.keys(i).length) return [`native chat part: ${nat.error}`]
-		return [
-			`native chat part: ${i.enabled === 'false' ? 'off' : i.running === 'true' ? 'running' : 'waiting'}; guard tripped ${i.guardTripped}; animated pictures seen ${i.animated}, restarted ${i.restarts}x; chat messages seen ${i.binds}, on screen ${i.attached}; hook: ${i.hook}${i.error ? `; error ${i.error}` : ''}`,
-			`native ears: ${i.ears === 'false' ? 'off' : 'on'}; ${i.earViews} ear views seen, ${i.earViewsAnimated} played by Discord's loader; drawn by this plugin: ${i.earOverlays} now, ${i.earDecoded} pictures decoded; ${i.earApng || '-'}`,
-			`native ear addresses: ${i.earsSeen || '-'}`,
-			`native ear addresses after the mode: ${i.earsOut || '-'}`,
-			`native ear files: ${i.earFiles || '-'}`,
-		]
-	}
-
-	function buildReport() {
-		const lines = ['Always Animate report', `version: ${VERSION}`]
-		lines.push(`chat json: ${found.chatJson || 'not hooked'}; updates ${chatJson.updates}, change ops ${chatJson.ops}; flipped ${chatJson.flipped}${chatJson.flippedKeys.size ? ` (${[...chatJson.flippedKeys].join(', ')})` : ''}; added ${chatJson.added}`)
-		lines.push(`chat json op keys: ${[...chatJson.opKeys].join(', ') || '-'}`)
-		lines.push(`chat json row found at: ${[...chatJson.depthPaths].join(' | ') || '-'}`)
-		lines.push(`chat json row fields (${chatJson.holderKeys.size}): ${[...chatJson.holderKeys].join(', ') || '-'}`)
-		lines.push(`chat json avatar-related values: ${Object.keys(chatJson.samples).map((key) => `${key}=${chatJson.samples[key]}`).join(' ; ') || '-'}`)
-		lines.push(`animated png: ${found.apng || 'not hooked'}; told the phone "on" ${apng.calls}x; Discord asked for: ${apng.discordAsked.length ? apng.discordAsked.join(', ') : 'nothing yet'}${apng.error ? `; error ${apng.error}` : ''}`)
-		lines.push(`reduce motion before the plugin: Discord said ${motionWas.reduced}, phone/Discord setting ${motionWas.prefers}; answered no ${forced.motion} of ${seen.motion} times`)
-		lines.push(`chat picture format: ${setting('chatFormat2')}; chat sample: ${chatSample || 'none yet'}`)
-		lines.push(`chat rows seen ${chatCounts.rows}: with an animated profile picture ${chatCounts.animatedAvatars}, with a decoration ${chatCounts.decorations}; animated picture sample: ${chatAvatarSample || 'none yet'}`)
-		lines.push(`pictures drawn again: ${refreshed.count}x${refreshed.at ? `, last ${new Date(refreshed.at).toLocaleTimeString()}` : ''}`)
-		FEATURES.forEach((f) => lines.push(`${f.key}: ${setting(f.key) ? 'on' : 'off'}; ${found[f.key] || 'not hooked'}; Discord used it ${seen[f.key]} time(s), changed ${forced[f.key]}`))
-		const top = Object.keys(perFunction).sort((a, b) => perFunction[b].seen - perFunction[a].seen).slice(0, 8)
-		if (top.length) lines.push(`pictures by function (used/changed): ${top.map((n) => `${n} ${perFunction[n].seen}/${perFunction[n].changed}`).join(', ')}`)
-		lines.push(...nativeReportLines())
-		runSelfCheck().forEach((r) => lines.push(`check - ${r.label}: ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`))
-		if (problems.length) lines.push(`problems: ${problems.join(' | ')}`)
-		return lines.join('\n')
-	}
-	function copyReport() {
-		try {
-			valenced.externals.ReactNativeClipboard.Clipboard.setString(buildReport())
-			toast('Report copied. Paste it in the chat.')
-		} catch (e) { toast('Could not copy') }
-	}
-
-	// ---------------------------------------------------------------------------------------------------
-	// 8. Settings screen
-	// ---------------------------------------------------------------------------------------------------
-	function Card({ children }) {
-		const { View } = valenced.react.ReactNative
-		return h(View, { style: { borderRadius: 14, padding: 16, gap: 10, backgroundColor: '#2b2d31' } }, children)
-	}
-	function Pill({ text, color }) {
-		const { View } = valenced.react.ReactNative
-		const { Text } = valenced.discord.design.Design
-		return h(View, { style: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: `${color}33` } }, h(Text, { variant: 'text-xs/bold', style: { color } }, text))
-	}
-	const GREEN = '#23a55a'
-	const RED = '#f23f43'
-	const AMBER = '#f0b232'
-	const GRAY = '#80848e'
-
-	function SettingsScreen({ api }) {
-		const { React, ReactNative: RN } = valenced.react
-		const Design = valenced.discord.design.Design
-		storage = api.jsonStorage
-		storage.use()
-
-		const [, setRedraws] = React.useState(0)
-		React.useEffect(() => {
-			const redraw = () => setRedraws((n) => n + 1)
-			screenListeners.push(redraw)
-			nativeRefresh()
-			const nativeTimer = setInterval(nativeRefresh, 2500)
-			return () => { clearInterval(nativeTimer); screenListeners = screenListeners.filter((l) => l !== redraw) }
-		}, [])
-
-		const feature = (key) => FEATURES.find((f) => f.key === key)
-		const toggle = (key) => {
-			const f = feature(key)
-			return h(Design.TableSwitchRow, { key, label: f.title, subLabel: f.blurb, value: !!setting(key), onValueChange: (value) => { saveSettings({ [key]: !!value }); if (PICTURE_SWITCHES.includes(key)) scheduleRefresh() } })
-		}
-
-		const i = nat.info
-		const nativeKnown = Object.keys(i).length > 0
-		const chatOn = i.enabled !== 'false'
-		const earsOn = i.ears !== 'false'
-		const saver = Number(i.intervalMs || 400) >= 1000
-		const chatStatus = !nativeKnown ? { text: nat.error ? 'Chat part unavailable' : 'Chat part starting', color: nat.error ? RED : AMBER }
-			: !chatOn ? { text: 'Chat photos off', color: GRAY }
-			: i.running === 'true' ? { text: 'Chat photos on', color: GREEN }
-			: { text: 'Chat photos starting', color: AMBER }
-
-		return h(
-			RN.ScrollView,
-			{ style: { flex: 1 }, contentContainerStyle: { paddingBottom: 40 }, keyboardShouldPersistTaps: 'handled' },
-			h(
-				Design.Stack,
-				{ style: { paddingVertical: 20, paddingHorizontal: 12 }, spacing: 22 },
-				h(
-					Card,
-					{ key: 'header' },
-					h(RN.View, { style: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' } },
-						h(Design.Text, { variant: 'heading-lg/bold' }, 'Always Animate'),
-						h(Design.Text, { variant: 'text-xs/medium', color: 'text-muted' }, `Version ${VERSION}`)),
-					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'Makes animated profile pictures, icons, emoji and stickers play on their own, including in the chat.'),
-					h(Pill, { text: chatStatus.text, color: chatStatus.color }),
-				),
-				i.guardTripped === 'true' && h(Card, { key: 'guard' },
-					h(Design.Text, { variant: 'text-sm/semibold' }, 'Chat photos did not start by themselves'),
-					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'The last start did not finish before Discord closed, so it waited this time.'),
-					h(Design.Button, { text: 'Start now', variant: 'primary', size: 'sm', onPress: () => nativeSet('start', true) })),
-				h(Design.TableRowGroup, { key: 'what', title: 'What animates' }, ['pictures', 'emoji', 'stickers', 'gifs', 'statusEmoji'].map(toggle)),
-				h(Design.TableRowGroup, { key: 'chat', title: 'In the chat' },
-					toggle('chat'),
-					h(Design.TableSwitchRow, { key: 'nchat', label: 'Keep chat photos playing', subLabel: 'Profile pictures keep moving while you read. Starts a few seconds after Discord opens.', value: chatOn, onValueChange: (v) => nativeSet('enabled', !!v) }),
-					h(Design.TableSwitchRow, { key: 'nears', label: 'Animate ears', subLabel: 'Avatar decorations next to messages. Reopen the chat after changing this.', value: earsOn, onValueChange: (v) => { nativeSet('ears', !!v); toast('Reopen the chat to see the change') } }),
-					h(Design.TableSwitchRow, { key: 'nsaver', label: 'Battery saver', subLabel: 'Checks the chat once a second instead of twice. A picture may take a moment to start after you scroll.', value: saver, onValueChange: (v) => nativeSet('intervalMs', v ? 1000 : 400) })),
-				h(Design.TableRowGroup, { key: 'more', title: 'More' }, ['apng', 'addresses', 'motion', 'everything'].map(toggle)),
-				h(RN.View, { key: 'help', style: { gap: 10 } },
-					h(Design.TableRowGroup, { title: 'Help' },
-						h(Design.TableRow, { key: 'tip', label: 'Something does not animate?', subLabel: 'Tap Refresh pictures, then close the screen and open it again. If it still does not, copy the report and send it to the plugin author.' }),
-						problems.length > 0 && h(Design.TableRow, { key: 'problems', label: 'Problems', subLabel: problems.join(' · ') })),
-					h(RN.View, { style: { flexDirection: 'row', gap: 10 } },
-						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Refresh pictures', variant: 'primary', size: 'md', onPress: () => { sendApng(); const n = refreshPictures(); toast(n ? 'Pictures refreshed' : 'Could not refresh. Switch server or restart Discord.') } })),
-						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Copy report', variant: 'secondary', size: 'md', onPress: copyReport })))),
-				h(Design.Text, { key: 'foot', variant: 'text-xs/medium', color: 'text-muted', style: { textAlign: 'center' } }, 'Animated pictures use more battery and data than still ones. Turn off what you do not need.'),
-			),
-		)
-	}
-
-	// ---------------------------------------------------------------------------------------------------
-	// 9. The plugin
-	// ---------------------------------------------------------------------------------------------------
-	Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
-	exports.default = plugin({
-		jsonStorage: { load: true, default: defaults },
-		SettingsComponent: SettingsScreen,
-		start(api) {
-			storage = api.jsonStorage
-			const attempt = (what, step) => { try { step() } catch (e) { reportProblem(what, e) } }
-			attempt('pictures', () => allowPictureAnimations(api.cleanup))
-			attempt('emoji, stickers and GIFs', () => allowAccessibilityAnimations(api.cleanup))
-			attempt('status emoji', () => animateElements(api.cleanup))
-			attempt('chat rows', () => hookChatRows(api.cleanup))
-			attempt('reduce motion', () => ignoreReducedMotion(api.cleanup))
-			attempt('animated png', () => hookApng(api.cleanup))
-			const apngTimers = [1000, 3000, 8000].map((ms) => setTimeout(() => { if (!apngModule) { try { hookApng(api.cleanup) } catch (e) {} } else sendApng() }, ms))
-			api.cleanup(() => apngTimers.forEach(clearTimeout))
-			attempt('chat json', () => hookChatUpdates(api.cleanup))
-			const nativeLooks = [3000, 9000].map((ms) => setTimeout(nativeRefresh, ms))
-			api.cleanup(() => nativeLooks.forEach(clearTimeout))
-			// The server list and other screens were drawn before the plugin was in place: draw them again.
-			const timers = [1500, 5000].map((ms) => setTimeout(refreshPictures, ms))
-			// What was not found yet is looked for again a few times, and the pictures drawn again when it turns up.
-			const looks = [1500, 4000, 10000, 25000].map((ms) => setTimeout(() => { const before = JSON.stringify(found); lookAgain(); if (JSON.stringify(found) !== before) scheduleRefresh() }, ms))
-			api.cleanup(() => { screenListeners = []; timers.concat(looks).forEach(clearTimeout); clearTimeout(refreshTimer); watchers.length = 0 })
-		},
-	})
-	return exports
-})({})
+        // The server list and other screens were drawn before the plugin was in place: draw them again.
+        if (typeof setTimeout === 'function') {
+          var timers = [1500, 5000].map(function (ms) { return setTimeout(refreshPictures, ms); });
+          api.cleanup(function () { timers.forEach(function (id) { if (typeof clearTimeout === 'function') clearTimeout(id); }); });
+        }
+      })();
+    },
+    start: async function (api) {
+      storage = api.jsonStorage;
+      if (storage && typeof storage.get === 'function') await storage.get();
+      if (retryNativeBridges) retryNativeBridges();
+      if (retryNativeImage) retryNativeImage();
+    },
+    SettingsComponent: SettingsComponent
+  }) };
+})()
