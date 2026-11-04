@@ -1,0 +1,970 @@
+{
+ "read_on": "2026-11-04",
+ "repos": [
+  {
+   "repo": "k1ng0p/Valenced-Plugins-by-k1ng0p",
+   "install": "https://k1ng0p.github.io/Valenced-Plugins-by-k1ng0p/",
+   "repo_name": "k1ng_op Plugins",
+   "readable": true,
+   "plugins": [
+    {
+     "id": "k1ngop.instant-actions",
+     "name": "Instant Actions",
+     "version": "1.0.0",
+     "author": "k1ng_op <641266820187160576> (https://github.com/k1ng0p \"GitHub\")",
+     "description": "No more 'Are you sure?' Skips deletes, leaves, blocks, and other prompts. Toggle each one individually."
+    },
+    {
+     "id": "k1ngop.junk-cleanup",
+     "name": "Junk Cleanup",
+     "version": "1.2.0",
+     "author": "k1ng_op <641266820187160576> (https://github.com/k1ng0p \"GitHub\")",
+     "description": "Hides useless UI: profile cosmetics, Nitro upsells, extra menu rows, settings sections, voice call clutter and more."
+    },
+    {
+     "id": "k1ngop.last-online-tracker",
+     "name": "Last Online Tracker",
+     "version": "1.1.0",
+     "author": "k1ng_op <641266820187160576> (https://github.com/k1ng0p \"GitHub\")",
+     "description": "Shows when someone was last online in the DM list, member list and DM header."
+    },
+    {
+     "id": "k1ngop.platform-indicators",
+     "name": "Platform Indicators",
+     "version": "1.0.0",
+     "author": "k1ng_op <641266820187160576> (https://github.com/k1ng0p \"GitHub\")",
+     "description": "Adds platform indicators (Desktop, Mobile, Web...) to users"
+    },
+    {
+     "id": "k1ngop.platform-spoof",
+     "name": "Platform Spoof",
+     "version": "1.0.0",
+     "author": "k1ng_op <641266820187160576> (https://github.com/k1ng0p \"GitHub\")",
+     "description": "Spoofs your Discord gateway platform so others see a different client icon on your profile."
+    },
+    {
+     "id": "k1ngop.repository-browser",
+     "name": "Plugin Browser",
+     "version": "1.5.5",
+     "author": "k1ng_op <641266820187160576> (https://github.com/k1ng0p \"GitHub\")",
+     "description": "Browse third-party repositories, see what they offer, and add them to Valenced."
+    },
+    {
+     "id": "k1ngop.profile-replies",
+     "name": "Profile Replies",
+     "version": "1.1.5",
+     "author": "k1ng_op <641266820187160576> (https://github.com/k1ng0p \"GitHub\")",
+     "description": "Reply or react to a friend's custom status or bio straight from their profile."
+    },
+    {
+     "id": "k1ngop.valid-user",
+     "name": "ValidUser",
+     "version": "1.0.4",
+     "author": "k1ng_op <641266820187160576> (https://github.com/k1ng0p \"GitHub\")",
+     "description": "Fixes unresolved user mentions like @unknown-user to a normal clickable mention."
+    },
+    {
+     "id": "k1ngop.watchlist",
+     "name": "Watchlist",
+     "version": "1.1.0",
+     "author": "k1ng_op <641266820187160576> (https://github.com/k1ng0p \"GitHub\")",
+     "description": "Shows toasts when users you track change status, start typing, or send a message."
+    }
+   ]
+  },
+  {
+   "repo": "SheWhoReignsSupreme/valenced-plugins",
+   "install": "https://val.is-your.app/ (source https://code.is-your.app/SheWhoReignsSupreme/valenced-plugins)",
+   "readable": false,
+   "plugins": []
+  },
+  {
+   "repo": "bleelblep/bleel-bazinga-repo",
+   "install": "https://bleelblep.github.io/bleel-bazinga-repo/index.json",
+   "repo_name": "Bazinga Plugins",
+   "readable": true,
+   "plugins": [
+    {
+     "id": "bleelblep.char-counter",
+     "name": "Character Counter",
+     "version": "0.5.7",
+     "author": "bleelblep",
+     "description": "Counts your message's characters in a square above the message box, and offers to split long ones into several you review and send."
+    },
+    {
+     "id": "bleelblep.custom-timestamps",
+     "name": "Custom Timestamps",
+     "version": "1.2.21",
+     "author": "bleelblep, Fiery",
+     "description": "Choose how chat timestamps look: calendar, relative, ISO 8601 or your own format."
+    },
+    {
+     "id": "bleelblep.hide-call-buttons",
+     "name": "Hide Call Buttons",
+     "version": "1.3.12",
+     "author": "bleelblep",
+     "description": "Hides call and video buttons from DMs, user profiles and voice channels."
+    },
+    {
+     "id": "bleelblep.hide-servers-drawer",
+     "name": "Hide Servers",
+     "version": "1.8.9",
+     "author": "bleelblep, blerp",
+     "description": "Hide servers, folders or channels from your lists, only on your device."
+    },
+    {
+     "id": "bleelblep.live-markdown",
+     "name": "Live Markdown",
+     "version": "0.3.1",
+     "author": "bleelblep",
+     "description": "Shows bold, italics, code, spoilers and more styled as you type a message."
+    },
+    {
+     "id": "bleelblep.new-members",
+     "name": "New Members",
+     "version": "0.1.18",
+     "author": "bleelblep",
+     "description": "A sprout next to the names of people who joined the server in the last week, like desktop."
+    },
+    {
+     "id": "bleelblep.no-dividers",
+     "name": "No Dividers",
+     "version": "0.1.15",
+     "author": "bleelblep",
+     "description": "Removes the thin lines between rows in settings and other lists."
+    },
+    {
+     "id": "bleelblep.pocket-browser",
+     "name": "Pocket Browser",
+     "version": "0.4.16",
+     "author": "bleelblep",
+     "description": "A web browser with tabs and history in a new tab of the emoji picker."
+    },
+    {
+     "id": "bleelblep.pronouns",
+     "name": "Pronouns",
+     "version": "0.5.3",
+     "author": "bleelblep",
+     "description": "People's pronouns as a small tag next to their name in chat, from Discord profiles and PronounDB."
+    },
+    {
+     "id": "bleelblep.review-db",
+     "name": "ReviewDB",
+     "version": "0.1.27",
+     "author": "bleelblep",
+     "description": "Read and write reviews on user profiles and servers, from ReviewDB."
+    },
+    {
+     "id": "bleelblep.round-icons",
+     "name": "Round Corners",
+     "version": "1.3.11",
+     "author": "bleelblep",
+     "description": "Undoes the redesign's squares: round servers, round buttons, a pill You bar."
+    },
+    {
+     "id": "bleelblep.send-tweaks",
+     "name": "Send Tweaks",
+     "version": "1.1.2",
+     "author": "bleelblep, Rosie, WarFade",
+     "description": "Cleans links, polishes wording and applies your own find-and-replace rules."
+    },
+    {
+     "id": "bleelblep.sharp-corners",
+     "name": "Sharp Corners",
+     "version": "0.1.9",
+     "author": "bleelblep",
+     "description": "Every corner in Discord sharp: square avatars, buttons, bubbles and bars."
+    },
+    {
+     "id": "bleelblep.show-tag",
+     "name": "Show Tag",
+     "version": "1.3.5",
+     "author": "bleelblep, Cynosphere",
+     "description": "Shows usernames next to display names in chat, including in replies."
+    },
+    {
+     "id": "bleelblep.staff-tags",
+     "name": "Staff Tags",
+     "version": "1.3.16",
+     "author": "bleelblep",
+     "description": "Shows extra tags for staff members — OWNER, ADMIN, STAFF, MOD, VC Mod, Chat Mod, WEBHOOK."
+    },
+    {
+     "id": "bleelblep.text-animation",
+     "name": "Text Animation",
+     "version": "0.1.13",
+     "author": "bleelblep",
+     "description": "Animates letters as you type and delete, with a smooth gliding cursor."
+    },
+    {
+     "id": "bleelblep.timezones",
+     "name": "Timezones",
+     "version": "0.2.9",
+     "author": "bleelblep, aniimalz",
+     "description": "Set someone's timezone and see their local time next to their messages."
+    }
+   ]
+  },
+  {
+   "repo": "kmmiio99o/valenced-plugins",
+   "install": "https://plugins.val.kmmiio99o.dev/index.json",
+   "repo_name": "kmmiio99o Plugins Repository",
+   "readable": true,
+   "plugins": [
+    {
+     "id": "dev.kmmiio99o.cloud.sync",
+     "name": "CloudSync",
+     "version": "1.0.0",
+     "author": "kmmiio99o <879393496627306587> (https://github.com/sponsors/kmmiio99o \"Donations\") (https://kmmiio99o.dev \"Website\") (https://github.com/kmmiio99o \"GitHub\") (https://toasts.val.kmmiio99o.dev/ \"Documentation\")",
+     "description": "Sync and back up your plugins, themes, and settings to the cloud."
+    },
+    {
+     "id": "dev.kmmiio99o.expression-utils",
+     "name": "Expression Utils",
+     "version": "1.0.2",
+     "author": "kmmiio99o <879393496627306587> (https://github.com/sponsors/kmmiio99o \"Donations\") (https://kmmiio99o.dev \"Website\") (https://github.com/kmmiio99o \"GitHub\")",
+     "description": "Adds useful actions to custom emoji and sticker sheets, including cloning expressions to servers you manage."
+    },
+    {
+     "id": "dev.kmmiio99o.song-spotlight",
+     "name": "Song Spotlight",
+     "version": "1.0.1",
+     "author": "kmmiio99o <879393496627306587> (https://github.com/sponsors/kmmiio99o \"Donations\") (https://kmmiio99o.dev \"Website\") (https://github.com/kmmiio99o \"GitHub\")",
+     "description": "Show songs on your Discord profile, with previews and link sharing."
+    }
+   ]
+  },
+  {
+   "repo": "lvwmwm/liver-valenced-plugins",
+   "install": "https://lvwmwm.github.io/liver-valenced-plugins",
+   "repo_name": "Liver Plugins",
+   "readable": true,
+   "plugins": [
+    {
+     "id": "liver.permission-viewer",
+     "name": "Permission Viewer",
+     "version": "1.0.2",
+     "author": "Livie <755950362342457384>",
+     "description": "Inspect the permissions a server, channel, role, or member has."
+    }
+   ]
+  },
+  {
+   "repo": "Accentaro/Valenced-Plugins",
+   "install": "https://plugins.benjiisworld.com/",
+   "repo_name": "Valenced Plugins",
+   "readable": true,
+   "plugins": [
+    {
+     "id": "dev.benjii.better-you-bar",
+     "name": "Better You Bar",
+     "version": "1.0.0",
+     "author": "j <1356632712861192242>",
+     "description": "Adds Favorites and Settings shortcuts to the You bar."
+    },
+    {
+     "id": "benjii.dev.theme.catppuccin",
+     "name": "Catppuccin",
+     "version": "1.1.1",
+     "author": "Benjii <463702169443368970>",
+     "description": "The Catppuccin pastel palette in all four flavours: Latte, Frappé, Macchiato and Mocha."
+    },
+    {
+     "id": "benjii.dev.theme.celestia",
+     "name": "Celestia",
+     "version": "1.1.4",
+     "author": "Benjii <463702169443368970>",
+     "description": "Plum and coral, over an anime sunset beneath a ringed planet."
+    },
+    {
+     "id": "dev.benjii.collapsible-ui",
+     "name": "Collapsible UI",
+     "version": "1.0.4",
+     "author": "Benjii <463702169443368970>",
+     "description": "Collapse channel headers, the You bar and chat box with drag strips, and the guildbar with swipes."
+    },
+    {
+     "id": "dev.benjii.declutter",
+     "name": "Declutter",
+     "version": "1.0.3",
+     "author": "Benjii <463702169443368970>",
+     "description": "Hide profile and channel clutter, and customize settings and long-press actions."
+    },
+    {
+     "id": "dev.benjii.feeds-page",
+     "name": "Feeds Page",
+     "version": "1.0.0",
+     "author": "Benjii <463702169443368970>",
+     "description": "Merge chosen channels into one chat. Replies, reactions and messages still go to each message's own channel. Change channel by long pressing send button."
+    },
+    {
+     "id": "benjii.dev.theme.frostfall",
+     "name": "Frostfall",
+     "version": "1.1.4",
+     "author": "Benjii <463702169443368970>",
+     "description": "Midnight snowfall: near-black surfaces with frosted white accents, over a falling-snow background."
+    },
+    {
+     "id": "dev.benjii.gif-providers",
+     "name": "GIF Providers",
+     "version": "1.0.1",
+     "author": "Palm <629368283354628116> (https://github.com/sponsors/PalmDevs \"Donations\") (https://palmdevs.me \"Website\") (https://github.com/PalmDevs \"GitHub\")",
+     "description": "Search Tenor, Giphy and Klipy together in the GIF picker."
+    },
+    {
+     "id": "dev.benjii.gif-to-chat-input",
+     "name": "GIF to Chat Input",
+     "version": "1.0.0",
+     "author": "j <1356632712861192242>",
+     "description": "Prevents GIFs from auto-sending from the picker and holds them in the chatbox."
+    },
+    {
+     "id": "dev.benjii.github-repos",
+     "name": "Github Repos",
+     "version": "1.0.1",
+     "author": "Benjii <463702169443368970>",
+     "description": "Browse repositories, stars and contributions from profile GitHub connections."
+    },
+    {
+     "id": "benjii.dev.theme.nocturne",
+     "name": "Nocturne",
+     "version": "1.1.4",
+     "author": "Benjii <463702169443368970>",
+     "description": "Navy and rain-lit cyan, over an anime night of blue rain beneath a crescent moon."
+    },
+    {
+     "id": "benjii.dev.theme.obsidian",
+     "name": "Obsidian",
+     "version": "1.1.1",
+     "author": "Benjii <463702169443368970>",
+     "description": "Pure black for OLED screens, with hairline borders and quiet silver accents."
+    },
+    {
+     "id": "dev.benjii.quoter",
+     "name": "Quoter",
+     "version": "1.0.2",
+     "author": "Benjii <463702169443368970>",
+     "description": "Create quote images from messages."
+    },
+    {
+     "id": "benjii.dev.theme.sakura",
+     "name": "Sakura",
+     "version": "1.1.4",
+     "author": "Benjii <463702169443368970>",
+     "description": "A cozy, calm anime theme: cream manga paper, ink lines and sakura pastels, with a soft night version."
+    },
+    {
+     "id": "dev.benjii.server-drawer",
+     "name": "Server Drawer",
+     "version": "1.0.7",
+     "author": "kmmiio99o <879393496627306587>",
+     "description": "A compact server dock with a searchable server and DM drawer, folders, and drag and drop."
+    }
+   ]
+  },
+  {
+   "repo": "WolfPlugs/valenced-plugins",
+   "install": "https://plugins.obamabot.me/valenced-plugins",
+   "repo_name": "WolfPlugs",
+   "readable": true,
+   "plugins": [
+    {
+     "id": "wolfie.add-attachments",
+     "name": "AddAttachments",
+     "version": "1.0.0",
+     "author": "Wolfie <347096063569559553> (https://wolfies.org/ \"Website\") (https://github.com/Wolfkid200444 \"GitHub\")",
+     "description": "Upload queued attachments when saving a message edit."
+    },
+    {
+     "id": "wolfie.bot-client",
+     "name": "Bot Client",
+     "version": "1.0.1",
+     "author": "Wolfie <347096063569559553> (https://wolfies.org/ \"Website\") (https://github.com/Wolfkid200444 \"GitHub\")",
+     "description": "Recommended to use a different client for this"
+    },
+    {
+     "id": "wolfie.gif-text",
+     "name": "Gif Text",
+     "version": "1.0.0",
+     "author": "Wolfie <347096063569559553> (https://wolfies.org/ \"Website\") (https://github.com/Wolfkid200444 \"GitHub\")",
+     "description": "Add GIF URLs to your message draft so you can send them with text."
+    },
+    {
+     "id": "wolfie.global-badges",
+     "name": "Global Badges",
+     "version": "1.0.0",
+     "author": "Wolfie <347096063569559553> (https://wolfies.org/ \"Website\") (https://github.com/Wolfkid200444 \"GitHub\")",
+     "description": "Show profile badges from other Discord clients and BadgeVault."
+    },
+    {
+     "id": "wolfie.media-utils",
+     "name": "MediaUtils",
+     "version": "1.0.2",
+     "author": "Wolfie <347096063569559553> (https://wolfies.org/ \"Website\") (https://github.com/Wolfkid200444 \"GitHub\")",
+     "description": "Rotate and zoom media, search images, crop images, and trim and crop video attachments."
+    },
+    {
+     "id": "wolfie.nsfw-blur",
+     "name": "NSFW Blur",
+     "version": "1.0.0",
+     "author": "Wolfie <347096063569559553> (https://wolfies.org/ \"Website\") (https://github.com/Wolfkid200444 \"GitHub\")",
+     "description": "Blur images and videos in NSFW channels until you tap to reveal them."
+    },
+    {
+     "id": "wolfie.petpet",
+     "name": "PetPet",
+     "version": "1.0.0",
+     "author": "Wolfie <347096063569559553> (https://wolfies.org/ \"Website\") (https://github.com/Wolfkid200444 \"GitHub\")",
+     "description": "Generate PetPet GIFs locally with /petpet user and attach them to your message draft."
+    },
+    {
+     "id": "wolfie.questify",
+     "name": "Questify",
+     "version": "1.0.1",
+     "author": "Wolfie <347096063569559553> (https://wolfies.org/ \"Website\") (https://github.com/Wolfkid200444 \"GitHub\")",
+     "description": "Browse Discord quests, track progress, and auto-complete supported quests from their menus."
+    },
+    {
+     "id": "wolfie.sound-controls",
+     "name": "Sound Controls",
+     "version": "1.0.0",
+     "author": "Wolfie <347096063569559553> (https://wolfies.org/ \"Website\") (https://github.com/Wolfkid200444 \"GitHub\")",
+     "description": "Mute individual call effects, ringtones, and in-app notification sounds."
+    },
+    {
+     "id": "wolfie.toylink",
+     "name": "ToyLink",
+     "version": "1.0.0",
+     "author": "Wolfie <347096063569559553> (https://wolfies.org/ \"Website\") (https://github.com/Wolfkid200444 \"GitHub\")",
+     "description": "Connect Lovense or Intiface / Buttplug toys and trigger vibration from Discord messages, incoming calls, and notification sounds."
+    }
+   ]
+  },
+  {
+   "repo": "purple-eyez/Valenced-Plugins",
+   "install": "https://purple-eyez.github.io/Valenced-Plugins/",
+   "repo_name": "Purple_Ξye™'s Plugins",
+   "readable": true,
+   "plugins": [
+    {
+     "id": "purpleeyez.darkened.amethyst",
+     "name": "Darkened Amethyst (AMOLED)",
+     "version": "1.0.0",
+     "author": "Purple_Ξye™ <646535537334812682> (https://github.com/Purple-EyeZ \"GitHub\")",
+     "description": "A dark theme with purple accents."
+    },
+    {
+     "id": "purpleeyez.gtavicountdown",
+     "name": "🇺🇸 GTA VI Countdown",
+     "version": "1.0.1",
+     "author": "Purple_Ξye™ <646535537334812682> (https://github.com/Purple-EyeZ \"GitHub\")",
+     "description": "Counting down until you reach heaven."
+    }
+   ]
+  },
+  {
+   "repo": "OTKUSteyler/btmc727-s-Valenced-plugins-",
+   "install": "https://otkusteyler.github.io/btmc727-s-Valenced-plugins-/",
+   "repo_name": "btmc727-s-Valenced-plugins-",
+   "readable": true,
+   "plugins": [
+    {
+     "id": "com.otkusteyler.lib",
+     "name": "choco's lib",
+     "version": "1.0.7",
+     "author": "choccychan aka btmc727",
+     "description": "A shared library for Valenced plugins. Provides useful utilities, components and more."
+    },
+    {
+     "id": "com.otkusteyler.gifroulette",
+     "name": "GIF Roulette",
+     "version": "1.0.6",
+     "author": "OTKUSteyler aka btmc727",
+     "description": "Sends a random GIF from your favorites."
+    },
+    {
+     "id": "com.otkusteyler.loginsound",
+     "name": "LoginSound",
+     "version": "1.0.1",
+     "author": "Rico040",
+     "description": "ディスコード!"
+    },
+    {
+     "id": "com.valenced.nitro-profiles",
+     "name": "Nitro-Profiles",
+     "version": "1.1.5",
+     "author": "btmc727 & knifecodez",
+     "description": "Displays custom Discord profile banners from UserBG and custom avatars from UserPFP."
+    },
+    {
+     "id": "com.autumnvn.notypinganimation",
+     "name": "NoTypingAnimation",
+     "version": "1.0.1",
+     "author": "AutumnVN, btmc727",
+     "description": "Disables the CPU-intensive typing dots animation. A plugin port from Vencord."
+    },
+    {
+     "id": "com.otkusteyler.readallplus",
+     "name": "Read All+",
+     "version": "1.5.7",
+     "author": "OTKUSteyler",
+     "description": "Mark a chat read from a button above the message box, or a whole server from its menu."
+    }
+   ]
+  },
+  {
+   "repo": "LisaExists/valenced-plugins",
+   "install": "https://lisaexists.github.io/valenced-plugins/",
+   "repo_name": "Lisa's Repository",
+   "readable": true,
+   "plugins": [
+    {
+     "id": "lisaexists.custom-voice-messages",
+     "name": "Custom Voice Messages",
+     "version": "1.1.12",
+     "author": "LisaExists",
+     "description": "Send audio files as Discord voice messages, including channels where file-picker actions are hidden."
+    },
+    {
+     "id": "lisaexists.decor",
+     "name": "Decor",
+     "version": "1.0.9",
+     "author": "LisaExists <836161010053283890>",
+     "description": "Browse, upload, and apply custom profile decorations from Decor."
+    }
+   ]
+  },
+  {
+   "repo": "tralwdwd/valenced-plugins",
+   "install": "https://valenced.tralwdwd.dev/",
+   "repo_name": "tralwdwdd's Plugin Repository",
+   "readable": true,
+   "plugins": [
+    {
+     "id": "dev.tralwdwdd.jump-to-top",
+     "name": "JumpToTop",
+     "version": "1.0.2",
+     "author": "tralwdwdd",
+     "description": "Adds a button to jump to the first message in a chat. The opposite of jump to present."
+    },
+    {
+     "id": "dev.tralwdwdd.search-action-sheet",
+     "name": "SearchActionSheet",
+     "version": "1.0.0",
+     "author": "tralwdwdd",
+     "description": "Makes search results open the action sheet on long press."
+    },
+    {
+     "id": "dev.tralwdwdd.tralwdwdd-lib",
+     "name": "tralwdwdd plugin library",
+     "version": "1.0.0",
+     "author": "tralwdwdd",
+     "description": "Shared code for my plugins."
+    },
+    {
+     "id": "dev.tralwdwdd.valenced-quick-actions",
+     "name": "ValencedQuickActions",
+     "version": "1.0.3",
+     "author": "tralwdwdd",
+     "description": "Adds Quick Actions to the You Bar action sheet."
+    }
+   ]
+  },
+  {
+   "repo": "NoReplyUI5/valenced-plugin",
+   "install": "https://noreplyui5.github.io/valenced-plugin/",
+   "repo_name": "NoReplyUI5's Valenced Plugin Repo",
+   "readable": true,
+   "plugins": [
+    {
+     "id": "mxtiy.copyuserid",
+     "name": "Fast Copy User ID",
+     "version": "1.0.1",
+     "author": "NoReplyUI5 <1053918356375351386> (https://github.com/NoReplyUI5 \"GitHub\")",
+     "description": "Adds a 'Copy User ID' button to the message action sheet to quickly copy the message author's ID."
+    },
+    {
+     "id": "mxtiy.favouriteanything",
+     "name": "FavouriteAnything",
+     "version": "1.0.4",
+     "author": "NoReplyUI5 <1053918356375351386> (https://github.com/NoReplyUI5 \"GitHub\")",
+     "description": "Favourite any image or video, not just GIFs! Adds the favourite button to all media in the image viewer."
+    },
+    {
+     "id": "mxtiy.hypesquad",
+     "name": "HypeSquad Switcher",
+     "version": "1.0.6",
+     "author": "NoReplyUI5 <1053918356375351386> (https://github.com/NoReplyUI5 \"GitHub\")",
+     "description": "Switch your HypeSquad house from settings."
+    }
+   ]
+  },
+  {
+   "repo": "aeongdesu/slimplugins",
+   "install": "https://aeongdesu.github.io/slimplugins",
+   "repo_name": "slimplugins",
+   "readable": true,
+   "plugins": [
+    {
+     "id": "dev.sapphire.read-all",
+     "name": "Read All Servers",
+     "version": "1.0.2",
+     "author": "sapphire <757982547861962752>",
+     "description": "just long press the Messages icon"
+    }
+   ]
+  },
+  {
+   "repo": "mudrhiod/valenced-plugins",
+   "install": "https://valenced.mudrhiod.me/",
+   "repo_name": "Mudrhiod's Plugin Forest",
+   "readable": true,
+   "plugins": [
+    {
+     "id": "mudrhiod.actionsheetmessagepreview",
+     "name": "ActionSheetMessagePreview",
+     "version": "1.0.4",
+     "author": "Mudrhiod <807170846497570848>",
+     "description": "Preview messages within it's own action sheet."
+    },
+    {
+     "id": "com.example.themes",
+     "name": "Example Themes",
+     "version": "1.0.1",
+     "author": "Your Name",
+     "description": "Example themes for Revenge."
+    },
+    {
+     "id": "mudrhiod.solar",
+     "name": "Solar",
+     "version": "1.1.2",
+     "author": "Mudrhiod <807170846497570848>",
+     "description": "Replaces Discord's icons with ones from the Solar iconset."
+    }
+   ]
+  },
+  {
+   "repo": "Valenced/valenced-community-plugins",
+   "install": "(official community repo) https://github.com/Valenced/valenced-community-plugins",
+   "repo_name": "Valenced Community Plugins",
+   "readable": true,
+   "plugins": [
+    {
+     "id": "wolfie.add-attachments",
+     "name": "Add Attachments",
+     "version": "1.0.0",
+     "author": "Wolfie <347096063569559553> (https://wolfies.org/ \"Website\") (https://github.com/Wolfkid200444 \"GitHub\")",
+     "description": "Add new attachments when editing messages."
+    },
+    {
+     "id": "k1ngop.anonymous-file-names",
+     "name": "Anonymous File Names",
+     "version": "1.0.0",
+     "author": "k1ng_op <641266820187160576>",
+     "description": "Randomizes file names before you upload them."
+    },
+    {
+     "id": "palmdevs.better-chat-buttons",
+     "name": "Better Chat Buttons",
+     "version": "1.0.0",
+     "author": "Palm <629368283354628116> (https://github.com/sponsors/PalmDevs \"Donations\") (https://palmdevs.me \"Website\") (https://github.com/PalmDevs \"GitHub\")",
+     "description": "Hiding all annoying chat buttons, or making them never collapse, all configurable."
+    },
+    {
+     "id": "palmdevs.better-typing-indicators",
+     "name": "Better Typing Indicators",
+     "version": "1.0.0",
+     "author": "Palm <629368283354628116> (https://github.com/sponsors/PalmDevs \"Donations\") (https://palmdevs.me \"Website\") (https://github.com/PalmDevs \"GitHub\")",
+     "description": "Typing indicator in channels, with user avatars, tap to open profile, and more."
+    },
+    {
+     "id": "palmdevs.block-youtube-ads",
+     "name": "Block YouTube Ads",
+     "version": "1.0.0",
+     "author": "Palm <629368283354628116> (https://palmdevs.me \"Website\") (https://github.com/PalmDevs \"GitHub\")",
+     "description": "Blocks ads in YouTube videos played inside the app, using AdGuard's script."
+    },
+    {
+     "id": "mxtiy.audiofix",
+     "name": "Bluetooth Audio Fix",
+     "version": "1.0.0.1",
+     "author": "NoReplyUI5 <1053918356375351386> (https://github.com/NoReplyUI5 \"GitHub\")",
+     "description": "Prevents Discord from switching to hands-free mode during calls."
+    },
+    {
+     "id": "thororen.character-counter",
+     "name": "Character Counter",
+     "version": "1.0.0",
+     "author": "thororen <848339671629299742> (https://www.thororen.com \"Website\") (https://github.com/thororen1234 \"GitHub\")",
+     "description": "Adds a character counter to the chat input."
+    },
+    {
+     "id": "hakuxyz.clear-urls",
+     "name": "Clear URLs",
+     "version": "1.0.0",
+     "author": "hakuxyz (https://github.com/hakuxyz \"GitHub\")",
+     "description": "Strips tracking parameters from URLs you view, send, or edit."
+    },
+    {
+     "id": "dev.cocobo1.command-lib",
+     "name": "Coco's Command Lib",
+     "version": "2.0.0",
+     "author": "cocobo1 <767650984175992833> (https://cocobo1.dev \"Website\") (https://github.com/c0c0b01 \"GitHub\") (https://github.com/sponsors/c0c0b01 \"Donate\")",
+     "description": "Provides a library to make making commands easier"
+    },
+    {
+     "id": "k1ngop.dashless",
+     "name": "Dashless",
+     "version": "1.0.0",
+     "author": "k1ng_op <641266820187160576>",
+     "description": "Changes dashes in text channel names to spaces."
+    },
+    {
+     "id": "valenced.developer-kit",
+     "name": "Developer Kit",
+     "version": "1.0.0",
+     "author": "Valenced",
+     "description": "Tools assisting Valenced developers."
+    },
+    {
+     "id": "k1ngop.disable-call-idle",
+     "name": "Disable Call Idle",
+     "version": "1.0.0",
+     "author": "k1ng_op <641266820187160576>",
+     "description": "Stop getting kicked from empty voice calls after 3 minutes."
+    },
+    {
+     "id": "palmdevs.fake-nitro",
+     "name": "Fake Nitro",
+     "version": "1.0.0",
+     "author": "Palm <629368283354628116> (https://palmdevs.me \"Website\") (https://github.com/PalmDevs \"GitHub\")",
+     "description": "Use some Nitro features without Nitro."
+    },
+    {
+     "id": "theunrealzaka.favorite-anything",
+     "name": "Favorite Anything",
+     "version": "1.0.0",
+     "author": "TheUnrealZaka <1268335382118924406> (https://www.theunrealzaka.me \"Website\")",
+     "description": "Favorite any image or video, not just GIFs, and keep saved favorites loading."
+    },
+    {
+     "id": "contrabag.file-size-on-picker",
+     "name": "File Size on Picker",
+     "version": "1.0.0",
+     "author": "contrabags <780075200950566933> (https://github.com/contrabag \"GitHub\")",
+     "description": "Show file sizes in the media picker."
+    },
+    {
+     "id": "dev.benjii.gtci",
+     "name": "GIF to Chat Input",
+     "version": "1.0.0",
+     "author": "j <1356632712861192242>",
+     "description": "Prevents GIFs from auto-sending from the picker and holds them in the chatbox."
+    },
+    {
+     "id": "wolfie.global-badges",
+     "name": "Global Badges",
+     "version": "1.0.0",
+     "author": "Wolfie <347096063569559553> (https://wolfies.org/ \"Website\") (https://github.com/Wolfkid200444 \"GitHub\")",
+     "description": "Show profile badges from other Discord clients and BadgeVault."
+    },
+    {
+     "id": "palmdevs.google-sans-flex",
+     "name": "Google Sans Flex",
+     "version": "1.0.0",
+     "author": "Palm <629368283354628116> (https://github.com/sponsors/PalmDevs \"Donations\") (https://palmdevs.me \"Website\") (https://github.com/PalmDevs \"GitHub\")",
+     "description": "Replaces Discord's gg sans with Google Sans Flex."
+    },
+    {
+     "id": "palmdevs.hide-blocked-messages",
+     "name": "Hide Blocked Messages",
+     "version": "1.0.0",
+     "author": "Palm <629368283354628116> (https://github.com/sponsors/PalmDevs \"Donations\") (https://palmdevs.me \"Website\") (https://github.com/PalmDevs \"GitHub\")",
+     "description": "Hides messages from blocked or ignored users, and optionally removes replies to them."
+    },
+    {
+     "id": "bleelblep.hide-call-buttons",
+     "name": "Hide Call Buttons",
+     "version": "1.0.0",
+     "author": "bleelblep <119043674385547264>",
+     "description": "Hide call and video buttons on profiles, at the top of DMs, in the friends list and in voice channels."
+    },
+    {
+     "id": "palmdevs.join-as-lurker",
+     "name": "Join as Lurker",
+     "version": "1.0.0",
+     "author": "Palm <629368283354628116> (https://github.com/sponsors/PalmDevs \"Donations\") (https://palmdevs.me \"Website\") (https://github.com/PalmDevs \"GitHub\")",
+     "description": "Joins discoverable servers in lurker mode (server preview) instead of as a member."
+    },
+    {
+     "id": "valenced.themes.legacy",
+     "name": "Legacy Themes",
+     "version": "1.0.0",
+     "author": "Valenced",
+     "description": "Import and use legacy themes and font packs by URL."
+    },
+    {
+     "id": "palmdevs.link-alert-copy",
+     "name": "Link Alert Copy",
+     "version": "1.0.0",
+     "author": "Palm <629368283354628116> (https://github.com/sponsors/PalmDevs \"Donations\") (https://palmdevs.me \"Website\") (https://github.com/PalmDevs \"GitHub\")",
+     "description": "Shows a Copy Link button in the \"Leaving Discord\" alert."
+    },
+    {
+     "id": "palmdevs.mention-avatars",
+     "name": "Mention Avatars",
+     "version": "1.0.0",
+     "author": "Palm <629368283354628116> (https://github.com/sponsors/PalmDevs \"Donations\") (https://palmdevs.me \"Website\") (https://github.com/PalmDevs \"GitHub\")",
+     "description": "Avatars in user mentions, role icons in role mentions, and group icons in group DM links."
+    },
+    {
+     "id": "palmdevs.message-link-preview",
+     "name": "Message Link Preview",
+     "version": "1.0.0",
+     "author": "Palm <629368283354628116> (https://github.com/sponsors/PalmDevs \"Donations\") (https://palmdevs.me \"Website\") (https://github.com/PalmDevs \"GitHub\")",
+     "description": "Preview and interact with messages that you've got linked to."
+    },
+    {
+     "id": "palmdevs.message-logger",
+     "name": "Message Logger",
+     "version": "1.0.0",
+     "author": "Palm <629368283354628116> (https://github.com/sponsors/PalmDevs \"Donations\") (https://palmdevs.me \"Website\") (https://github.com/PalmDevs \"GitHub\")",
+     "description": "Keep deleted messages, attachments, and edit history."
+    },
+    {
+     "id": "thororen.no-embed-copy",
+     "name": "No Embed Copy",
+     "version": "1.0.0",
+     "author": "thororen <848339671629299742> (https://www.thororen.com \"Website\") (https://github.com/thororen1234 \"GitHub\")",
+     "description": "Makes pressing on an embed no longer copy its content."
+    },
+    {
+     "id": "k1ngop.no-idle",
+     "name": "No Idle",
+     "version": "1.0.0",
+     "author": "k1ng_op <641266820187160576>",
+     "description": "Prevent status from idling when Discord is in the background."
+    },
+    {
+     "id": "thororen.nsfw-blur",
+     "name": "NSFW Blur",
+     "version": "1.0.0",
+     "author": "thororen <848339671629299742> (https://www.thororen.com \"Website\") (https://github.com/thororen1234 \"GitHub\")",
+     "description": "Blur images and disable embed media in NSFW channels."
+    },
+    {
+     "id": "dev.cocobo1.petpet",
+     "name": "PetPet",
+     "version": "1.0.1",
+     "author": "cocobo1 <767650984175992833> (https://cocobo1.dev \"Website\") (https://github.com/c0c0b01 \"GitHub\") (https://github.com/sponsors/c0c0b01 \"Donate\")",
+     "description": "pet anyone with /petpet"
+    },
+    {
+     "id": "palmdevs.reactions-sheet-fix",
+     "name": "Reactions Sheet Fix",
+     "version": "1.0.0",
+     "author": "Palm <629368283354628116> (https://github.com/sponsors/PalmDevs \"Donations\") (https://palmdevs.me \"Website\") (https://github.com/PalmDevs \"GitHub\")",
+     "description": "Fixes the reactions sheet loading forever when users reacted after it was first opened."
+    },
+    {
+     "id": "dev.nexza.read-all-notifications",
+     "name": "Read All Notifications",
+     "version": "1.0.0",
+     "author": "NexzaDev (https://github.com/NexzaDev \"GitHub\")",
+     "description": "Mark unread server channels as read with a button under your DMs in the server list."
+    },
+    {
+     "id": "dev.loki-vtx.selectablebios",
+     "name": "Selectable Bios",
+     "version": "1.0.0",
+     "author": "Loki-vtx <918437723755384832> (https://github.com/Loki-vtx \"GitHub\")",
+     "description": "Makes profile 'About Me' text selectable, allowing you to copy and share it."
+    },
+    {
+     "id": "palmdevs.shiki-codeblocks",
+     "name": "Shiki Codeblocks",
+     "version": "1.0.0",
+     "author": "Palm <629368283354628116> (https://github.com/sponsors/PalmDevs \"Donations\") (https://palmdevs.me \"Website\") (https://github.com/PalmDevs \"GitHub\")",
+     "description": "Highlighted and selectable code blocks in chat with Shiki and custom themes."
+    },
+    {
+     "id": "bleelblep.show-tag",
+     "name": "Show Tag",
+     "version": "1.0.0",
+     "author": "bleelblep <119043674385547264>",
+     "description": "Show usernames next to display names in chat, including in replies."
+    },
+    {
+     "id": "palmdevs.show-timeout-duration",
+     "name": "Show Timeout Duration",
+     "version": "1.0.0",
+     "author": "Palm <629368283354628116> (https://github.com/sponsors/PalmDevs \"Donations\") (https://palmdevs.me \"Website\") (https://github.com/PalmDevs \"GitHub\")",
+     "description": "Show remaining timeout duration above usernames in chat."
+    },
+    {
+     "id": "palmdevs.silent-typing",
+     "name": "Silent Typing",
+     "version": "1.0.0",
+     "author": "Palm <629368283354628116> (https://github.com/sponsors/PalmDevs \"Donations\") (https://palmdevs.me \"Website\") (https://github.com/PalmDevs \"GitHub\")",
+     "description": "Disables the typing indicator when you type."
+    },
+    {
+     "id": "wolfie.sound-controls",
+     "name": "Sound Controls",
+     "version": "1.0.0",
+     "author": "Wolfie <347096063569559553> (https://wolfies.org/ \"Website\") (https://github.com/Wolfkid200444 \"GitHub\")",
+     "description": "Mute individual call effects, ringtones, and in-app notification sounds."
+    },
+    {
+     "id": "thororen.tenor-gif-fix",
+     "name": "Tenor GIF Fix",
+     "version": "1.0.0",
+     "author": "thororen <848339671629299742> (https://www.thororen.com \"Website\") (https://github.com/thororen1234 \"GitHub\")",
+     "description": "Download and share Tenor links as GIFs instead of MP4s."
+    },
+    {
+     "id": "palmdevs.tenor-gif-search",
+     "name": "Tenor GIF Search",
+     "version": "1.0.0",
+     "author": "Palm <629368283354628116> (https://github.com/sponsors/PalmDevs \"Donations\") (https://palmdevs.me \"Website\") (https://github.com/PalmDevs \"GitHub\")",
+     "description": "Brings back Tenor GIF search to Discord."
+    },
+    {
+     "id": "valenced.settings.themes",
+     "name": "Themes",
+     "version": "1.0.0",
+     "author": "Valenced",
+     "description": "Color themes, font packs, icon packs, and emoji packs."
+    },
+    {
+     "id": "valenced.api.themes",
+     "name": "Themes API",
+     "version": "1.0.1",
+     "author": "Valenced",
+     "description": "Lets theme plugins provide color themes, font packs, icon packs, and emoji packs."
+    },
+    {
+     "id": "k1ngop.valid-user",
+     "name": "ValidUser",
+     "version": "1.0.0",
+     "author": "k1ng_op <641266820187160576> (https://github.com/k1ng0p \"GitHub\")",
+     "description": "Resolves @unknown-user mentions to a normal clickable mention."
+    },
+    {
+     "id": "palmdevs.who-reacted",
+     "name": "Who Reacted",
+     "version": "1.0.0",
+     "author": "Palm <629368283354628116> (https://github.com/sponsors/PalmDevs \"Donations\") (https://palmdevs.me \"Website\") (https://github.com/PalmDevs \"GitHub\")",
+     "description": "Shows the avatars of up to 5 people who reacted on each reaction in chat."
+    },
+    {
+     "id": "purpleeyez.youbar-plus",
+     "name": "YouBar+",
+     "version": "1.0.0",
+     "author": "Purple_Ξye™ <646535537334812682> (https://github.com/Purple-EyeZ \"GitHub\")",
+     "description": "Add settings, DM and favorites buttons to the You Bar."
+    }
+   ]
+  }
+ ]
+}
