@@ -1472,6 +1472,19 @@
               "version": "*"
             }
           }
+        },
+        "1.1.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.show-hidden-channels@1.1.1.zip",
+          "sha256": "75bc3755e70325739421cb6a6d0cd7b9f9eb77e8a54d343ef4070d8a09fa279b",
+          "size": 17200,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
         }
       },
       "name": "Show Hidden Channels",
@@ -1482,7 +1495,7 @@
         "Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
       ],
       "channels": {
-        "latest": "1.1.0"
+        "latest": "1.1.1"
       }
     }
   }
