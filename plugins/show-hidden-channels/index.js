@@ -18,7 +18,13 @@
 	 *
 	 * (a channel you can see but need a role for). This plugin wraps that second question and answers "yes" for the
 	 * channels your rules allow, so Discord draws them with its own code. Nothing else about permissions changes:
-	 * messages, sending and joining still follow your real permissions. Tapping a revealed channel is caught in
+	 * messages, sending and joining still follow your real permissions.
+	 *
+	 * Names. Discord's servers now send channels you may not see "obfuscated" (`ChannelFlags.OBFUSCATED`,
+	 * `records/ChannelRecord.tsx`): the name, topic and permission settings are left out, and the app writes
+	 * "No Access" instead (`modules/channel/useChannelName.tsx`, `channel.isObfuscated()`). The real names are not
+	 * on the phone, so no plugin can show them. Instead the rows get a name made from what is known (kind, number,
+	 * creation date from the channel ID), written by a template you can change. Where a name is sent, it is used. Tapping a revealed channel is caught in
 	 * `discord_app/modules/routing/transitionToChannel.tsx` (text channels) and on the voice row, because Discord's
 	 * servers would answer "Missing Access".
 	 *
@@ -27,7 +33,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.0.0'
+	const VERSION = '1.1.0'
 	const INSTANCE = {}
 	const VIEW_CHANNEL = 1024 // Permission bit 1 << 10
 
@@ -88,6 +94,10 @@
 		onlyWords: '', // when filled in, only channels whose name has one of these words are shown
 		skipNsfw: false,
 		tap: 'info', // 'info': info sheet. 'try': let Discord try to open it. 'nothing'
+		labelMode: 'template', // 'template': make a name for channels Discord hides the name of. 'discord': leave "No Access"
+		labelTemplate: 'Hidden {kind} {n}', // {kind} {n} {created} {year} {id}
+		categoryTemplate: 'Hidden category {n}',
+		nameCategories: true,
 		marker: 'lock', // 'lock', 'forbidden', 'eye', 'key', 'custom', 'none'
 		markerCustom: '🔒',
 		markerPosition: 'before', // 'before' or 'after' the name
@@ -145,7 +155,16 @@
 	const getChannel = (id) => { try { return store('ChannelStore').getChannel(id) } catch (e) { return null } }
 	const getGuild = (id) => { try { return store('GuildStore').getGuild(id) } catch (e) { return null } }
 	const guildName = (id) => { const guild = getGuild(id); return guild ? guild.name : `Server ${String(id).slice(-4)}` }
-	const channelName = (id) => { const channel = getChannel(id); return channel ? `#${channel.name || 'channel'}` : `Channel ${String(id).slice(-4)}` }
+	const channelName = (id) => {
+		const channel = getChannel(id)
+		if (!channel) return `Channel ${String(id).slice(-4)}`
+		if (isObfuscatedChannel(channel)) return `${kindWord(channel.type)} (name hidden by Discord, ends ${String(id).slice(-4)})`
+		return `#${channel.name || 'channel'}`
+	}
+
+	/** True when Discord's server left the name out (it writes "No Access" instead). */
+	const isObfuscatedChannel = (channel) => { try { return !!channel && typeof channel.isObfuscated === 'function' && channel.isObfuscated() } catch (e) { return false } }
+	const hasRealName = (channel) => !!channel && !isObfuscatedChannel(channel) && !!String(channel.name || '').trim()
 
 	/** True when Discord says you may not open the channel. */
 	function cannotView(channel) {
@@ -154,6 +173,13 @@
 			if (!permissions || typeof permissions.can !== 'function') return false
 			return permissions.can(BigInt(VIEW_CHANNEL), channel) === false
 		} catch (e) { return false }
+	}
+
+	/** The reason a whole server is left out, or '' when its hidden channels may be shown. */
+	function guildRule(guildId) {
+		const r = rules()
+		if (r.scopeMode === 'whitelist') return r.guildAllow.has(guildId) ? '' : 'The server is not on your allowed list'
+		return r.guildBlock.has(guildId) ? 'The server is on your blocked list' : ''
 	}
 
 	/** Why a hidden channel is shown or not. `ok` is the answer. */
@@ -166,12 +192,13 @@
 		if (r.channelBlock.has(channel.id)) return { ok: false, why: 'This channel is on your blocked list' }
 		if (channel.parent_id && r.categoryBlock.has(channel.parent_id)) return { ok: false, why: 'Its category is on your blocked list' }
 		if (r.channelAllow.has(channel.id)) return { ok: true, why: 'This channel is on your allowed list' }
-		if (r.scopeMode === 'whitelist') {
-			if (!r.guildAllow.has(channel.guild_id)) return { ok: false, why: 'The server is not on your allowed list' }
-		} else if (r.guildBlock.has(channel.guild_id)) return { ok: false, why: 'The server is on your blocked list' }
-		const name = String(channel.name || '').toLowerCase()
-		if (r.blockWords.some((w) => name.includes(w))) return { ok: false, why: 'The name has a blocked word' }
-		if (r.onlyWords.length && !r.onlyWords.some((w) => name.includes(w))) return { ok: false, why: 'The name has none of your "only" words' }
+		const guildReason = guildRule(channel.guild_id)
+		if (guildReason) return { ok: false, why: guildReason }
+		if (hasRealName(channel)) { // the filters by name only work where Discord sent the name
+			const name = String(channel.name || '').toLowerCase()
+			if (r.blockWords.some((w) => name.includes(w))) return { ok: false, why: 'The name has a blocked word' }
+			if (r.onlyWords.length && !r.onlyWords.some((w) => name.includes(w))) return { ok: false, why: 'The name has none of your "only" words' }
+		}
 		if (r.skipNsfw && channel.nsfw) return { ok: false, why: 'Age-restricted channels are skipped' }
 		return { ok: true, why: 'Allowed by your rules' }
 	}
@@ -265,17 +292,56 @@
 		if (kind === 'none') return ''
 		return kind === 'custom' ? String(setting('markerCustom') || '').slice(0, 8) : MARKERS[kind] || '🔒'
 	}
+	const KIND_WORDS = { 0: 'text', 2: 'voice', 5: 'announcement', 13: 'stage', 15: 'forum', 16: 'media', 4: 'category' }
+	const kindWord = (type) => KIND_WORDS[type] || 'channel'
+	const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+	/** The hidden channels (or categories) of a server whose name is left out, in the order of the list, numbered per kind: id -> n. */
+	const numberCache = new Map()
+	function hiddenNumbers(guildId) {
+		const known = numberCache.get(guildId)
+		if (known && Date.now() - known.at < 4000) return known.numbers
+		const numbers = new Map()
+		try {
+			const all = store('ChannelStore').getMutableGuildChannelsForGuild(guildId)
+			const list = Object.keys(all).map((id) => all[id]).filter((c) => c && isObfuscatedChannel(c) && (c.type === 4 || (!NEVER_REVEALED.has(c.type) && cannotView(c))))
+			const position = (c) => { const parent = c.parent_id ? all[c.parent_id] : null; return [parent ? Number(parent.position) || 0 : -1, Number(c.position) || 0] }
+			list.sort((a, b) => { const [pa, ca] = position(a); const [pb, cb] = position(b); return pa - pb || ca - cb || String(a.id).localeCompare(String(b.id)) })
+			const counts = {}
+			list.forEach((c) => { const key = kindWord(c.type); counts[key] = (counts[key] || 0) + 1; numbers.set(c.id, counts[key]) })
+		} catch (e) {}
+		numberCache.set(guildId, { at: Date.now(), numbers })
+		return numbers
+	}
+	/** The name made for a channel Discord hides the name of, from the template. */
+	function madeName(channel, template) {
+		const created = snowflakeTime(channel.id)
+		const date = created ? new Date(created) : null
+		const numbers = hiddenNumbers(channel.guild_id)
+		const fill = { kind: kindWord(channel.type), n: numbers.get(channel.id) || '', created: date ? `${MONTHS[date.getMonth()]} ${date.getFullYear()}` : '', year: date ? String(date.getFullYear()) : '', id: String(channel.id).slice(-4) }
+		const text = String(template || '').replace(/\{(kind|n|created|year|id)\}/g, (all, key) => String(fill[key])).replace(/\s+/g, ' ').trim()
+		return text || `Hidden ${fill.kind} ${fill.n}`.trim()
+	}
+	/** True when Discord's own "No Access" is to be replaced for this row. */
+	const wantsMadeName = (channel) => setting('labelMode') !== 'discord' && isObfuscatedChannel(channel)
+
 	const copies = new WeakMap()
-	function decorated(channel) {
-		const marker = markerText()
+	function decorated(channel, isCategory) {
+		const marker = isCategory ? '' : markerText()
 		const after = setting('markerPosition') === 'after'
-		const dim = !!setting('dim')
-		const signature = `${marker}|${after}|${dim}|${channel.name}|${channel.muted}`
+		const dim = !isCategory && !!setting('dim')
+		const template = isCategory ? setting('categoryTemplate') : setting('labelTemplate')
+		const made = wantsMadeName(channel)
+		const baseName = made ? madeName(channel, template) : channel.name
+		const signature = `${marker}|${after}|${dim}|${baseName}|${channel.muted}|${made}`
 		const known = copies.get(channel)
 		if (known && known.signature === signature) return known.copy
-		const name = marker ? (after ? `${channel.name} ${marker}` : `${marker} ${channel.name}`) : channel.name
-		const extra = { name: { value: name, enumerable: true, writable: true, configurable: true } }
-		if (dim) extra.muted = { value: true, enumerable: true, writable: true, configurable: true }
+		const name = marker ? (after ? `${baseName} ${marker}` : `${marker} ${baseName}`) : baseName
+		const flag = { value: true, enumerable: true, writable: true, configurable: true }
+		const extra = {}
+		if (made || !isObfuscatedChannel(channel)) extra.name = { value: name, enumerable: true, writable: true, configurable: true }
+		if (made) extra.isObfuscated = { value: () => false, enumerable: false, writable: true, configurable: true }
+		if (dim) extra.muted = flag
 		const copy = Object.create(channel, extra)
 		copies.set(channel, { signature, copy })
 		return copy
@@ -290,7 +356,15 @@
 				if (globalThis.__showHiddenChannelsInstance !== INSTANCE) return element // an older copy is still loaded
 				const props = element && element.props
 				const channel = props && props.channel
-				if (!channel || typeof channel !== 'object' || !channel.guild_id || !channel.id || !ROW_COMPONENTS.has(componentName(element))) return element
+				if (!channel || typeof channel !== 'object' || !channel.guild_id || !channel.id) return element
+				const kind = componentName(element)
+				if (kind === 'CategoryChannel') {
+					// A category whose name Discord hides: give it a made-up name, if its server is allowed
+					if (!rules().enabled || !setting('nameCategories') || !wantsMadeName(channel) || channel.type !== 4 || guildRule(channel.guild_id) || rules().categoryBlock.has(channel.id)) return element
+					stats.decorated += 1
+					return valenced.react.React.cloneElement(element, { channel: decorated(channel, true) })
+				}
+				if (!ROW_COMPONENTS.has(kind)) return element
 				if (!rules().enabled || !isRevealed(channel)) return element
 				hooks.rows += 1
 				stats.decorated += 1
@@ -430,19 +504,24 @@
 		const close = () => { try { valenced.discord.actions.ActionSheetActionCreators.hideActionSheet(SHEET_KEY) } catch (e) {} }
 		const row = (label, value) => h(Design.TableRow, { key: label, label, subLabel: value, onPress: () => copyText(value, `${label} copied`) })
 		const link = `https://discord.com/channels/${channel.guild_id}/${channel.id}`
+		const hiddenName = isObfuscatedChannel(channel)
+		const number = hiddenNumbers(channel.guild_id).get(channel.id)
+		const parentName = parent ? (isObfuscatedChannel(parent) ? (setting('nameCategories') && setting('labelMode') !== 'discord' ? madeName(parent, setting('categoryTemplate')) : 'Name hidden by Discord') : parent.name || 'unknown') : ''
 		const rows = [
 			row('Server', guildName(channel.guild_id)),
 			row('Kind', typeLabelOf(channel.type)),
-			parent ? row('Category', parent.name || 'unknown') : null,
+			hiddenName ? row('Name', 'Discord hides the name of channels you cannot see') : null,
+			number ? row('Number', `${kindWord(channel.type)} ${number} of the hidden channels without a name in this server, counted in list order`) : null,
+			parent ? row('Category', parentName) : null,
 			channel.nsfw ? row('Age-restricted', 'Yes') : null,
-			setting('sheetTopic') ? row('Topic', channel.topic ? String(channel.topic) : 'No topic') : null,
+			setting('sheetTopic') && !hiddenName ? row('Topic', channel.topic ? String(channel.topic) : 'No topic') : null,
 			setting('sheetDates') ? row('Created', dateLabel(snowflakeTime(channel.id))) : null,
 			setting('sheetDates') ? row('Last message', channel.lastMessageId || channel.last_message_id ? dateLabel(snowflakeTime(channel.lastMessageId || channel.last_message_id)) : 'none known') : null,
 			channel.rateLimitPerUser ? row('Slowmode', `${channel.rateLimitPerUser} seconds`) : null,
 		].filter(Boolean)
 		const whoRows = who ? [
 			who.everyoneDenied ? h(Design.TableRow, { key: 'everyone', label: 'Everyone else', subLabel: 'Not allowed to see it' }) : null,
-			row('Roles let in', who.roles.length ? who.roles.join(', ') : 'None named in its settings'),
+			row('Roles let in', who.roles.length ? who.roles.join(', ') : hiddenName ? 'Hidden by Discord along with the name' : 'None named in its settings'),
 			who.members.length ? row('People let in', who.members.join(', ')) : null,
 		].filter(Boolean) : []
 		return h(
@@ -451,8 +530,8 @@
 			scrollView(
 				RN,
 				{ style: { maxHeight: Math.max(240, Math.round(size.height - 230)) }, contentContainerStyle: { padding: 16, paddingBottom: 24, gap: 14 }, nestedScrollEnabled: true, scrollEnabled: true, showsVerticalScrollIndicator: true },
-				h(Design.Text, { variant: 'heading-lg/bold' }, `${markerText() || '🔒'} ${channel.name || 'channel'}`.trim()),
-				h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'You cannot open this channel. Discord would say "Missing Access". This is what the app knows about it.'),
+				h(Design.Text, { variant: 'heading-lg/bold' }, `${markerText() || '🔒'} ${hiddenName ? madeName(channel, setting('labelTemplate')) : channel.name || 'channel'}`.trim()),
+				h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, hiddenName ? 'You cannot open this channel. Discord\u2019s servers keep its name, topic and permissions from your phone, so only its kind, place and age are known.' : 'You cannot open this channel. Discord would say "Missing Access". This is what the app knows about it.'),
 				h(Design.TableRowGroup, { title: 'About' }, ...rows),
 				who && h(Design.TableRowGroup, { title: 'Who can see it' }, ...whoRows),
 				setting('sheetIds') && h(
@@ -525,6 +604,23 @@
 		} catch (e) { return [] }
 	}
 	const currentGuildId = () => { try { return store('SelectedGuildStore').getGuildId() } catch (e) { return undefined } }
+	/** How many hidden channels of a server still have a real name, and how many have it left out by Discord. */
+	function namesIn(guildId) {
+		let real = 0
+		let hidden = 0
+		let total = 0
+		try {
+			const all = store('ChannelStore').getMutableGuildChannelsForGuild(guildId)
+			Object.keys(all).forEach((id) => {
+				const channel = all[id]
+				if (!channel || NEVER_REVEALED.has(channel.type) || !cannotView(channel)) return
+				total += 1
+				if (hasRealName(channel)) real += 1
+				else hidden += 1
+			})
+		} catch (e) {}
+		return { real, hidden, total }
+	}
 	/** The hidden channels of a server, and how many of them the rules would show. */
 	function hiddenIn(guildId) {
 		let hidden = 0
@@ -676,8 +772,18 @@
 			),
 			h(Design.TableRowGroup, { key: 'types', title: 'Kinds of channel' },
 				...TYPES.map((t) => h(Design.TableSwitchRow, { key: t.key, label: t.label, value: types[t.key] !== undefined ? !!types[t.key] : !!JSON.parse(defaults.typesJson)[t.key], onValueChange: (value) => saveSettings({ typesJson: JSON.stringify({ ...JSON.parse(defaults.typesJson), ...types, [t.key]: !!value }) }) }))),
+			h(Radio, { key: 'labelMode', title: 'Names of hidden channels', value: setting('labelMode'), onChange: (v) => saveSettings({ labelMode: v }), items: [
+				{ v: 'template', l: 'Make a name for them', s: 'Discord hides the real names, so the name comes from your template' },
+				{ v: 'discord', l: 'Leave Discord\u2019s "No Access"' },
+			] }),
+			setting('labelMode') !== 'discord' && h(Field, { key: 'labelTemplate', label: 'Name template', description: 'Fills in {kind} (text, voice...), {n} (1, 2, 3...), {created} (Mar 2021), {year} and {id} (last 4 digits)', placeholder: 'Hidden {kind} {n}', maxLength: 60, value: setting('labelTemplate'), onCommit: (v) => saveSettings({ labelTemplate: v }) }),
+			setting('labelMode') !== 'discord' && h(Design.TableRowGroup, { key: 'catNames', title: 'Categories' },
+				switchRow('nameCategories', 'Name hidden categories too', 'Instead of "No Access"'),
+			),
+			setting('labelMode') !== 'discord' && setting('nameCategories') && h(Field, { key: 'categoryTemplate', label: 'Category name template', placeholder: 'Hidden category {n}', maxLength: 60, value: setting('categoryTemplate'), onCommit: (v) => saveSettings({ categoryTemplate: v }) }),
 			h(Design.TableRowGroup, { key: 'filters', title: 'Filters by name' },
 				switchRow('skipNsfw', 'Skip age-restricted channels', 'They stay hidden'),
+				h(Design.TableRow, { key: 'wordsNote', label: 'About the word filters', subLabel: 'They only work where Discord sent the real name. Most hidden channels have their name left out, so use the server and channel lists for those.' }),
 			),
 			h(Field, { key: 'blockWords', label: 'Never show names with these words', description: 'Separate with commas, for example: staff, mod, admin', placeholder: 'staff, mod', value: setting('blockWords'), onCommit: (v) => saveSettings({ blockWords: v }) }),
 			h(Field, { key: 'onlyWords', label: 'Only show names with these words', description: 'Leave empty to show all. For example: rules, announcements', placeholder: '', value: setting('onlyWords'), onCommit: (v) => saveSettings({ onlyWords: v }) }),
@@ -731,6 +837,10 @@
 			const counts = hiddenIn(here)
 			add(counts.hidden > 0, `${guildName(here)} has hidden channels`, `${counts.hidden} hidden, ${counts.shown} shown by your rules${counts.hidden === 0 ? ' (maybe you can see everything here)' : ''}`)
 		} else add(false, 'A server is open', 'Open a server’s channel list, then run this again')
+		if (here) {
+			const names = namesIn(here)
+			add(true, 'Real names of hidden channels', `${names.real} of ${names.total} hidden channels still have their real name; ${names.hidden} are named by Discord ("No Access")`)
+		}
 		add(stats.asked > 0, 'Discord asked about hidden channels', stats.asked > 0 ? `${stats.asked} time(s), ${stats.shown.size} shown` : 'Open a server’s channel list or tap "Refresh the list"')
 		add(stats.decorated > 0, 'Marked rows were drawn', stats.decorated > 0 ? `${stats.decorated} row(s)` : 'Scroll the channel list of a server with hidden channels')
 		return out
@@ -745,11 +855,12 @@
 			`channels always ${r.channelAllow.size}, never ${r.channelBlock.size}; categories never ${r.categoryBlock.size}`,
 			`kinds: ${TYPES.filter((t) => r.types[t.key]).map((t) => t.key).join(', ') || 'none'}`,
 			`words: block [${r.blockWords.join(', ')}] only [${r.onlyWords.join(', ')}]; skip NSFW ${r.skipNsfw}`,
+			`names: ${setting('labelMode')} "${setting('labelTemplate')}"; categories ${setting('nameCategories')} "${setting('categoryTemplate')}"`,
 			`tap: ${setting('tap')}; marker: ${setting('marker')} ${setting('markerPosition')}; dim ${setting('dim')}`,
 			`hooks: gated ${hooks.gated}; transition ${hooks.transition}; preload ${hooks.preload}; list rebuild ${hooks.list}`,
 			`patched: ${hooks.patched.join(', ') || '-'}`,
 			`asked ${stats.asked}, shown ${stats.shown.size}, rows drawn ${stats.decorated}, taps caught ${stats.taps}, refreshes ${stats.refreshes}`,
-			here ? `this server: ${guildName(here)} ${JSON.stringify(hiddenIn(here))}` : 'this server: none open',
+			here ? `this server: ${guildName(here)} ${JSON.stringify(hiddenIn(here))} names ${JSON.stringify(namesIn(here))}` : 'this server: none open',
 			hooks.problems.length ? `problems: ${hooks.problems.join(' | ')}` : '',
 		].filter(Boolean).join('\n')
 	}

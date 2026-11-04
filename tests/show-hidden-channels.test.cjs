@@ -72,6 +72,9 @@ function load(settings = {}, options = {}) {
 		'200000000000000006': ch('200000000000000006', { name: 'forum-x', type: 15 }),
 		'200000000000000007': ch('200000000000000007', { name: 'in-g2', guild_id: G2 }),
 		'300000000000000001': ch('300000000000000001', { name: 'MODS', type: 4 }),
+		'200000000000000008': ch('200000000000000008', { name: '', isObfuscated: () => true, position: 2, parent_id: '300000000000000009' }), // name left out by Discord
+		'200000000000000009': ch('200000000000000009', { name: '', type: 2, isObfuscated: () => true, position: 3, parent_id: '300000000000000009' }),
+		'300000000000000009': ch('300000000000000009', { name: '', type: 4, isObfuscated: () => true, position: 5 }),
 	}
 	const visible = new Set(['200000000000000001'])
 	const originalGated = { isChannelGatedAndVisible: (g, id) => { state.originalCalls.push(['gated', id]); return false } }
@@ -128,6 +131,9 @@ const N = '200000000000000004' // nsfw
 const A = '200000000000000005' // announcement
 const F = '200000000000000006' // forum
 const OTHER = '200000000000000007' // other server
+const O1 = '200000000000000008' // hidden text channel, name left out
+const O2 = '200000000000000009' // hidden voice channel, name left out
+const OC = '300000000000000009' // hidden category, name left out
 
 ;(async () => {
 	// 1. The hook on Discord's question
@@ -221,6 +227,54 @@ const OTHER = '200000000000000007' // other server
 		check('with the plugin off rows are left alone', off.runtime.jsx({ type: { name: 'TextChannel' } }, { channel: off.channels[H] }).props.channel === off.channels[H])
 	}
 
+	// 4b. Channels whose name Discord left out ("No Access")
+	{
+		const app = load()
+		const row = (id, name = 'TextChannel', extra = {}) => app.runtime.jsx({ type: { name } }, { channel: app.channels[id], muted: false, ...extra })
+		const text = row(O1).props.channel
+		check('a hidden channel without a name gets a made-up one with the marker', text.name === '🔒 Hidden text 1', text.name)
+		check('...and Discord is told the name is there (so "No Access" is not written)', text.isObfuscated() === false)
+		check('...the original stays obfuscated', app.channels[O1].isObfuscated() === true && app.channels[O1].name === '')
+		check('a voice channel is numbered on its own', row(O2, 'ChannelItem', { onPress() {} }).props.channel.name === '🔒 Hidden voice 1')
+		check('named and unnamed hidden channels sit side by side', row('200000000000000002').props.channel.name === '🔒 staff-chat' && row(O1).props.channel.name === '🔒 Hidden text 1')
+		check('a channel that kept its name keeps it', row(H).props.channel.name === '🔒 staff-chat')
+		const cat = row(OC, 'CategoryChannel').props.channel
+		check('an obfuscated category gets a made-up name too', cat.name === 'Hidden category 1' && cat.isObfuscated() === false, cat.name)
+		check('...without a marker or dimming', !cat.muted)
+		check('a category with a real name is left alone', row('300000000000000001', 'CategoryChannel').props.channel === app.channels['300000000000000001'])
+		const tokens = load({ labelTemplate: '{kind}-{n} ({created}) {year} [{id}]' })
+		const made = tokens.runtime.jsx({ type: { name: 'TextChannel' } }, { channel: tokens.channels[O1] }).props.channel.name
+		check('the template tokens are filled in', /^🔒 text-1 \([A-Z][a-z]{2} 20\d\d\) 20\d\d \[0008\]$/.test(made), made)
+		const empty = load({ labelTemplate: '   ' })
+		check('an empty template falls back to a plain name', empty.runtime.jsx({ type: { name: 'TextChannel' } }, { channel: empty.channels[O1] }).props.channel.name === '🔒 Hidden text 1')
+		const discord = load({ labelMode: 'discord' })
+		const kept = discord.runtime.jsx({ type: { name: 'TextChannel' } }, { channel: discord.channels[O1], muted: false }).props.channel
+		check('"leave Discord\u2019s No Access" does not change the name', kept.isObfuscated() === true && kept.name === '')
+		check('...nor the category', discord.runtime.jsx({ type: { name: 'CategoryChannel' } }, { channel: discord.channels[OC] }).props.channel === discord.channels[OC])
+		const noCat = load({ nameCategories: false })
+		check('naming categories can be turned off', noCat.runtime.jsx({ type: { name: 'CategoryChannel' } }, { channel: noCat.channels[OC] }).props.channel === noCat.channels[OC])
+		const blockedGuild = load({ guildBlockJson: JSON.stringify([G1]) })
+		check('categories of a blocked server are left alone', blockedGuild.runtime.jsx({ type: { name: 'CategoryChannel' } }, { channel: blockedGuild.channels[OC] }).props.channel === blockedGuild.channels[OC])
+		const blockedCat = load({ categoryBlockJson: JSON.stringify([OC]) })
+		check('a blocked category is left alone', blockedCat.runtime.jsx({ type: { name: 'CategoryChannel' } }, { channel: blockedCat.channels[OC] }).props.channel === blockedCat.channels[OC])
+		const words = load({ onlyWords: 'staff', blockWords: 'hidden' })
+		check('word filters do not hide channels whose name is not sent', words.asked(O1) === true && words.asked(H) === true && words.asked(V) === false)
+		const off = load({ enabled: false })
+		check('with the plugin off categories are left alone', off.runtime.jsx({ type: { name: 'CategoryChannel' } }, { channel: off.channels[OC] }).props.channel === off.channels[OC])
+		const sheet = load()
+		sheet.transitionModule.transitionToChannel(O1)
+		const Hidden = await sheet.state.openedSheets[0].p.then((m) => m.default)
+		const tree = expandAt({ type: Hidden, props: {} }, 'sheet')
+		check('the info sheet says the name is hidden and gives the number and category', has(tree, 'Hidden text 1') && has(tree, 'Discord hides the name') && has(tree, 'text 1 of the hidden channels without a name') && has(tree, 'Hidden category 1'), texts(tree).join('|').slice(0, 400))
+		check('...and has no topic row, and explains why', !has(tree, 'No topic') && has(tree, 'keep its name, topic and permissions'))
+		press(tree, 'Channel ID')
+		check('...the ID can still be copied', sheet.state.copied.includes(O1))
+		press(app.screen(), 'Self-check')
+		check('the self-check counts real names against hidden ones', has(app.screen(), '5 of 7 hidden channels still have their real name; 2 are named by Discord'), texts(app.screen()).filter((t) => /real name/.test(t)).join('|'))
+		press(app.screen(), 'Copy report')
+		check('the report has the name settings and counts', /names: template "Hidden \{kind\} \{n\}"/.test(global.copied) && /"real":5,"hidden":2,"total":7/.test(global.copied), global.copied)
+	}
+
 	// 5. Info sheet
 	{
 		const app = load()
@@ -256,7 +310,7 @@ const OTHER = '200000000000000007' // other server
 	{
 		const app = load()
 		const tree = app.screen()
-		check('the screen shows the state and this server’s counts', has(tree, 'On') && has(tree, 'This server: 5 hidden channels, 5 shown by your rules'), texts(tree).slice(0, 8).join('|'))
+		check('the screen shows the state and this server’s counts', has(tree, 'On') && has(tree, 'This server: 7 hidden channels, 7 shown by your rules'), texts(tree).slice(0, 8).join('|'))
 		findAll(tree, (n) => n.props && n.props.title === 'When I tap a hidden channel')[0].props.onChange('nothing')
 		check('the tap setting is saved', app.data.cache.tap === 'nothing')
 		findAll(app.screen(), (n) => n.props && n.props.title === 'Which servers')[0].props.onChange('whitelist')
@@ -325,7 +379,7 @@ const OTHER = '200000000000000007' // other server
 		const t = texts(app.screen()).join('|')
 		check('the self-check passes on a working setup', /✓ Found Discord’s "gated channel" question/.test(t) && /✓ Found the channel opener/.test(t) && /✓ Can rebuild the channel list/.test(t) && /✓ Can read your permissions/.test(t) && /✓ Alpha has hidden channels/.test(t) && /✓ Discord asked about hidden channels/.test(t) && /✓ Marked rows were drawn/.test(t), t)
 		press(app.screen(), 'Copy report')
-		check('the report lists settings, hooks and counts', /Show Hidden Channels report/.test(global.copied) && /version: 1\.0\.0/.test(global.copied) && /hooks: gated found; transition found; preload found; list rebuild found/.test(global.copied) && /taps caught 1/.test(global.copied) && /this server: Alpha/.test(global.copied), global.copied)
+		check('the report lists settings, hooks and counts', /Show Hidden Channels report/.test(global.copied) && /version: 1\.1\.0/.test(global.copied) && /hooks: gated found; transition found; preload found; list rebuild found/.test(global.copied) && /taps caught 1/.test(global.copied) && /this server: Alpha/.test(global.copied), global.copied)
 		const fresh = load()
 		press(fresh.screen(), 'Self-check')
 		check('before anything was drawn the self-check says what to do', /✗ Discord asked about hidden channels/.test(texts(fresh.screen()).join('|')))
