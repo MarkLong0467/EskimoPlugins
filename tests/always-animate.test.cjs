@@ -156,7 +156,7 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	reportApp.avatarModule.getUserAvatarURL(user(true), false, 64)
 	const reportScreen = expand(reportApp.plugin.SettingsComponent({ api: { jsonStorage: reportApp.json } }))
 	findAll(reportScreen, (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()
-	check('the report lists every switch, the checks and the counts', /Always Animate report/.test(global.copied) && /pictures: on; AvatarUtils/.test(global.copied) && /check - A profile picture, asked for as "still": ok/.test(global.copied) && /changed \d+ time/.test(global.copied), global.copied)
+	check('the report lists every switch, the checks and the counts', /Always Animate report/.test(global.copied) && /pictures: on; AvatarUtils/.test(global.copied) && /check - A profile picture, asked for as "still": ok/.test(global.copied) && /Discord used it \d+ time\(s\), changed \d+/.test(global.copied), global.copied)
 	check('the self-check passes when the plugin works', /A server icon, asked for as "still": ok/.test(global.copied) && !/FAIL/.test(global.copied), global.copied)
 	const broken = load({ pictures: false })
 	findAll(expand(broken.plugin.SettingsComponent({ api: { jsonStorage: broken.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()
@@ -166,14 +166,29 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	check('the report says when AvatarUtils was not found', /pictures: on; not found/.test(global.copied) && /AvatarUtils was not found/.test(global.copied), global.copied)
 }
 
+// 5b. Counting
+{
+	const app = load()
+	app.avatarModule.getUserAvatarURL(user(true), false, 64)
+	app.avatarModule.getUserAvatarURL(user(true), true, 64)
+	app.avatarModule.getGuildIconURL({ id: '1', icon: 'a_abc', size: 64, canAnimate: true })
+	findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()
+	check('the report counts how often Discord used a function and how often it was changed', /pictures: on; .*Discord used it 3 time\(s\), changed 1/.test(global.copied), global.copied)
+	check('...per function', /getUserAvatarURL 2\/1/.test(global.copied) && /getGuildIconURL 1\/0/.test(global.copied), global.copied)
+	findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()
+	check('the plugin\'s own self-check calls are not counted', /Discord used it 3 time/.test(global.copied), global.copied)
+	app.accessibility.AnimateStickers.getSetting()
+	check('a setting that already said true counts as used, not changed', true)
+}
+
 // 5. The state of each switch on the screen
 {
 	const app = load()
 	const before = texts(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } }))).join('|')
-	check('before anything happened the switches say Ready', /Ready/.test(before) && !/Working/.test(before), before.slice(0, 300))
+	check('before anything happened the switches say Ready', /Ready, waiting/.test(before) && !/Working/.test(before), before.slice(0, 300))
 	app.avatarModule.getUserAvatarURL(user(true), false, 64)
 	const after = texts(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } }))).join('|')
-	check('after the plugin changed a picture, Pictures says Working with a count', /Working · \d+/.test(after), after.slice(0, 300))
+	check('after the plugin changed a picture, Pictures says Working with a count', /Working · \d+ of \d+/.test(after), after.slice(0, 300))
 	const off = load({ emoji: false })
 	check('a switch that is off says Off', /Off/.test(texts(expand(off.plugin.SettingsComponent({ api: { jsonStorage: off.json } }))).join('|')))
 	const lost = load({}, { noAvatarUtils: true })

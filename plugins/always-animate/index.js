@@ -21,7 +21,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.0.0'
+	const VERSION = '1.0.1'
 
 	// ---------------------------------------------------------------------------------------------------
 	// Small helpers
@@ -78,11 +78,21 @@
 	// 2. Counting, so the settings screen can say what really happened
 	// ---------------------------------------------------------------------------------------------------
 	const forced = Object.fromEntries(FEATURES.map((f) => [f.key, 0])) // how many times each feature changed something
+	const seen = Object.fromEntries(FEATURES.map((f) => [f.key, 0])) // how many times Discord used the thing that was wrapped
+	const perFunction = {} // pictures only: function name -> { seen, changed }
+	let selfCheckRunning = false // the plugin's own test calls are not counted
 	const found = {} // what was found in Discord: { pictures: 'AvatarUtils (2 holders, 19 functions)', ... }
 	const problems = []
-	function countForced(feature) {
-		forced[feature] += 1
-		if (forced[feature] <= 3 || forced[feature] % 50 === 0) redrawSettings()
+	function countSeen(feature, changed, detail) {
+		if (selfCheckRunning) return
+		seen[feature] += 1
+		if (changed) forced[feature] += 1
+		if (detail) {
+			const entry = perFunction[detail] || (perFunction[detail] = { seen: 0, changed: 0 })
+			entry.seen += 1
+			if (changed) entry.changed += 1
+		}
+		if (seen[feature] <= 3 || seen[feature] % 50 === 0) redrawSettings()
 	}
 	function reportProblem(what, error) {
 		const text = `${what}: ${String((error && error.message) || error).slice(0, 80)}`
@@ -149,7 +159,7 @@
 			cleanup(valenced.patcher.instead(holder, name, function (args, callOriginal) {
 				if (!setting('pictures')) return Reflect.apply(callOriginal, this, args)
 				const next = withAnimationAllowed(args, where)
-				if (next !== args) countForced('pictures')
+				countSeen('pictures', next !== args, name)
 				return Reflect.apply(callOriginal, this, next)
 			}))
 			try { holder[name].__alwaysAnimate = true } catch (e) {}
@@ -200,8 +210,8 @@
 			const methods = ['getSetting', 'useSetting'].filter((method) => typeof target[method] === 'function')
 			methods.forEach((method) => {
 				cleanup(valenced.patcher.after(target, method, (result) => {
-					if (!setting(feature) || result === true) return result
-					countForced(feature)
+					if (!setting(feature)) return result
+					countSeen(feature, result !== true)
 					return true
 				}))
 			})
@@ -217,8 +227,9 @@
 	/** The status emoji only animates when its own `emoji.animate` is true. */
 	function animateStatusEmoji(element) {
 		const props = element.props
-		if (componentName(element) !== 'ActivityEmoji' || !isPlainObject(props.emoji) || props.emoji.animate === true) return element
-		countForced('statusEmoji')
+		if (componentName(element) !== 'ActivityEmoji' || !isPlainObject(props.emoji)) return element
+		if (props.emoji.animate === true) { countSeen('statusEmoji', false); return element }
+		countSeen('statusEmoji', true)
 		return valenced.react.React.cloneElement(element, { emoji: { ...props.emoji, animate: true } })
 	}
 	/** Any screen that was told not to animate is told to. */
@@ -227,7 +238,7 @@
 		if (!isPlainObject(props) || typeof element.type === 'string') return element
 		const switchedOff = ANIMATION_PROPS.filter((name) => props[name] === false)
 		if (!switchedOff.length) return element
-		countForced('everything')
+		countSeen('everything', true)
 		const patch = Object.fromEntries(switchedOff.map((name) => [name, true]))
 		return valenced.react.React.cloneElement(element, patch)
 	}
@@ -264,6 +275,10 @@
 	}
 	/** @returns {{ label: string, ok: boolean, detail: string }[]} */
 	function runSelfCheck() {
+		selfCheckRunning = true
+		try { return runSelfCheckNow() } finally { selfCheckRunning = false }
+	}
+	function runSelfCheckNow() {
 		const results = []
 		const finders = valenced.modules.finders
 		const utils = holdersOf(finders.lookupModule(finders.filters.withProps('getUserAvatarURL', 'getGuildIconURL')))[0]
@@ -296,7 +311,9 @@
 
 	function buildReport() {
 		const lines = ['Always Animate report', `version: ${VERSION}`]
-		FEATURES.forEach((f) => lines.push(`${f.key}: ${setting(f.key) ? 'on' : 'off'}; ${found[f.key] || 'not hooked'}; changed ${forced[f.key]} time(s)`))
+		FEATURES.forEach((f) => lines.push(`${f.key}: ${setting(f.key) ? 'on' : 'off'}; ${found[f.key] || 'not hooked'}; Discord used it ${seen[f.key]} time(s), changed ${forced[f.key]}`))
+		const top = Object.keys(perFunction).sort((a, b) => perFunction[b].seen - perFunction[a].seen).slice(0, 8)
+		if (top.length) lines.push(`pictures by function (used/changed): ${top.map((n) => `${n} ${perFunction[n].seen}/${perFunction[n].changed}`).join(', ')}`)
 		runSelfCheck().forEach((r) => lines.push(`check - ${r.label}: ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`))
 		if (problems.length) lines.push(`problems: ${problems.join(' | ')}`)
 		return lines.join('\n')
@@ -325,11 +342,12 @@
 	const AMBER = '#f0b232'
 	const GRAY = '#80848e'
 
-	/** How a feature is doing: Off, Not found, Ready (hooked, nothing changed yet) or Working (changed something). */
+	/** How a feature is doing: Off, Not found, Ready (hooked, not used yet), Used (nothing needed changing) or Working. */
 	function featureState(feature) {
 		if (!setting(feature)) return { text: 'Off', color: GRAY }
 		if (!found[feature] || found[feature] === 'not found') return { text: 'Not found', color: RED }
-		return forced[feature] > 0 ? { text: `Working · ${forced[feature]}`, color: GREEN } : { text: 'Ready', color: AMBER }
+		if (forced[feature] > 0) return { text: `Working · ${forced[feature]} of ${seen[feature]}`, color: GREEN }
+		return seen[feature] > 0 ? { text: `Used ${seen[feature]} times, already animated`, color: GREEN } : { text: 'Ready, waiting for Discord to use it', color: AMBER }
 	}
 
 	function SettingsScreen({ api }) {
