@@ -35,6 +35,10 @@ function load(settings = {}, options = {}) {
 	const runtime = { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) }
 	const toasts = []
 	const emitted = []
+	const imageCalls = []
+	const imageManager = { setFastImageApngEnabled: (v) => { imageCalls.push(v) }, preload() {} }
+	const lateNative = {}
+	if (options.lateImageManager) setTimeout(() => { lateNative.NativeImageManagerModule = imageManager }, 200)
 	const subs = []
 	class AccessProto { get prefersReducedMotion() { return options.prefersMotion !== false } get useReducedMotion() { return this.prefersReducedMotion } }
 	const accessStore = new AccessProto()
@@ -49,7 +53,7 @@ function load(settings = {}, options = {}) {
 		cloneElement: (element, props) => ({ ...element, props: { ...element.props, ...props } }),
 	}
 	global.valenced = {
-		react: { React, ReactNative: { View: 'V', ScrollView: 'S' }, ReactJSXRuntime: runtime },
+		react: { React, ReactNative: { View: 'V', ScrollView: 'S', NativeModules: options.noImageManager ? {} : (options.lateImageManager ? lateNative : { NativeImageManagerModule: imageManager }) }, ReactJSXRuntime: runtime },
 		externals: { ReactNativeClipboard: { Clipboard: { setString: (text) => { global.copied = text } } } },
 		discord: { actions: { ToastActionCreators: { open: (k, o) => toasts.push(o.text) } }, design: { Design: new Proxy({}, { get: (_, key) => key }) }, flux: { Stores: options.noStores ? {} : { AccessibilityStore: options.noAccessibility ? undefined : accessStore, GuildStore: { emitChange: () => emitted.push('GuildStore') }, GuildMemberStore: { emitChange: () => emitted.push('GuildMemberStore') }, UserStore: { emitChange: () => emitted.push('UserStore') }, MessageStore: { emitChange: () => emitted.push('MessageStore') } } } },
 		patcher: {
@@ -81,7 +85,7 @@ function load(settings = {}, options = {}) {
 	const plugin = new Function('valenced', 'plugin', `return ${source}`)(global.valenced, global.plugin).default
 	const cleanups = []
 	plugin.start({ cleanup: (fn) => { cleanups.push(fn); return fn }, jsonStorage: json })
-	return { plugin, data, json, runtime, log, avatarUtils, avatarModule, accessibility, toasts, emitted, subs, chatModule, rowsModule, accessStore, cleanups, chatUtils, sentToNative }
+	return { plugin, data, json, runtime, log, avatarUtils, avatarModule, accessibility, toasts, emitted, subs, chatModule, rowsModule, accessStore, cleanups, chatUtils, sentToNative, imageCalls, imageManager }
 }
 const user = (animated) => ({ id: '123456789012345678', avatar: `${animated ? 'a_' : ''}0123456789abcdef`, discriminator: '0' })
 const texts = (node, out = []) => {
@@ -286,6 +290,32 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	check('without the store the plugin starts and says so', /motion: on; not found/.test(global.copied), global.copied)
 }
 
+// 2i. Animated PNG in the phone's image view
+{
+	const report = (a) => { findAll(expand(a.plugin.SettingsComponent({ api: { jsonStorage: a.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress(); return global.copied }
+	const app = load()
+	check('the phone is told at start that animated PNG decoding is on', app.imageCalls[0] === true)
+	app.imageManager.setFastImageApngEnabled(false)
+	check('a later call by Discord with "false" becomes "true"', app.imageCalls[app.imageCalls.length - 1] === true)
+	app.imageManager.setFastImageApngEnabled(true)
+	check('...and one with "true" stays', app.imageCalls[app.imageCalls.length - 1] === true)
+	const text = report(app)
+	check('the report says what was found, how often the phone was told and what Discord asked for', /animated png: NativeImageManagerModule\.setFastImageApngEnabled; told the phone "on" \d+x; Discord asked for: false, true/.test(text), text)
+	check('the switch is counted', /apng: on; NativeImageManagerModule\.setFastImageApngEnabled; Discord used it 2 time\(s\), changed 1/.test(text), text)
+	const off = load({ apng: false })
+	off.imageManager.setFastImageApngEnabled(false)
+	check('with the switch off nothing is sent and Discord\u2019s own value is kept', off.imageCalls.length === 1 && off.imageCalls[0] === false)
+	const none = load({}, { noImageManager: true })
+	check('without the native module the plugin starts and says not found', /animated png: not found/.test(report(none)) && /apng: on; not found/.test(global.copied))
+	const late = load({}, { lateImageManager: true })
+	await new Promise((r) => setTimeout(r, 1300))
+	check('a native module that shows up a little later is hooked then', late.imageCalls.includes(true) && /animated png: NativeImageManagerModule/.test(report(late)))
+	const button = load()
+	button.imageCalls.length = 0
+	findAll(expand(button.plugin.SettingsComponent({ api: { jsonStorage: button.json } })), (n) => n.props && n.props.text === 'Refresh the pictures on screen')[0].props.onPress()
+	check('"Refresh the pictures on screen" tells the phone again', button.imageCalls.includes(true))
+}
+
 // 2h. The chat rows as they go to the native chat
 {
 	const message = (over = {}) => ({ id: '1', avatarURL: 'https://cdn.discordapp.com/avatars/1/a_abc.gif?size=64', avatarDecorationURL: 'https://cdn.discordapp.com/media/v1/collectibles-shop/1/animated', animateEmoji: false, gifAutoPlay: false, username: 'x', ...over })
@@ -384,10 +414,10 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	const screen = (settings) => { const a = load(settings); return { a, tree: expand(a.plugin.SettingsComponent({ api: { jsonStorage: a.json } })) } }
 	const { a, tree } = screen({})
 	const shown = texts(tree).join('|')
-	check('the screen shows all nine switches', ['Pictures', 'Emoji', 'Stickers', 'GIFs', 'Status emoji', 'Still pictures of animated things', 'Chat: pictures and decorations next to messages', 'Ignore "Reduce motion"', 'Everything else (advanced)'].every((t) => shown.includes(t)), shown.slice(0, 300))
+	check('the screen shows all ten switches', ['Pictures', 'Emoji', 'Stickers', 'GIFs', 'Status emoji', 'Still pictures of animated things', 'Chat: pictures and decorations next to messages', 'Animated decorations (APNG)', 'Ignore "Reduce motion"', 'Everything else (advanced)'].every((t) => shown.includes(t)), shown.slice(0, 300))
 	check('each switch says what it covers and whether it was found', /AvatarUtils \(\d+ places?, \d+ functions\)/.test(shown) && /UserSettings\.AnimateEmoji/.test(shown), shown.slice(0, 400))
 	const switches = findAll(tree, (n) => n.type === 'TableSwitchRow' && n.props.label)
-	check('there are nine feature switches and two chat row switches', switches.length === 11, String(switches.length))
+	check('there are ten feature switches and two chat row switches', switches.length === 12, String(switches.length))
 	switches.find((s) => s.props.label === 'GIFs').props.onValueChange(false)
 	check('a switch saves', a.data.cache.gifs === false)
 	const reportApp = load()

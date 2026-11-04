@@ -21,7 +21,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.5.0'
+	const VERSION = '1.6.0'
 
 	// ---------------------------------------------------------------------------------------------------
 	// Small helpers
@@ -58,6 +58,7 @@
 		{ key: 'statusEmoji', on: true, title: 'Status emoji', blurb: 'The emoji of a custom status.' },
 		{ key: 'chat', on: true, title: 'Chat: pictures and decorations next to messages', blurb: 'The profile picture and avatar decoration beside each message. Discord builds these from plain addresses, so they are fixed on the way to the chat.' },
 		{ key: 'addresses', on: true, title: 'Still pictures of animated things', blurb: 'A safety net: when a screen is about to show the still version of an animated server icon, profile picture or banner, it gets the animated one. This catches what the other switches miss, for example the server list.' },
+		{ key: 'apng', on: true, title: 'Animated decorations (APNG)', blurb: 'Avatar decorations like ears and frames are animated PNG pictures. Discord has the phone\u2019s image view decode them only for some accounts (the experiment 2026-10-android-fastimage-apng). This switches it on for you.' },
 		{ key: 'motion', on: true, title: 'Ignore "Reduce motion"', blurb: 'Discord switches animations off in the chat and elsewhere when your phone or Discord says "reduce motion" (or Game Mode is throttling). This makes Discord think motion is always fine.' },
 		{ key: 'everything', on: false, title: 'Everything else (advanced)', blurb: 'Switches on every `animate` or `canAnimate` property Discord gives its screens. This can animate things Discord keeps still on purpose.' },
 	]
@@ -484,6 +485,56 @@
 		if (!found.chatJson) found.chatJson = 'not found'
 	}
 
+	// ---------------------------------------------------------------------------------------------------
+	// Animated PNG: NativeImageManagerModule.setFastImageApngEnabled
+	// ---------------------------------------------------------------------------------------------------
+	// Found with Chat Scout: the native module has `setFastImageApngEnabled`. In the decompiled app
+	// (components_native/common/FastImageApngExperiment.tsx) it is called once with the result of the experiment
+	// "2026-10-android-fastimage-apng", which is off by default. Avatar decorations are animated PNGs, and the
+	// native image view only decodes animated PNGs when this is on. The call is wrapped so any later call by Discord
+	// also says "true", and it is made now and again a few times.
+	const apng = { found: false, calls: 0, discordAsked: [], lastSent: undefined, error: '' }
+	function nativeImageManager() {
+		try {
+			const RN = valenced.react.ReactNative
+			const mod = RN && RN.NativeModules && RN.NativeModules.NativeImageManagerModule
+			if (mod && typeof mod.setFastImageApngEnabled === 'function') return mod
+			const reg = RN && RN.TurboModuleRegistry && typeof RN.TurboModuleRegistry.get === 'function' ? RN.TurboModuleRegistry.get('NativeImageManagerModule') : null
+			return reg && typeof reg.setFastImageApngEnabled === 'function' ? reg : null
+		} catch (e) { return null }
+	}
+	let apngModule = null
+	let sendingApng = false
+	function sendApng() {
+		if (!setting('apng')) return
+		try {
+			const mod = apngModule || nativeImageManager()
+			if (!mod) return
+			apngModule = mod
+			sendingApng = true
+			try { mod.setFastImageApngEnabled(true) } finally { sendingApng = false }
+			apng.calls += 1
+			apng.lastSent = true
+		} catch (e) { apng.error = String((e && e.message) || e).slice(0, 80); reportProblem('apng', e) }
+	}
+	function hookApng(cleanup) {
+		const mod = nativeImageManager()
+		if (!mod) { found.apng = 'not found'; return }
+		apngModule = mod
+		apng.found = true
+		found.apng = 'NativeImageManagerModule.setFastImageApngEnabled'
+		try {
+			cleanup(valenced.patcher.instead(mod, 'setFastImageApngEnabled', function (args, original) {
+				if (sendingApng) return Reflect.apply(original, this, args)
+				apng.discordAsked.push(args[0])
+				if (apng.discordAsked.length > 6) apng.discordAsked.shift()
+				if (setting('apng')) { apng.lastSent = true; countSeen('apng', args[0] !== true); return Reflect.apply(original, this, [true, ...args.slice(1)]) }
+				return Reflect.apply(original, this, args)
+			}))
+		} catch (e) { reportProblem('could not wrap setFastImageApngEnabled', e) }
+		sendApng()
+	}
+
 	/** Makes the pictures that are already on screen be drawn again, now that the plugin is in place. */
 	function refreshPictures() {
 		let count = 0
@@ -499,7 +550,7 @@
 		return count
 	}
 	const refreshed = { count: 0, at: 0 }
-	const PICTURE_SWITCHES = ['pictures', 'addresses', 'chat', 'motion', 'everything']
+	const PICTURE_SWITCHES = ['pictures', 'addresses', 'chat', 'apng', 'motion', 'everything']
 	let refreshTimer
 	/** After a switch changed, the pictures on screen are drawn again once things have settled. */
 	function scheduleRefresh() {
@@ -582,6 +633,7 @@
 		lines.push(`chat json row found at: ${[...chatJson.depthPaths].join(' | ') || '-'}`)
 		lines.push(`chat json row fields (${chatJson.holderKeys.size}): ${[...chatJson.holderKeys].join(', ') || '-'}`)
 		lines.push(`chat json avatar-related values: ${Object.keys(chatJson.samples).map((key) => `${key}=${chatJson.samples[key]}`).join(' ; ') || '-'}`)
+		lines.push(`animated png: ${found.apng || 'not hooked'}; told the phone "on" ${apng.calls}x; Discord asked for: ${apng.discordAsked.length ? apng.discordAsked.join(', ') : 'nothing yet'}${apng.error ? `; error ${apng.error}` : ''}`)
 		lines.push(`reduce motion before the plugin: Discord said ${motionWas.reduced}, phone/Discord setting ${motionWas.prefers}; answered no ${forced.motion} of ${seen.motion} times`)
 		lines.push(`chat picture format: ${setting('chatFormat2')}; chat sample: ${chatSample || 'none yet'}`)
 		lines.push(`chat rows seen ${chatCounts.rows}: with an animated profile picture ${chatCounts.animatedAvatars}, with a decoration ${chatCounts.decorations}; animated picture sample: ${chatAvatarSample || 'none yet'}`)
@@ -671,7 +723,7 @@
 					h(RN.View, { style: { flexDirection: 'row', gap: 10 } },
 						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Run the self-check', variant: 'primary', size: 'sm', onPress: () => setChecks(runSelfCheck()) })),
 						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Copy report', variant: 'secondary', size: 'sm', onPress: copyReport }))),
-					h(Design.Button, { text: 'Refresh the pictures on screen', variant: 'secondary', size: 'sm', onPress: () => { const n = refreshPictures(); toast(n ? 'Pictures are drawn again. Server icons and pictures should animate now.' : 'Could not refresh. Switch server or restart Discord.') } }),
+					h(Design.Button, { text: 'Refresh the pictures on screen', variant: 'secondary', size: 'sm', onPress: () => { sendApng(); const n = refreshPictures(); toast(n ? 'Pictures are drawn again. Server icons and pictures should animate now.' : 'Could not refresh. Switch server or restart Discord.') } }),
 				),
 				checks && h(
 					Design.TableRowGroup,
@@ -681,7 +733,7 @@
 				),
 				h(RN.View, { style: { gap: 4 } },
 					h(Design.Text, { variant: 'text-sm/semibold', color: 'text-muted' }, 'WHAT ANIMATES'),
-					h(Design.TableRowGroup, { title: '' }, ...FEATURES.slice(0, 8).map(featureRow))),
+					h(Design.TableRowGroup, { title: '' }, ...FEATURES.slice(0, 9).map(featureRow))),
 				setting('chat') && h(Design.TableRowGroup, { key: 'chatJson', title: 'Chat rows (what the native chat is sent)' },
 					h(Design.TableSwitchRow, { key: 'chatFlip', label: 'Switch on animation flags in chat rows', subLabel: 'Any animation switch in a row that is off is turned on. Nothing is added to the row', value: !!setting('chatFlip'), onValueChange: (value) => saveSettings({ chatFlip: !!value }) }),
 					h(Design.TableSwitchRow, { key: 'chatExtra', label: 'Experiment: add animation flags to chat rows', subLabel: 'Adds nine made-up animation flags (animateAvatar and so on). If the native chat does not know a field it may refuse the row: turn this off if the chat breaks', value: !!setting('chatExtra'), onValueChange: (value) => { saveSettings({ chatExtra: !!value }); toast(value ? 'Open the chat again. Turn this off if it looks broken.' : 'Off') } }),
@@ -690,7 +742,7 @@
 					{ v: 'webp', l: 'Animated webp', s: 'What Discord uses for animated pictures' },
 					{ v: 'gif', l: 'GIF', s: 'Try this if the chat does not play the webp. Only for profile pictures' },
 				] }),
-				h(Design.TableRowGroup, { title: 'Advanced' }, featureRow(FEATURES[8])),
+				h(Design.TableRowGroup, { title: 'Advanced' }, featureRow(FEATURES[9])),
 				h(
 					Design.TableRowGroup,
 					{ title: 'Good to know' },
@@ -717,6 +769,9 @@
 			attempt('status emoji', () => animateElements(api.cleanup))
 			attempt('chat rows', () => hookChatRows(api.cleanup))
 			attempt('reduce motion', () => ignoreReducedMotion(api.cleanup))
+			attempt('animated png', () => hookApng(api.cleanup))
+			const apngTimers = [1000, 3000, 8000].map((ms) => setTimeout(() => { if (!apngModule) { try { hookApng(api.cleanup) } catch (e) {} } else sendApng() }, ms))
+			api.cleanup(() => apngTimers.forEach(clearTimeout))
 			attempt('chat json', () => hookChatUpdates(api.cleanup))
 			// The server list and other screens were drawn before the plugin was in place: draw them again.
 			const timers = [1500, 5000].map((ms) => setTimeout(refreshPictures, ms))
