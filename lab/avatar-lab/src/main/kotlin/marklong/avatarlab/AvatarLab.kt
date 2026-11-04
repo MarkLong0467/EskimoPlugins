@@ -144,6 +144,39 @@ private val loop = object : Runnable {
     }
 }
 
+
+/** Lists the views inside one chat message, with what they hold, so the avatar can be recognised. */
+private fun describeTree(root: View): String {
+    val sb = StringBuilder()
+    var count = 0
+    fun walk(v: View, depth: Int) {
+        if (count++ > 70) return
+        sb.append("  ".repeat(depth)).append(v.javaClass.name).append(" ${v.width}x${v.height}")
+        if (v.visibility != View.VISIBLE) sb.append(" hidden")
+        runCatching { (v as? ImageView)?.drawable?.let { sb.append(" drawable=").append(it.javaClass.name) } }
+        sb.append('\n')
+        if (!v.javaClass.name.startsWith("android.")) {
+            val fields = mutableListOf<String>()
+            var c: Class<*>? = v.javaClass
+            while (c != null && !c.name.startsWith("android.") && fields.size < 16) {
+                for (f in c.declaredFields) {
+                    if (Modifier.isStatic(f.modifiers) || f.type.isPrimitive) continue
+                    val tn = f.type.name
+                    if (Regex("(?i)drawable|image|bitmap|fresco|anim|controller|avatar|loader|source|gif|apng|lottie|movie").containsMatchIn(tn + f.name)) {
+                        val v2 = runCatching { f.isAccessible = true; f.get(v) }.getOrNull()
+                        fields += "${f.name}:${tn.substringAfterLast('.')}${if (v2 != null) "=" + v2.javaClass.name else "=null"}"
+                    }
+                }
+                c = c.superclass
+            }
+            if (fields.isNotEmpty()) sb.append("  ".repeat(depth + 1)).append("[").append(fields.take(16).joinToString("; ")).append("]\n")
+        }
+        if (v is ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i), depth + 1)
+    }
+    runCatching { walk(root, 0) }.onFailure { sb.append("tree error: ${it::class.java.simpleName}: ${it.message}\n") }
+    return sb.toString()
+}
+
 val avatarLab = plugin {
     // Nothing runs at startup. The button below starts it.
     start {
@@ -162,6 +195,9 @@ val avatarLab = plugin {
                 stats.entries.sortedBy { it.key }.forEach { append("  ${it.key}: ${it.value.get()}\n") }
                 append("## animated picture classes found\n")
                 synchronized(classesSeen) { classesSeen.forEach { append("  $it\n") } }
+                append("## tree of one chat message\n")
+                val root = synchronized(tracked) { tracked.firstOrNull { it.javaClass.name.endsWith("MessageView") && it.isAttachedToWindow && it.height > 0 } }
+                append(if (root == null) "  none attached\n" else describeTree(root))
                 append("## hooks and first calls\n")
                 synchronized(notes) { notes.take(40).forEach { append("  $it\n") } }
             }
