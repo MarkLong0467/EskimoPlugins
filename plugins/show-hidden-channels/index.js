@@ -48,9 +48,10 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.2.1'
+	const VERSION = '1.2.2'
 	const INSTANCE = {}
 	const AUTO_RECONNECT_MS = 4000
+	const lateTimers = []
 	const VIEW_CHANNEL = 1024 // Permission bit 1 << 10
 
 	// ---------------------------------------------------------------------------------------------------
@@ -110,7 +111,7 @@
 		onlyWords: '', // when filled in, only channels whose name has one of these words are shown
 		skipNsfw: false,
 		tap: 'info', // 'info': info sheet. 'try': let Discord try to open it. 'nothing'
-		reconnectedAt: 0, // when the plugin last made Discord log in again for the names (0 = never)
+		namesReconnectAt: 0, // when the plugin last made Discord log in again for the names (0 = never)
 		realNames: true, // ask Discord for the real names of hidden channels (like Equicord). Needs a restart of Discord
 		labelMode: 'template', // 'template': make a name for channels Discord hides the name of. 'discord': leave "No Access"
 		labelTemplate: 'Hidden {kind} {n}', // {kind} {n} {created} {year} {id}
@@ -262,6 +263,34 @@
 		hooks.patched.push('GatedChannelStore.isChannelGatedAndVisible')
 	}
 
+	/**
+	 * Every place the plugin hooks a Discord module goes through here. `getModules` tells it about the modules that
+	 * match now AND about the ones loaded later (many are loaded only when a screen first needs them), and a plain
+	 * lookup covers the ones that were loaded before the plugin started. A function is wrapped only once.
+	 */
+	const patchedHolders = new WeakMap()
+	function patchOnce(cleanup, holder, name, wrapper) {
+		if (!holder || (typeof holder !== 'object' && typeof holder !== 'function') || typeof holder[name] !== 'function') return false
+		let done = patchedHolders.get(holder)
+		if (!done) { done = new Set(); patchedHolders.set(holder, done) }
+		if (done.has(name)) return true
+		done.add(name)
+		cleanup(valenced.patcher.instead(holder, name, wrapper))
+		return true
+	}
+	const holdersOf = (mod) => (mod ? [mod, mod.default] : []).filter((m, i, all) => m && (typeof m === 'object' || typeof m === 'function') && all.indexOf(m) === i)
+	const watchers = []
+	function watchModules(cleanup, names, attach) {
+		const finders = valenced.modules.finders
+		const run = (mod) => { try { attach(mod) } catch (e) { problem(`hook ${names[0]}`, e) } }
+		try { if (typeof finders.getModules === 'function') cleanup(finders.getModules(finders.filters.withProps(...names), run)) } catch (e) { problem(`watch ${names[0]}`, e) }
+		const again = () => { const mod = findModule(...names); if (mod) run(mod) }
+		again()
+		watchers.push(again)
+	}
+	/** Looks again for everything that has not been found yet (the attach functions skip what is already hooked). */
+	function lookAgain() { watchers.slice().forEach((again) => { try { again() } catch (e) {} }) }
+
 	function findModule(...names) {
 		const finders = valenced.modules.finders
 		const direct = finders.lookupModule(finders.filters.withProps(...names))[0]
@@ -276,42 +305,40 @@
 	// The experiment switches. The original is always called first (some of these are React hooks, which must run
 	// the same way on every draw) and its answer is replaced afterwards.
 	const OBFUSCATION_SWITCHES = ['isChannelMetadataObfuscationEnabled', 'useIsChannelMetadataObfuscationEnabled', 'isChannelMetadataIntegrityCheckEnabled']
-	const objectsWith = (mod, name) => (mod ? [mod, mod.default] : []).filter((m, i, all) => m && typeof m === 'object' && typeof m[name] === 'function' && all.indexOf(m) === i)
+	const switchesPatched = new Set()
 	function hookRealNames(cleanup) {
-		let count = 0
 		OBFUSCATION_SWITCHES.forEach((name) => {
-			const mod = findModule(name)
-			objectsWith(mod, name).forEach((holder) => {
-				try {
-					cleanup(valenced.patcher.instead(holder, name, function (args, original) {
+			watchModules(cleanup, [name], (mod) => {
+				holdersOf(mod).forEach((holder) => {
+					if (patchOnce(cleanup, holder, name, function (args, original) {
 						const answer = Reflect.apply(original, this, args)
 						return setting('realNames') ? false : answer
-					}))
-					count += 1
-				} catch (e) { problem(`switch ${name}`, e) }
+					})) {
+						switchesPatched.add(name)
+						hooks.names = `${switchesPatched.size} of ${OBFUSCATION_SWITCHES.length} switches answered no`
+						if (!hooks.patched.includes('PrivateChannelHidingExperiment switches')) hooks.patched.push('PrivateChannelHidingExperiment switches')
+					}
+				})
 			})
 		})
-		if (count) { hooks.names = `${count} of ${OBFUSCATION_SWITCHES.length} switches answered no`; hooks.patched.push('PrivateChannelHidingExperiment switches') }
 		hookCapabilities(cleanup)
+		hookNativeModule(cleanup)
 		tellNativeModule()
 	}
+
 	/** The one place both logins build their capabilities from: the obfuscation bit is never asked for. */
 	function hookCapabilities(cleanup) {
-		const mod = findModule('getClientCapabilities')
-		let count = 0
-		objectsWith(mod, 'getClientCapabilities').forEach((holder) => {
-			try {
-				cleanup(valenced.patcher.instead(holder, 'getClientCapabilities', function (args, original) {
+		watchModules(cleanup, ['getClientCapabilities'], (mod) => {
+			holdersOf(mod).forEach((holder) => {
+				if (patchOnce(cleanup, holder, 'getClientCapabilities', function (args, original) {
 					if (setting('realNames') && args[0] && typeof args[0] === 'object' && args[0].useChannelObfuscation) {
 						stats.capabilities += 1
 						return Reflect.apply(original, this, [{ ...args[0], useChannelObfuscation: false }, ...args.slice(1)])
 					}
 					return Reflect.apply(original, this, args)
-				}))
-				count += 1
-			} catch (e) { problem('capabilities', e) }
+				})) { hooks.capabilities = 'found'; if (!hooks.patched.includes('GatewayCapabilities.getClientCapabilities')) hooks.patched.push('GatewayCapabilities.getClientCapabilities') }
+			})
 		})
-		if (count) { hooks.capabilities = 'found'; hooks.patched.push('GatewayCapabilities.getClientCapabilities') }
 	}
 
 	/** Makes the gateway log in again (a fresh IDENTIFY on the open connection), so the server sends the names now. */
@@ -322,98 +349,80 @@
 			if (!socket || typeof socket._handleInvalidSession !== 'function') { addLog('Could not log in again: the gateway socket was not found', false); return false }
 			socket._handleInvalidSession(false)
 			stats.reconnects += 1
-			saveSettings({ reconnectedAt: Date.now() }, false)
+			if (hooks.capabilities === 'found' || hooks.names !== 'not found') saveSettings({ namesReconnectAt: Date.now() }, false)
 			addLog(`Logged in to Discord again (${reason})`)
 			return true
 		} catch (e) { problem('log in again', e); return false }
 	}
 
 	/** The native fast-connect module keeps the flag for the next start. */
+	let nativeModules = []
+	function hookNativeModule(cleanup) {
+		watchModules(cleanup, ['setUseChannelObfuscation'], (mod) => {
+			holdersOf(mod).forEach((holder) => { if (typeof holder.setUseChannelObfuscation === 'function' && !nativeModules.includes(holder)) nativeModules.push(holder) })
+			tellNativeModule()
+		})
+	}
 	function tellNativeModule() {
 		if (!setting('realNames')) return
 		try {
 			const RN = valenced.react.ReactNative
-			let native = RN && RN.NativeModules && RN.NativeModules.NativeFastConnectModule
-			if (!native || typeof native.setUseChannelObfuscation !== 'function') {
-				const mod = findModule('setUseChannelObfuscation')
-				native = objectsWith(mod, 'setUseChannelObfuscation')[0]
-			}
-			if (native && typeof native.setUseChannelObfuscation === 'function') {
-				native.setUseChannelObfuscation(false)
-				hooks.native = 'set to off'
-			}
+			const known = RN && RN.NativeModules && RN.NativeModules.NativeFastConnectModule
+			const all = [known, ...nativeModules].filter((m, i, arr) => m && typeof m.setUseChannelObfuscation === 'function' && arr.indexOf(m) === i)
+			all.forEach((native) => native.setUseChannelObfuscation(false))
+			if (all.length) hooks.native = 'set to off'
 		} catch (e) { problem('native flag', e) }
 	}
 
 	/** The channel a route points at: "/channels/<server>/<channel>". */
 	const channelOfRoute = (route) => { const m = String(route || '').match(/channels\/(?:@me|\d+)\/(\d{15,20})/); return m ? m[1] : null }
 
+	/** A tap on a revealed channel: the info sheet, or what the settings say, instead of opening it. Returns true when it was handled. */
+	function handleTap(channel) {
+		stats.taps += 1
+		const how = setting('tap')
+		if (how === 'info') { openInfo(channel.id); return true }
+		return how === 'nothing'
+	}
 	/**
-	 * A tap on a revealed text channel: show the info sheet (or whatever the settings say) instead of opening it.
-	 * `transitionToChannel` is looked for first. Its module may not be loaded yet when the plugin starts, so this is
-	 * tried again later (`tryLateHooks`). The route function `transitionTo` is the fallback.
+	 * `transitionToChannel` is what a text row calls. The route function `transitionTo` is the fallback, used only
+	 * while `transitionToChannel` has not been found.
 	 */
 	function hookTransition(cleanup) {
-		const answer = (channel, args, original, self) => {
-			stats.taps += 1
-			const how = setting('tap')
-			if (how === 'info') { openInfo(channel.id); return { done: true } }
-			if (how === 'nothing') return { done: true }
-			return { done: false }
-		}
-		const mod = findModule('transitionToChannel', 'transitionToThread') || findModule('transitionToChannel')
-		const holders = mod ? [mod, mod.default].filter((m, i, all) => m && typeof m === 'object' && typeof m.transitionToChannel === 'function' && all.indexOf(m) === i) : []
-		holders.forEach((holder) => {
-			cleanup(valenced.patcher.instead(holder, 'transitionToChannel', function (args, original) {
-				try {
-					const channel = getChannel(args[0])
-					if (channel && isRevealed(channel) && answer(channel).done) return undefined
-				} catch (e) {}
-				return Reflect.apply(original, this, args)
-			}))
+		watchModules(cleanup, ['transitionToChannel', 'transitionToThread'], (mod) => {
+			holdersOf(mod).forEach((holder) => {
+				if (patchOnce(cleanup, holder, 'transitionToChannel', function (args, original) {
+					try { const channel = getChannel(args[0]); if (channel && isRevealed(channel) && handleTap(channel)) return undefined } catch (e) {}
+					return Reflect.apply(original, this, args)
+				})) { hooks.transition = 'found'; if (!hooks.patched.includes('transitionToChannel')) hooks.patched.push('transitionToChannel') }
+			})
 		})
-		if (holders.length) { hooks.transition = 'found'; hooks.patched.push('transitionToChannel'); return }
-		const router = findModule('transitionTo', 'replaceWith')
-		const routeHolders = router ? [router, router.default].filter((m, i, all) => m && typeof m === 'object' && typeof m.transitionTo === 'function' && all.indexOf(m) === i) : []
-		routeHolders.forEach((holder) => {
-			cleanup(valenced.patcher.instead(holder, 'transitionTo', function (args, original) {
-				try {
-					const id = channelOfRoute(args[0])
-					const channel = id && getChannel(id)
-					if (channel && isRevealed(channel) && answer(channel).done) return undefined
-				} catch (e) {}
-				return Reflect.apply(original, this, args)
-			}))
+		watchModules(cleanup, ['transitionTo', 'replaceWith'], (mod) => {
+			holdersOf(mod).forEach((holder) => {
+				if (patchOnce(cleanup, holder, 'transitionTo', function (args, original) {
+					try { const id = channelOfRoute(args[0]); const channel = id && getChannel(id); if (channel && isRevealed(channel) && handleTap(channel)) return undefined } catch (e) {}
+					return Reflect.apply(original, this, args)
+				})) { if (hooks.transition === 'not found') hooks.transition = 'found (by route)'; if (!hooks.patched.includes('router transitionTo')) hooks.patched.push('router transitionTo') }
+			})
 		})
-		if (routeHolders.length) { hooks.transition = 'found (by route)'; hooks.patched.push('router transitionTo') }
 	}
 
 	/** Discord loads the messages of a channel when you touch it. For a revealed channel that would only fail. */
 	function hookPreload(cleanup) {
-		const mod = findModule('preload', 'ensurePrivateChannel')
-		const holder = mod && (typeof mod.preload === 'function' ? mod : mod.default)
-		if (!holder || typeof holder.preload !== 'function') return
-		cleanup(valenced.patcher.instead(holder, 'preload', function (args, original) {
-			try { const channel = getChannel(args[1]); if (channel && isRevealed(channel)) return undefined } catch (e) {}
-			return Reflect.apply(original, this, args)
-		}))
-		hooks.preload = 'found'
-		hooks.patched.push('ChannelActionCreators.preload')
+		watchModules(cleanup, ['preload', 'ensurePrivateChannel'], (mod) => {
+			holdersOf(mod).forEach((holder) => {
+				if (patchOnce(cleanup, holder, 'preload', function (args, original) {
+					try { const channel = getChannel(args[1]); if (channel && isRevealed(channel)) return undefined } catch (e) {}
+					return Reflect.apply(original, this, args)
+				})) { hooks.preload = 'found'; if (!hooks.patched.includes('ChannelActionCreators.preload')) hooks.patched.push('ChannelActionCreators.preload') }
+			})
+		})
 	}
-
-	// Some of Discord's modules are only loaded when a screen first needs them, which can be after this plugin
-	// started. They are looked for again a few times, and whenever a revealed row is drawn.
-	let hookCleanup
 	let lastLateTry = 0
-	const lateTimers = []
 	function tryLateHooks(force) {
-		if (hooks.transition !== 'not found' && hooks.preload !== 'not found') return
 		if (!force && Date.now() - lastLateTry < 1500) return
 		lastLateTry = Date.now()
-		if (!hookCleanup) return
-		if (hooks.transition === 'not found') { try { hookTransition(hookCleanup) } catch (e) { problem('channel opener', e) } }
-		if (hooks.preload === 'not found') { try { hookPreload(hookCleanup) } catch (e) { problem('preloader', e) } }
-		if (hooks.transition !== 'not found' && hooks.preload !== 'not found') addLog('Found the channel opener and preloader')
+		lookAgain()
 	}
 
 	// The marker and the dimmed look: Discord draws a row from a `channel` prop. Revealed channels get a copy
@@ -1061,7 +1070,7 @@
 			`words: block [${r.blockWords.join(', ')}] only [${r.onlyWords.join(', ')}]; skip NSFW ${r.skipNsfw}`,
 			`names: ${setting('labelMode')} "${setting('labelTemplate')}"; categories ${setting('nameCategories')} "${setting('categoryTemplate')}"`,
 			`tap: ${setting('tap')}; marker: ${setting('marker')} ${setting('markerPosition')}; dim ${setting('dim')}`,
-			`real names: ${setting('realNames') ? 'asked for' : 'off'}; capabilities: ${hooks.capabilities} (changed ${stats.capabilities}); switches: ${hooks.names}; native flag: ${hooks.native}; logged in again ${stats.reconnects}x, last ${setting('reconnectedAt') ? new Date(setting('reconnectedAt')).toLocaleTimeString() : 'never'}`,
+			`real names: ${setting('realNames') ? 'asked for' : 'off'}; capabilities: ${hooks.capabilities} (changed ${stats.capabilities}); switches: ${hooks.names}; native flag: ${hooks.native}; logged in again ${stats.reconnects}x, last ${setting('namesReconnectAt') ? new Date(setting('namesReconnectAt')).toLocaleTimeString() : 'never'}`,
 			`hooks: gated ${hooks.gated}; transition ${hooks.transition}; preload ${hooks.preload}; list rebuild ${hooks.list}`,
 			`patched: ${hooks.patched.join(', ') || '-'}`,
 			`asked ${stats.asked}, shown ${stats.shown.size}, rows drawn ${stats.decorated}, taps caught ${stats.taps}, refreshes ${stats.refreshes}, list rows changed ${stats.listUpdates}`,
@@ -1083,7 +1092,6 @@
 			cache.rules = null
 			const attempt = (what, step) => { try { step() } catch (e) { problem(what, e) } }
 			attempt('gated question', () => hookGatedQuestion(api.cleanup))
-			hookCleanup = api.cleanup
 			attempt('channel opener', () => hookTransition(api.cleanup))
 			attempt('preloader', () => hookPreload(api.cleanup))
 			;[1500, 4000, 10000, 25000].forEach((ms) => lateTimers.push(setTimeout(() => tryLateHooks(true), ms)))
@@ -1091,17 +1099,16 @@
 			attempt('real names', () => hookRealNames(api.cleanup))
 			;[1500, 6000].forEach((ms) => lateTimers.push(setTimeout(tellNativeModule, ms))) // after the app has set it itself
 			// Once, on its own: log in again so the names arrive without a restart
-			lateTimers.push(setTimeout(() => {
+			;[AUTO_RECONNECT_MS, AUTO_RECONNECT_MS * 3, AUTO_RECONNECT_MS * 6].forEach((ms) => lateTimers.push(setTimeout(() => {
 				if (globalThis.__showHiddenChannelsInstance !== INSTANCE) return
-				if (setting('realNames') && hooks.capabilities === 'found' && !setting('reconnectedAt')) reconnectNow('the first time, to get the real names')
-			}, AUTO_RECONNECT_MS))
+				if (setting('realNames') && hooks.capabilities === 'found' && !setting('namesReconnectAt')) reconnectNow('the first time, to get the real names')
+			}, ms)))
 			attempt('list store', () => hookListStore(api.cleanup))
 			attempt('list rebuild', () => { if (listStore() || listStates()) hooks.list = 'found' })
 			setTimeout(refreshList, 800) // so channel lists that were already built are drawn again with the hook in place
 			api.cleanup(() => {
 				clearTimeout(refreshTimer)
 				lateTimers.forEach(clearTimeout)
-				hookCleanup = undefined
 				screenListeners = []
 				if (globalThis.__showHiddenChannelsInstance === INSTANCE) globalThis.__showHiddenChannelsInstance = undefined
 				setTimeout(refreshList, 100)

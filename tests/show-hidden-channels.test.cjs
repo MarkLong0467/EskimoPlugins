@@ -101,6 +101,8 @@ function load(settings = {}, options = {}) {
 	const routerModule = { transitionTo: (route) => { state.originalCalls.push(['route', route]); return 'routed' }, replaceWith() {}, back() {} }
 	const preloadModule = { preload: (g, id) => { state.preloads.push(id) }, ensurePrivateChannel() {} }
 	state.loaded = !options.late
+	state.subs = []
+	state.loadModule = (key, module) => state.subs.filter((x) => x.f === key && !x.dead).forEach((x) => x.cb(module))
 	state.originalAsked = []
 	const experiment = { isChannelMetadataObfuscationEnabled: (where) => { state.originalAsked.push(where); return true }, useIsChannelMetadataObfuscationEnabled: (where) => { state.originalAsked.push(`hook ${where}`); return true }, isChannelMetadataIntegrityCheckEnabled: () => true }
 	state.nativeCalls = []
@@ -124,8 +126,11 @@ function load(settings = {}, options = {}) {
 			after: (object, key, fn) => { const original = object[key]; object[key] = function (...a) { const r = original.apply(this, a); const x = fn.call(this, r); return x === undefined ? r : x }; return () => { object[key] = original } },
 			instead: (object, key, fn) => { const original = object[key]; object[key] = function (...a) { return fn.call(this, a, original) }; return () => { object[key] = original } },
 		},
-		modules: { finders: { filters: { withProps: (...n) => n.join() }, lookupModule: (f) => {
+		modules: { finders: { filters: { withProps: (...n) => n.join() },
+			getModules: (f, cb) => { const sub = { f, cb, dead: false }; state.subs.push(sub); return () => { sub.dead = true } },
+			lookupModule: (f) => {
 			if (f === 'jsx,jsxs') return [runtime]
+			if (options.viaCallbackOnly && typeof f === 'string') return []
 			if (typeof f === 'function') { // a custom filter: modules that keep the functions on their default export
 				const all = []
 				if (options.preloadOnDefault && state.loaded) all.push({ default: preloadModule })
@@ -257,14 +262,14 @@ const OC = '300000000000000009' // hidden category, name left out
 		check('the "get the real names now" button asks to be tapped twice', reconnect.state.identifies === 0 && has(reconnect.screen(), 'Tap again to log in again'))
 		press(reconnect.screen(), 'Tap again to log in again')
 		check('...then makes the socket log in again with a fresh IDENTIFY', reconnect.state.identifies === 1 && reconnect.state.lastInvalid === false && reconnect.state.toasts.some((x) => /Logging in again/.test(x)))
-		check('...and remembers when', reconnect.data.cache.reconnectedAt > 0)
+		check('...and remembers when', reconnect.data.cache.namesReconnectAt > 0)
 		const nosock = load({}, { noSocket: true })
 		press(nosock.screen(), 'Get the real names now'); press(nosock.screen(), 'Tap again to log in again')
 		check('without a socket it says to restart instead', nosock.state.toasts.some((x) => /Close Discord completely/.test(x)))
 		const auto = load()
 		await sleep(4300)
 		check('on its own, once, the plugin makes Discord log in again after it starts', auto.state.identifies === 1, auto.state.identifies)
-		const doneBefore = load({ reconnectedAt: 12345 })
+		const doneBefore = load({ namesReconnectAt: 12345 })
 		await sleep(4300)
 		check('...but not again once it has done so', doneBefore.state.identifies === 0)
 		const noreal = load({ realNames: false })
@@ -276,6 +281,50 @@ const OC = '300000000000000009' // hidden category, name left out
 		check('...and the switches answer no from then on', toggle.experiment.isChannelMetadataObfuscationEnabled('x') === false)
 		findAll(toggle.screen(), (n) => n.props && n.props.label === 'Ask Discord for the real names')[0].props.onValueChange(false)
 		check('turning it off gives Discord\u2019s answer back', toggle.experiment.isChannelMetadataObfuscationEnabled('x') === true)
+	}
+
+	// 3c. Modules that Discord loads after the plugin started (getModules tells the plugin about them)
+	{
+		const app = load({}, { viaCallbackOnly: true })
+		check('nothing is hooked before the modules exist', app.capabilitiesModule.getClientCapabilities({ useChannelObfuscation: true }) === 1767423 && app.transitionModule.transitionToChannel(H) === 'opened')
+		check('the plugin subscribed to the modules it needs', ['getClientCapabilities', 'transitionToChannel,transitionToThread', 'transitionTo,replaceWith', 'preload,ensurePrivateChannel', 'setUseChannelObfuscation', 'isChannelMetadataObfuscationEnabled', 'useIsChannelMetadataObfuscationEnabled', 'isChannelMetadataIntegrityCheckEnabled'].every((key) => app.state.subs.some((x) => x.f === key)), app.state.subs.map((x) => x.f).join(' | '))
+		app.state.loadModule('getClientCapabilities', app.capabilitiesModule)
+		check('the capabilities function is hooked when it is loaded', app.capabilitiesModule.getClientCapabilities({ useChannelObfuscation: true }) === 1734655)
+		app.state.loadModule('getClientCapabilities', app.capabilitiesModule)
+		app.state.loadModule('getClientCapabilities', { default: app.capabilitiesModule })
+		let seen = 0
+		const probe = { getClientCapabilities: (o) => { seen += 1; return o.useChannelObfuscation ? 1 : 0 } }
+		app.state.loadModule('getClientCapabilities', probe)
+		app.state.loadModule('getClientCapabilities', probe)
+		check('a module reported twice is wrapped only once', probe.getClientCapabilities({ useChannelObfuscation: true }) === 0 && seen === 1, seen)
+		app.state.loadModule('transitionToChannel,transitionToThread', app.transitionModule)
+		check('the channel opener is hooked when it is loaded', app.transitionModule.transitionToChannel(H) === undefined && app.state.openedSheets.length === 1)
+		app.state.loadModule('preload,ensurePrivateChannel', { default: app.preloadModule })
+		app.preloadModule.preload(G1, H)
+		check('the preloader too (also on a default export)', app.state.preloads.length === 0)
+		app.state.loadModule('isChannelMetadataObfuscationEnabled', app.experiment)
+		app.state.loadModule('useIsChannelMetadataObfuscationEnabled', app.experiment)
+		app.state.loadModule('isChannelMetadataIntegrityCheckEnabled', app.experiment)
+		check('the three experiment switches are hooked one by one', app.experiment.isChannelMetadataObfuscationEnabled('x') === false && app.experiment.useIsChannelMetadataObfuscationEnabled('x') === false && app.experiment.isChannelMetadataIntegrityCheckEnabled('x') === false)
+		app.state.loadModule('setUseChannelObfuscation', { default: app.nativeModule })
+		check('the native module is told to switch obfuscation off when it is loaded', app.state.nativeCalls.includes(false))
+		press(app.screen(), 'Self-check'); press(app.screen(), 'Copy report')
+		check('the report shows what was found', /capabilities: found/.test(global.copied) && /3 of 3 switches answered no/.test(global.copied) && /transition found/.test(global.copied), global.copied)
+		const route = load({}, { viaCallbackOnly: true })
+		route.state.loadModule('transitionTo,replaceWith', route.routerModule)
+		check('the route fallback is hooked when it is loaded', route.routerModule.transitionTo('/channels/' + G1 + '/' + H) === undefined && /by route/.test((press(route.screen(), 'Self-check'), press(route.screen(), 'Copy report'), global.copied)))
+		route.state.loadModule('transitionToChannel,transitionToThread', route.transitionModule)
+		check('...and the real opener takes over when it shows up', route.transitionModule.transitionToChannel(H) === undefined)
+		const auto = load({}, { viaCallbackOnly: true })
+		auto.state.loadModule('getClientCapabilities', auto.capabilitiesModule)
+		await sleep(4300)
+		check('the automatic login again waits until the capabilities function is hooked', auto.state.identifies === 1 && auto.data.cache.namesReconnectAt > 0)
+		const early = load({}, { viaCallbackOnly: true })
+		await sleep(4300)
+		check('...and does not happen while it is missing', early.state.identifies === 0 && !early.data.cache.namesReconnectAt)
+		early.state.loadModule('getClientCapabilities', early.capabilitiesModule)
+		await sleep(8000)
+		check('...but it happens later once the function is there', early.state.identifies === 1)
 	}
 
 	// 3b. Modules that load late, and the route fallback
@@ -529,7 +578,7 @@ const OC = '300000000000000009' // hidden category, name left out
 		const t = texts(app.screen()).join('|')
 		check('the self-check passes on a working setup', /✓ Found Discord’s "gated channel" question/.test(t) && /✓ Found the channel opener/.test(t) && /✓ Can rebuild the channel list/.test(t) && /✓ Can read your permissions/.test(t) && /✓ Alpha has hidden channels/.test(t) && /✓ Discord asked about hidden channels/.test(t) && /✓ Marked rows were drawn/.test(t), t)
 		press(app.screen(), 'Copy report')
-		check('the report lists settings, hooks and counts', /Show Hidden Channels report/.test(global.copied) && /version: 1\.2\.1/.test(global.copied) && /hooks: gated found; transition found; preload found; list rebuild found/.test(global.copied) && /taps caught 1/.test(global.copied) && /this server: Alpha/.test(global.copied), global.copied)
+		check('the report lists settings, hooks and counts', /Show Hidden Channels report/.test(global.copied) && /version: 1\.2\.2/.test(global.copied) && /hooks: gated found; transition found; preload found; list rebuild found/.test(global.copied) && /taps caught 1/.test(global.copied) && /this server: Alpha/.test(global.copied), global.copied)
 		const fresh = load()
 		press(fresh.screen(), 'Self-check')
 		check('before anything was drawn the self-check says what to do', /✗ Discord asked about hidden channels/.test(texts(fresh.screen()).join('|')))
