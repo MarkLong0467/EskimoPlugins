@@ -1523,6 +1523,19 @@
             }
           }
         },
+        "2.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.always-animate@2.0.0.zip",
+          "sha256": "205ed3befdf5586ad9b314727fc5ab92c3266075bc9357417a414a44e3a25f6b",
+          "size": 31482,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
         "2.1.0": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.always-animate@2.1.0.zip",
           "sha256": "7a3282f68a66752d9abc95e0dc0f71e7dff72ef0a5165c82228b6229070ebcd3",
@@ -1566,6 +1579,32 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.always-animate@3.1.0.zip",
           "sha256": "b2f85aa19397afe5c4a4e9c446aea16ca4dbd1074f4cb12407b7e72c71785c7e",
           "size": 38135,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "4.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.always-animate@4.0.0.zip",
+          "sha256": "b7fb268324be4595abf91b3f977c0823919d4467a9b8608fdb7ce6be2465a5c2",
+          "size": 54302,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "4.0.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.always-animate@4.0.1.zip",
+          "sha256": "59d147e189826fb604193128fa9c2c9be615494529e94dc006220f31449a4b23",
+          "size": 54972,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
