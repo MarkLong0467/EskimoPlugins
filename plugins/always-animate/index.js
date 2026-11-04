@@ -21,7 +21,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '2.0.0'
+	const VERSION = '2.1.0'
 
 	// ---------------------------------------------------------------------------------------------------
 	// Small helpers
@@ -655,7 +655,7 @@
 		if (nat.error && !Object.keys(i).length) return [`native chat part: ${nat.error}`]
 		return [
 			`native chat part: ${i.enabled === 'false' ? 'off' : i.running === 'true' ? 'running' : 'waiting'}; guard tripped ${i.guardTripped}; animated pictures seen ${i.animated}, restarted ${i.restarts}x; chat messages seen ${i.binds}, on screen ${i.attached}; hook: ${i.hook}${i.error ? `; error ${i.error}` : ''}`,
-			`native ears: ${i.earViews} ear views seen, ${i.earViewsAnimated} with an animation; mode ${i.earMode}`,
+			`native ears: ${i.ears === 'false' ? 'off' : 'on'}; ${i.earViews} ear views seen, ${i.earViewsAnimated} played by Discord's loader; drawn by this plugin: ${i.earOverlays} now, ${i.earDecoded} pictures decoded; ${i.earApng || '-'}`,
 			`native ear addresses: ${i.earsSeen || '-'}`,
 			`native ear addresses after the mode: ${i.earsOut || '-'}`,
 			`native ear files: ${i.earFiles || '-'}`,
@@ -762,12 +762,9 @@
 				i.guardTripped === 'true' && h(RN.View, { key: 'nguard', style: { gap: 8 } },
 					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'The last start did not finish before Discord closed, so it waited.'),
 					h(Design.Button, { text: 'Start now', variant: 'primary', size: 'sm', onPress: () => nativeSet('start', true) })),
-				h(Card, { key: 'nears' },
-					h(Design.Text, { variant: 'text-sm/semibold' }, 'Ears (avatar decorations): experiment'),
-					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, 'Ears do not animate in chat yet. Try these forms of the ear picture one at a time. After picking one, leave the chat and open it again, then look at the ears. Tell me which one moves them.'),
-					...[['0', 'Mode 0: off'], ['1', 'Mode 1: webp'], ['2', 'Mode 2: webp, animated'], ['3', 'Mode 3: gif']].map(([m, label]) =>
-						h(Design.Button, { key: m, text: `${mode === m ? '(selected) ' : ''}${label}`, variant: mode === m ? 'primary' : 'secondary', size: 'sm', onPress: () => { nativeSet('earMode', m); toast('Open the chat again') } })),
-					i.earFiles ? h(Design.Text, { variant: 'text-xs/medium', color: 'text-muted', selectable: true }, `Ear files: ${i.earFiles}`) : null))
+				h(Design.TableRowGroup, { key: 'nears', title: '' },
+					h(Design.TableSwitchRow, { key: 'nearson', label: 'Animate ears (avatar decorations) in chat', subLabel: 'Ears are animated PNGs, which Discord\'s chat cannot play. This downloads each one and draws it over the still ear', value: i.ears !== 'false', onValueChange: (v) => { nativeSet('ears', !!v); toast('Open the chat again') } }),
+					i.earApng ? h(Design.TableRow, { key: 'nearinfo', label: 'Ears', subLabel: `${i.earOverlays || 0} animated now. ${i.earApng}` }) : null))
 		}
 		const working = FEATURES.filter((f) => setting(f.key) && forced[f.key] > 0).length
 
