@@ -2,24 +2,32 @@
 	/*
 	 * Bypass Status for Valenced
 	 *
-	 * Still get notified by the people, chats and servers you choose while your status is Do Not Disturb.
-	 * The idea and the rules come from Bypass Status for Equicord. The code is written from scratch for Valenced.
+	 * Get Discord's normal notification, banner and sound from chosen people (or from everyone) while your
+	 * status is Do Not Disturb.
 	 *
-	 * How it works, in one paragraph: the plugin listens to every new message. If your status is the one you
-	 * picked (Do Not Disturb by default) and the message comes from something on your list, it shows its own
-	 * banner and vibrates. It can also make Discord handle that one message as if you were online, so Discord
-	 * shows its normal notification too.
+	 * How it works. The decompiled Discord app (Wumpus-Central/discord-mobile-datamining, version 354) shows where
+	 * the block is. `discord_app/stores/native/InAppNotificationStore.tsx` handles every new message and asks
 	 *
-	 * The file reads top to bottom:  1 Settings  2 The list  3 The rules  4 Notifying  5 Hold-down menu
-	 *                                6 Settings screen  7 The plugin
+	 *     NotificationTextUtils.shouldNotify(message, channelId, includeSelectedChannel, ignoreStatus)
+	 *
+	 * (`discord_app/modules/notifications/NotificationTextUtils.tsx`). Inside, `shouldNotifyBase` answers "no"
+	 * while `SelfPresenceStore.getStatus()` is Do Not Disturb, unless `ignoreStatus` is true. So this plugin wraps
+	 * `shouldNotify` and, for a message from somebody you chose, calls it with `ignoreStatus = true`. Everything
+	 * else Discord checks (muted chats, blocked people, your notification settings) still applies, and the banner
+	 * and sound are Discord's own.
+	 *
+	 * Notifications sent to your phone while the app is closed are decided by Discord's servers. This plugin
+	 * cannot change those.
+	 *
+	 * The file reads top to bottom:  1 Settings  2 The list  3 The rule  4 The hook  5 A banner of its own
+	 *                                6 Hold-down menu  7 Settings screen  8 The plugin
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '2.0.0'
+	const VERSION = '3.0.0'
 	const INSTANCE = {}
 	const DM = 1
 	const GROUP_DM = 3
-	const SILENT_MESSAGE_FLAG = 1 << 12
 
 	// ---------------------------------------------------------------------------------------------------
 	// Small helpers
@@ -51,21 +59,11 @@
 	// 1. Settings
 	// ---------------------------------------------------------------------------------------------------
 	const defaults = {
+		everyone: false, // true: every message may bypass Do Not Disturb. false: only the list below
 		listsJson: '{"users":[],"channels":[],"guilds":[]}',
-		statusToUse: 'dnd', // the status in which the list is let through
-		onlyMentions: true, // servers and channels: only when you are mentioned
-		allowOutsideOfDms: false, // chosen people: also in servers, when they mention you
-		respectSilentPings: true, // @silent messages stay silent
-		showBanner: true,
-		vibrate: true,
-		letDiscordNotify: true, // experimental: Discord handles the message as if you were online
+		ownBanner: false, // also show a banner of this plugin (it is used on its own when Discord's function is not found)
+		ownBannerBuzz: true,
 	}
-	const STATUS_CHOICES = [
-		{ value: 'dnd', label: 'Do Not Disturb' },
-		{ value: 'idle', label: 'Idle' },
-		{ value: 'online', label: 'Online' },
-		{ value: 'invisible', label: 'Invisible' },
-	]
 
 	let storage
 	let screenListeners = []
@@ -102,6 +100,16 @@
 	const isOnList = (kind, id) => readList()[kind].includes(id)
 	const listSize = () => { const list = readList(); return list.users.length + list.channels.length + list.guilds.length }
 
+	/** Every Discord ID in a pasted text (IDs are 15 to 20 digits). People can paste them with commas, spaces or lines. */
+	const idsInText = (text) => [...new Set(String(text || '').match(/\d{15,20}/g) || [])]
+	/** Adds the people in a pasted text. @returns how many were new */
+	function addPeopleFromText(text) {
+		const list = readList()
+		const fresh = idsInText(text).filter((id) => !list.users.includes(id))
+		if (fresh.length) writeList({ ...list, users: [...list.users, ...fresh] })
+		return fresh.length
+	}
+
 	// ---------------------------------------------------------------------------------------------------
 	// Looking things up in Discord
 	// ---------------------------------------------------------------------------------------------------
@@ -114,11 +122,7 @@
 		try { return stores().UserStore.getCurrentUser().id } catch (e) { return undefined }
 	}
 	function myStatus() {
-		try {
-			const own = stores().SelfPresenceStore
-			if (own && typeof own.getStatus === 'function') return own.getStatus()
-			return stores().PresenceStore.getStatus(myId())
-		} catch (e) { return undefined }
+		try { return stores().SelfPresenceStore.getStatus() } catch (e) { return undefined }
 	}
 	const viewedChannelId = () => { try { return stores().SelectedChannelStore.getChannelId() } catch (e) { return undefined } }
 	const userLabel = (id) => { const user = getUser(id); return user ? user.globalName || user.global_name || user.username : `User ${String(id).slice(-4)}` }
@@ -153,62 +157,57 @@
 	}
 
 	// ---------------------------------------------------------------------------------------------------
-	// 3. The rules: does this message get through?
+	// 3. The rule: may this message bypass Do Not Disturb?
 	// ---------------------------------------------------------------------------------------------------
-	function isMentioned(message) {
-		const me = myId()
-		if (message.mention_everyone) return true
-		if ((message.mentions || []).some((user) => user && user.id === me)) return true
-		try {
-			const member = stores().GuildMemberStore.getMember(message.guild_id, me)
-			return !!member && (message.mention_roles || []).some((role) => (member.roles || []).includes(role))
-		} catch (e) { return false }
-	}
-
-	/**
-	 * Messages that never get through, whatever the list says.
-	 * @returns {string | null} the reason, or null when the message may be considered
-	 */
-	function reasonToIgnore(message, event) {
-		if (event.optimistic || message.state === 'SENDING') return 'not sent yet'
-		if (!message.channel_id || !message.author) return 'not a normal message'
-		if (message.author.id === myId()) return 'your own message'
-		if (!message.content && !(message.attachments && message.attachments.length)) return 'empty'
-		if (setting('respectSilentPings') && (message.flags & SILENT_MESSAGE_FLAG)) return 'silent message'
-		if (String(myStatus()) !== setting('statusToUse')) return 'your status does not match'
-		if (message.channel_id === viewedChannelId() && appIsOpen()) return 'you are looking at it'
-		return null
-	}
-	function appIsOpen() {
-		try { return valenced.react.ReactNative.AppState.currentState === 'active' } catch (e) { return true }
-	}
-
-	/** Whether the list lets this message through. */
-	function listAllows(message) {
+	/** Said once per message by the hook below. Only the rule for "who" lives here: Discord still applies the rest. */
+	function mayBypass(message, channelId) {
+		if (!message || !message.author) return false
+		if (setting('everyone')) return true
 		const list = readList()
-		const channel = getChannel(message.channel_id)
-		const mentioned = isMentioned(message)
-		const fromChosenPerson = list.users.includes(message.author.id)
-
-		if (isDirectMessage(channel)) return fromChosenPerson || list.channels.includes(channel.id)
-
+		const channel = getChannel(channelId || message.channel_id)
 		const guildId = message.guild_id || (channel && channel.guild_id)
-		const fromChosenPlace = list.channels.includes(message.channel_id) || (!!guildId && list.guilds.includes(guildId))
-		if (fromChosenPlace && (mentioned || !setting('onlyMentions'))) return true
-		return fromChosenPerson && setting('allowOutsideOfDms') && mentioned
-	}
-
-	function shouldNotify(event) {
-		const message = event && event.message
-		if (!message) return false
-		return reasonToIgnore(message, event) === null && listAllows(message)
+		return list.users.includes(message.author.id) || list.channels.includes(channelId || message.channel_id) || (!!guildId && list.guilds.includes(guildId))
 	}
 
 	// ---------------------------------------------------------------------------------------------------
-	// 4. Notifying
+	// 4. The hook: Discord's own notification function
 	// ---------------------------------------------------------------------------------------------------
-	const activity = { messages: 0, banners: 0, vibrations: 0, discordAnswers: 0, last: '' }
+	const hooks = { notificationUtils: 'not found', patched: [], error: '', bypassed: 0, last: '' }
 
+	function findNotificationUtils() {
+		const finders = valenced.modules.finders
+		return finders.lookupModule(finders.filters.withProps('shouldNotify', 'shouldNotifyBase'))[0] || null
+	}
+
+	/** Wraps `shouldNotify`: for a message that may bypass, it is asked again with `ignoreStatus` set to true. */
+	function letChosenMessagesThroughDoNotDisturb(cleanup) {
+		const utils = findNotificationUtils()
+		if (!utils || typeof utils.shouldNotify !== 'function') return
+		hooks.notificationUtils = 'found'
+		cleanup(valenced.patcher.instead(utils, 'shouldNotify', function (args, original) {
+			const [message, channelId, includeSelectedChannel, ignoreStatus] = args
+			const needsHelp = !ignoreStatus && myStatus() === 'dnd' && mayBypass(message, channelId)
+			if (!needsHelp) return Reflect.apply(original, this, args)
+			hooks.bypassed += 1
+			hooks.last = String(message.author.id).slice(-4)
+			return Reflect.apply(original, this, [message, channelId, includeSelectedChannel, true])
+		}))
+		hooks.patched.push('NotificationTextUtils.shouldNotify')
+	}
+
+	// ---------------------------------------------------------------------------------------------------
+	// 5. A banner of its own: used when Discord's function is not found, or when you turn it on
+	// ---------------------------------------------------------------------------------------------------
+	const SILENT_MESSAGE_FLAG = 1 << 12
+
+	function findDispatcher() {
+		const flux = valenced.discord.flux || {}
+		const known = flux.FluxDispatcher || flux.dispatcher || flux.Dispatcher
+		if (known && typeof known.dispatch === 'function') return known
+		const finders = valenced.modules.finders
+		const found = finders.lookupModule(finders.filters.withProps('dispatch', 'subscribe', 'unsubscribe'))[0]
+		return found && typeof found.dispatch === 'function' ? found : null
+	}
 	/** "Anna: hello" or "Anna in #general: hello", with mentions turned into names. */
 	function describeMessage(message) {
 		const author = message.author.global_name || message.author.username || 'Someone'
@@ -221,85 +220,41 @@
 			.trim()
 		return `${author}${place}: ${text || '[attachment]'}`.slice(0, 160)
 	}
-	function notify(message) {
-		activity.messages += 1
-		activity.last = describeMessage(message).slice(0, 60)
-		if (setting('showBanner')) { activity.banners += 1; toast(describeMessage(message)) }
-		if (setting('vibrate')) vibrate()
+	/** Whether the plugin's own banner should show for this new message. */
+	function ownBannerWanted(event) {
+		const message = event && event.message
+		if (!event || event.type !== 'MESSAGE_CREATE' || !message || event.optimistic || !message.author) return false
+		if (message.author.id === myId() || message.channel_id === viewedChannelId()) return false
+		if (!message.content && !(message.attachments && message.attachments.length)) return false
+		if (message.flags & SILENT_MESSAGE_FLAG) return false
+		return myStatus() === 'dnd' && mayBypass(message, message.channel_id)
+	}
+	const banners = { shown: 0 }
+	function showOwnBanner(message) {
+		banners.shown += 1
+		toast(describeMessage(message))
+		if (setting('ownBannerBuzz')) {
+			try { valenced.react.ReactNative.Vibration.vibrate(200) } catch (e) {}
+		}
 		redrawSettings()
 	}
-	function vibrate() {
-		try { valenced.react.ReactNative.Vibration.vibrate(200); activity.vibrations += 1 } catch (e) {}
-	}
-
-	// ---- Optional: let Discord's own notification through too --------------------------------------------
-	// While Discord handles a bypassing message, the status stores answer "online" instead of "do not disturb".
-	let bypassDepth = 0
-
-	function findDispatcher() {
-		const flux = valenced.discord.flux || {}
-		const known = flux.FluxDispatcher || flux.dispatcher || flux.Dispatcher
-		if (known && typeof known.dispatch === 'function') return known
-		const finders = valenced.modules.finders
-		const found = finders.lookupModule(finders.filters.withProps('dispatch', 'subscribe', 'unsubscribe'))[0]
-		return found && typeof found.dispatch === 'function' ? found : null
-	}
-	/** Every method name of a store, including inherited ones. */
-	function methodNamesOf(store) {
-		const names = new Set()
-		for (let object = store, guard = 0; object && object !== Object.prototype && guard < 6; object = Object.getPrototypeOf(object), guard += 1) {
-			Object.getOwnPropertyNames(object).forEach((name) => names.add(name))
-		}
-		return [...names]
-	}
-	function makeStatusStoresAnswerOnline(cleanup, hooked) {
-		const isStatusGetter = (name) => /^get(Self)?(Presence)?Status$/.test(name)
-		const isDndFlag = (name) => /^(is)?(DND|DoNotDisturb)$/i.test(name)
-		;['SelfPresenceStore', 'PresenceStore', 'StatusStore'].forEach((storeName) => {
-			const store = stores()[storeName]
-			if (!store) return
-			methodNamesOf(store).filter((name) => typeof store[name] === 'function' && (isStatusGetter(name) || isDndFlag(name))).forEach((method) => {
-				cleanup(valenced.patcher.after(store, method, (result) => {
-					if (bypassDepth === 0) return result
-					if (isStatusGetter(method) && result === 'dnd') { activity.discordAnswers += 1; return 'online' }
-					if (isDndFlag(method) && result === true) { activity.discordAnswers += 1; return false }
-					return result
-				}))
-				hooked.push(`${storeName}.${method}`)
-			})
-		})
-	}
-
-	// ---- Listening to messages ---------------------------------------------------------------------------
-	const hooks = { dispatcher: 'not found', patched: [], error: '' }
-
-	function listenToMessages(cleanup) {
+	function listenForOwnBanner(cleanup) {
 		const dispatcher = findDispatcher()
 		if (!dispatcher) return
-		hooks.dispatcher = 'found'
 		cleanup(valenced.patcher.instead(dispatcher, 'dispatch', function (args, original) {
 			const event = args && args[0]
-			const passes = isNewMessage(event) && safely(() => shouldNotify(event))
-			if (!passes) return Reflect.apply(original, this, args)
-
-			if (setting('letDiscordNotify')) bypassDepth += 1
+			const wanted = (setting('ownBanner') || hooks.notificationUtils !== 'found') && ownBannerWanted(event)
 			try {
 				return Reflect.apply(original, this, args)
 			} finally {
-				if (setting('letDiscordNotify')) bypassDepth -= 1
-				notify(event.message)
+				if (wanted) showOwnBanner(event.message)
 			}
 		}))
-		hooks.patched.push('Dispatcher.dispatch')
-		makeStatusStoresAnswerOnline(cleanup, hooks.patched)
-	}
-	const isNewMessage = (event) => !!event && event.type === 'MESSAGE_CREATE'
-	function safely(work) {
-		try { return work() } catch (e) { hooks.error = String((e && e.message) || e).slice(0, 80); return false }
+		hooks.patched.push('Dispatcher.dispatch (own banner)')
 	}
 
 	// ---------------------------------------------------------------------------------------------------
-	// 5. The hold-down menu: a "Bypass Do Not Disturb" row next to Mute
+	// 6. The hold-down menu: a "Bypass Do Not Disturb" row next to Mute
 	// ---------------------------------------------------------------------------------------------------
 	const MENU_TARGET_MAX_AGE_MS = 5000
 	let menuTarget = null // what the open sheet is about: { kind: 'users' | 'channels' | 'guilds', id, at }
@@ -389,18 +344,18 @@
 	}
 
 	// ---------------------------------------------------------------------------------------------------
-	// 6. Settings screen
+	// 7. Settings screen
 	// ---------------------------------------------------------------------------------------------------
 	function buildReport() {
 		const list = readList()
 		return [
 			'Bypass Status report',
 			`version: ${VERSION}`,
-			`list: ${list.users.length} people, ${list.channels.length} channels or chats, ${list.guilds.length} servers`,
-			`status to use: ${setting('statusToUse')}; my status now: ${myStatus()}`,
-			`dispatcher: ${hooks.dispatcher}; hooked: ${hooks.patched.join(', ')}`,
-			`messages let through: ${activity.messages}; banners: ${activity.banners}; vibrations: ${activity.vibrations}; status answers changed: ${activity.discordAnswers}`,
-			`last: ${activity.last || '-'}`,
+			`everyone: ${setting('everyone')}; list: ${list.users.length} people, ${list.channels.length} channels or chats, ${list.guilds.length} servers`,
+			`my status now: ${myStatus()}`,
+			`discord's notification function: ${hooks.notificationUtils}; hooked: ${hooks.patched.join(', ') || '-'}`,
+			`messages let through Do Not Disturb: ${hooks.bypassed} (last author ends ...${hooks.last || '-'})`,
+			`own banners shown: ${banners.shown}`,
 			`icons seen in sheets: ${iconsSeen.join(', ')}`,
 			hooks.error ? `problem: ${hooks.error}` : '',
 		].filter(Boolean).join('\n')
@@ -425,6 +380,7 @@
 
 		const [, setRedraws] = React.useState(0)
 		const [search, setSearch] = React.useState('')
+		const [pasted, setPasted] = React.useState('')
 		React.useEffect(() => {
 			const redraw = () => setRedraws((n) => n + 1)
 			screenListeners.push(redraw)
@@ -432,6 +388,7 @@
 		}, [])
 
 		const list = readList()
+		const everyone = !!setting('everyone')
 		const query = String(search).toLowerCase().trim()
 		const matches = (label) => !query || String(label).toLowerCase().includes(query)
 
@@ -439,19 +396,24 @@
 			h(Design.TableRow, { key: `${kind}${id}`, label, subLabel: `${hint} Tap to remove.`, onPress: () => { setOnList(kind, id, false); toast('Removed') } })
 		const addRow = (kind, id, label) =>
 			h(Design.TableRow, { key: `add${kind}${id}`, label, subLabel: 'Tap to add', onPress: () => { setOnList(kind, id, true); toast(`Added ${label}`) } })
-		const toggleRow = (key, label, subLabel) =>
-			h(Design.TableSwitchRow, { key, label, subLabel, value: !!setting(key), onValueChange: (value) => saveSettings({ [key]: !!value }) })
 
-		const peopleRows = list.users.map((id) => chosenRow('users', id, userLabel(id), 'Their direct messages.'))
-		const channelRows = list.channels.map((id) => chosenRow('channels', id, channelLabel(id), 'When you are mentioned there.'))
-		const serverRows = list.guilds.map((id) => chosenRow('guilds', id, guildLabel(id), 'Every channel, when you are mentioned.'))
-
-		const chatsToAdd = allDirectMessageIds().filter((id) => { const e = listEntryForChat(id); return !list[e.kind].includes(e.id) && matches(channelLabel(id)) }).slice(0, 40)
+		const peopleRows = list.users.map((id) => chosenRow('users', id, userLabel(id), `ID ${id}.`))
+		const channelRows = list.channels.map((id) => chosenRow('channels', id, channelLabel(id), 'This chat or channel.'))
+		const serverRows = list.guilds.map((id) => chosenRow('guilds', id, guildLabel(id), 'Every channel of this server.'))
+		const chatsToAdd = allDirectMessageIds().filter((id) => { const entry = listEntryForChat(id); return !list[entry.kind].includes(entry.id) && matches(channelLabel(id)) }).slice(0, 40)
 		const serversToAdd = allGuilds().filter((guild) => !list.guilds.includes(guild.id) && matches(guild.name)).slice(0, 40)
 
-		const viewed = viewedChannelId()
-		const viewedEntry = viewed ? listEntryForChat(viewed) : null
-		const viewedIsChosen = !!viewedEntry && list[viewedEntry.kind].includes(viewedEntry.id)
+		const addPasted = () => {
+			const count = addPeopleFromText(pasted)
+			setPasted('')
+			toast(count ? `Added ${count} ${count === 1 ? 'person' : 'people'}` : 'No new IDs found in that text')
+		}
+		const addFromClipboard = () => {
+			Promise.resolve(valenced.externals.ReactNativeClipboard.Clipboard.getString()).then(
+				(text) => { const count = addPeopleFromText(text); toast(count ? `Added ${count} from the clipboard` : 'No new IDs in the clipboard') },
+				() => toast('Could not read the clipboard'),
+			)
+		}
 		const count = listSize()
 
 		return h(
@@ -464,47 +426,45 @@
 					Card,
 					null,
 					h(Design.Text, { variant: 'heading-lg/bold' }, `Bypass Status ${VERSION}`),
-					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, `${count ? `${count} on the list. ` : 'The list is empty. '}Messages from the list reach you while your status is ${STATUS_CHOICES.find((s) => s.value === setting('statusToUse')).label}. Hold a chat, a channel or a server and choose Bypass Do Not Disturb, or add them below.`),
+					h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted' }, everyone
+						? 'Everyone can notify you while your status is Do Not Disturb.'
+						: `${count ? `${count} on the list. ` : 'The list is empty. '}Only they can notify you while your status is Do Not Disturb.`),
 					h(
 						RN.View,
 						{ style: { flexDirection: 'row', gap: 10 } },
-						viewedEntry && h(RN.View, { style: { flex: 1 } }, h(Design.Button, {
-							text: viewedIsChosen ? 'Remove this chat' : 'Add the chat I am in', variant: 'primary', size: 'sm',
-							onPress: () => { setOnList(viewedEntry.kind, viewedEntry.id, !viewedIsChosen); toast(viewedIsChosen ? 'Removed' : `Added ${channelLabel(viewed)}`) },
-						})),
 						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Copy report', variant: 'secondary', size: 'sm', onPress: copyReport })),
 					),
 				),
 				h(
-					Design.TableRadioGroup,
-					{ title: 'Let messages through when my status is', value: setting('statusToUse'), onChange: (value) => saveSettings({ statusToUse: value }) },
-					STATUS_CHOICES.map((choice) => h(Design.TableRadioRow, { key: choice.value, label: choice.label, value: choice.value })),
+					Design.TableRowGroup,
+					{ title: 'Who can bypass' },
+					h(Design.TableSwitchRow, { key: 'everyone', label: 'Everyone', subLabel: 'Off: only the people, chats and servers below. On: every message gets through Do Not Disturb.', value: everyone, onValueChange: (value) => saveSettings({ everyone: !!value }) }),
 				),
-				h(Design.TableRowGroup, { title: 'People' }, peopleRows.length ? peopleRows : [h(Design.TableRow, { key: 'nobody', label: 'Nobody yet', subLabel: 'Hold a direct message to add the person.' })]),
-				h(Design.TableRowGroup, { title: 'Channels and group chats' }, channelRows.length ? channelRows : [h(Design.TableRow, { key: 'nochannel', label: 'None yet', subLabel: 'Hold a channel or a group chat.' })]),
-				h(Design.TableRowGroup, { title: 'Servers' }, serverRows.length ? serverRows : [h(Design.TableRow, { key: 'noserver', label: 'None yet', subLabel: 'Hold a server.' })]),
-				h(Design.TextInput, { label: 'Find a chat or a server', placeholder: 'Search', size: 'md', value: search, onChange: (value) => setSearch(value) }),
-				h(Design.TableRowGroup, { title: 'Add a chat' }, chatsToAdd.length ? chatsToAdd.map((id) => addRow(listEntryForChat(id).kind, listEntryForChat(id).id, channelLabel(id))) : [h(Design.TableRow, { key: 'nochats', label: query ? 'No match' : 'No chats found', subLabel: 'Open the Messages tab once so Discord loads the list.' })]),
-				h(Design.TableRowGroup, { title: 'Add a server' }, serversToAdd.length ? serversToAdd.map((guild) => addRow('guilds', guild.id, guild.name)) : [h(Design.TableRow, { key: 'noservers', label: query ? 'No match' : 'No servers found' })]),
+				!everyone && h(
+					Design.TableRowGroup,
+					{ title: 'People (paste their IDs)' },
+					h(Design.TextInput, { key: 'paste', label: 'User IDs', description: 'Paste one or more IDs, separated by commas, spaces or new lines.', placeholder: '123456789012345678, 234567890123456789', size: 'md', value: pasted, onChange: (value) => setPasted(value) }),
+					h(RN.View, { key: 'pasteButtons', style: { flexDirection: 'row', gap: 10, paddingVertical: 8 } },
+						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Add', variant: 'primary', size: 'sm', onPress: addPasted })),
+						h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Add from clipboard', variant: 'secondary', size: 'sm', onPress: addFromClipboard }))),
+					...(peopleRows.length ? peopleRows : [h(Design.TableRow, { key: 'nobody', label: 'Nobody yet', subLabel: 'Hold a direct message and choose Bypass Do Not Disturb, or paste an ID above.' })]),
+				),
+				!everyone && h(Design.TableRowGroup, { title: 'Channels and group chats' }, channelRows.length ? channelRows : [h(Design.TableRow, { key: 'nochannel', label: 'None yet', subLabel: 'Hold a channel or a group chat.' })]),
+				!everyone && h(Design.TableRowGroup, { title: 'Servers' }, serverRows.length ? serverRows : [h(Design.TableRow, { key: 'noserver', label: 'None yet', subLabel: 'Hold a server.' })]),
+				!everyone && h(Design.TextInput, { label: 'Find a chat or a server', placeholder: 'Search', size: 'md', value: search, onChange: (value) => setSearch(value) }),
+				!everyone && h(Design.TableRowGroup, { title: 'Add a chat' }, chatsToAdd.length ? chatsToAdd.map((id) => addRow(listEntryForChat(id).kind, listEntryForChat(id).id, channelLabel(id))) : [h(Design.TableRow, { key: 'nochats', label: query ? 'No match' : 'No chats found', subLabel: 'Open the Messages tab once so Discord loads the list.' })]),
+				!everyone && h(Design.TableRowGroup, { title: 'Add a server' }, serversToAdd.length ? serversToAdd.map((guild) => addRow('guilds', guild.id, guild.name)) : [h(Design.TableRow, { key: 'noservers', label: query ? 'No match' : 'No servers found' })]),
 				h(
 					Design.TableRowGroup,
-					{ title: 'Rules' },
-					toggleRow('onlyMentions', 'Servers and channels: only when I am mentioned', 'Off lets every message of a chosen channel or server through.'),
-					toggleRow('allowOutsideOfDms', 'Chosen people: also in servers', 'When they mention you, wherever it is.'),
-					toggleRow('respectSilentPings', 'Respect silent messages', 'A message sent with @silent stays silent.'),
+					{ title: 'Notice' },
+					h(Design.TableSwitchRow, { key: 'ownBanner', label: 'Also show a banner of this plugin', subLabel: 'Discord shows its own banner and sound. This adds a short message and one buzz as well. It turns itself on by itself if Discord\'s function cannot be found.', value: !!setting('ownBanner'), onValueChange: (value) => saveSettings({ ownBanner: !!value }) }),
+					h(Design.TableSwitchRow, { key: 'ownBannerBuzz', label: 'Buzz with that banner', value: !!setting('ownBannerBuzz'), onValueChange: (value) => saveSettings({ ownBannerBuzz: !!value }) }),
 				),
 				h(
 					Design.TableRowGroup,
-					{ title: 'How I am told' },
-					toggleRow('showBanner', 'Show a banner', 'A short message at the top: who wrote what.'),
-					toggleRow('vibrate', 'Vibrate', 'One short buzz.'),
-					toggleRow('letDiscordNotify', 'Let Discord notify too (experimental)', 'Discord handles the message as if you were online, so its own notification and sound can appear. A notification Discord sends while the app is closed is decided by its servers, which this plugin cannot change.'),
-				),
-				h(
-					Design.TableRowGroup,
-					{ title: 'Diagnostics' },
-					h(Design.TableRow, { key: 'report', label: 'Copy diagnostic report', subLabel: 'Paste it to the developer if something does not work.', onPress: copyReport }),
-					h(Design.TableRow, { key: 'activity', label: 'So far', subLabel: `${activity.messages} message(s) let through · ${activity.banners} banner(s) · ${activity.vibrations} vibration(s) · Discord was told you are online ${activity.discordAnswers} time(s)` }),
+					{ title: 'About' },
+					h(Design.TableRow, { key: 'about', label: 'What it can do', subLabel: 'While Discord is open, messages from your sources get Discord\'s normal notification even in Do Not Disturb. A notification Discord sends to your phone while the app is closed is decided by Discord\'s servers, which this plugin cannot change.' }),
+					h(Design.TableRow, { key: 'state', label: 'Is it working?', subLabel: hooks.notificationUtils === 'found' ? `Hooked into Discord's notification function. ${hooks.bypassed} message(s) let through so far.` : 'Discord\'s notification function was not found, so only this plugin\'s own banner is used.' }),
 					hooks.error && h(Design.TableRow, { key: 'error', label: 'Problem', subLabel: hooks.error }),
 				),
 			),
@@ -512,7 +472,7 @@
 	}
 
 	// ---------------------------------------------------------------------------------------------------
-	// 7. The plugin
+	// 8. The plugin
 	// ---------------------------------------------------------------------------------------------------
 	Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
 	exports.default = plugin({
@@ -522,9 +482,10 @@
 			globalThis.__bypassStatusInstance = INSTANCE
 			storage = api.jsonStorage
 			const attempt = (what, step) => { try { step() } catch (e) { hooks.error = `${what}: ${String((e && e.message) || e).slice(0, 70)}` } }
-			attempt('listening', () => listenToMessages(api.cleanup))
+			attempt('notification function', () => letChosenMessagesThroughDoNotDisturb(api.cleanup))
+			attempt('own banner', () => listenForOwnBanner(api.cleanup))
 			attempt('menus', () => hookMenus(api.cleanup))
-			api.cleanup(() => { bypassDepth = 0; screenListeners = [] })
+			api.cleanup(() => { screenListeners = [] })
 		},
 	})
 	return exports

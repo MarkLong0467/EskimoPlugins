@@ -15,19 +15,19 @@ const EVE = '300000000000000003'
 const DM_ANNA = '400000000000000004'
 const GROUP = '400000000000000005'
 const GENERAL = '500000000000000005' // a channel of the server
-const RANDOM = '500000000000000006' // a channel of another server
 const SERVER = '600000000000000006'
 const OTHER_SERVER = '600000000000000007'
-const ROLE = '800000000000000008'
 
-/** Loads a fresh copy of the plugin against a small fake of Discord. */
+/**
+ * Loads a fresh copy of the plugin against a small fake of Discord.
+ * The fake `shouldNotify` behaves like the real one in the decompiled app: "no" in Do Not Disturb unless ignoreStatus.
+ */
 function load(settings = {}, options = {}) {
-	const state = { status: options.status || 'dnd', viewing: options.viewing, appState: 'active' }
+	const state = { status: options.status || 'dnd', viewing: undefined }
 	const channels = {
 		[DM_ANNA]: { id: DM_ANNA, type: 1, recipients: [ANNA] },
 		[GROUP]: { id: GROUP, type: 3, name: 'Study group', recipients: [ANNA, EVE] },
 		[GENERAL]: { id: GENERAL, type: 0, name: 'general', guild_id: SERVER },
-		[RANDOM]: { id: RANDOM, type: 0, name: 'random', guild_id: OTHER_SERVER },
 	}
 	const users = { [ME]: { id: ME, username: 'me' }, [ANNA]: { id: ANNA, username: 'anna', globalName: 'Anna' }, [EVE]: { id: EVE, username: 'eve' } }
 	const guilds = { [SERVER]: { id: SERVER, name: 'My Server' }, [OTHER_SERVER]: { id: OTHER_SERVER, name: 'Other' } }
@@ -43,34 +43,37 @@ function load(settings = {}, options = {}) {
 		cloneElement: (element, props, ...c) => ({ ...element, props: { ...element.props, ...props, ...(c.length ? { children: c.length > 1 ? c : c[0] } : {}) } }),
 	}
 	const runtime = { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) }
-	const asked = []
-	const selfPresence = { getStatus: () => state.status }
-	const presence = { getStatus: () => state.status, isDND: () => state.status === 'dnd' }
-	const dispatcher = {
-		dispatch(event) { asked.push({ type: event.type, status: selfPresence.getStatus(), flag: presence.isDND() }) },
-		subscribe() {}, unsubscribe() {},
+	const calls = []
+	const notificationUtils = options.noUtils ? null : {
+		shouldNotifyBase() {},
+		shouldNotify(message, channelId, includeSelected, ignoreStatus) {
+			calls.push({ includeSelected, ignoreStatus })
+			return !!ignoreStatus || state.status !== 'dnd'
+		},
 	}
+	const dispatcher = { dispatch() {}, subscribe() {}, unsubscribe() {} }
+	let clipboard = ''
 	global.valenced = {
-		react: { React, ReactNative: { View: 'V', ScrollView: 'S', Pressable: 'P', Vibration: { vibrate: (ms) => vibrations.push(ms) }, AppState: { get currentState() { return state.appState } } }, ReactJSXRuntime: runtime },
-		externals: { ReactNativeClipboard: { Clipboard: { setString: (text) => { global.copied = text } } } },
+		react: { React, ReactNative: { View: 'V', ScrollView: 'S', Pressable: 'P', Vibration: { vibrate: (ms) => vibrations.push(ms) } }, ReactJSXRuntime: runtime },
+		externals: { ReactNativeClipboard: { Clipboard: { setString: (text) => { global.copied = text }, getString: async () => clipboard } } },
 		discord: {
 			flux: {
 				Stores: {
-					SelfPresenceStore: selfPresence, PresenceStore: presence,
+					SelfPresenceStore: { getStatus: () => state.status },
 					ChannelStore: { getChannel: (id) => channels[id] }, UserStore: { getUser: (id) => users[id], getCurrentUser: () => users[ME] },
 					GuildStore: { getGuild: (id) => guilds[id], getGuilds: () => guilds }, PrivateChannelSortStore: { getPrivateChannelIds: () => [DM_ANNA, GROUP] },
-					SelectedChannelStore: { getChannelId: () => state.viewing }, GuildMemberStore: { getMember: () => ({ roles: [ROLE] }) },
+					SelectedChannelStore: { getChannelId: () => state.viewing },
 				},
 				FluxDispatcher: dispatcher,
 			},
-			actions: { ToastActionCreators: { open: (key, options2) => toasts.push(options2.text) }, ActionSheetActionCreators: { hideAllActionSheets: () => {} } },
+			actions: { ToastActionCreators: { open: (key, opts) => toasts.push(opts.text) }, ActionSheetActionCreators: { hideAllActionSheets: () => {} } },
 			design: { Design: new Proxy({}, { get: (_, key) => key }) },
 		},
 		patcher: {
 			after: (object, key, fn) => { const original = object[key]; object[key] = function (...a) { const r = original.apply(this, a); const x = fn.call(this, r); return x === undefined ? r : x }; return () => { object[key] = original } },
 			instead: (object, key, fn) => { const original = object[key]; object[key] = function (...a) { return fn.call(this, a, original) }; return () => { object[key] = original } },
 		},
-		modules: { finders: { filters: { withProps: (...n) => n.join() }, lookupModule: (f) => (f === 'jsx,jsxs' ? [runtime] : []) } },
+		modules: { finders: { filters: { withProps: (...n) => n.join() }, lookupModule: (f) => (f === 'jsx,jsxs' ? [runtime] : f === 'shouldNotify,shouldNotifyBase' && notificationUtils ? [notificationUtils] : []) } },
 	}
 	global.plugin = (definition) => definition
 	const data = { cache: { ...settings } }
@@ -78,15 +81,11 @@ function load(settings = {}, options = {}) {
 	const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'bypass-status', 'index.js'), 'utf8')
 	const plugin = new Function('valenced', 'plugin', `return ${source}`)(global.valenced, global.plugin).default
 	plugin.start({ cleanup: (fn) => fn, jsonStorage: json })
-	return { plugin, data, json, runtime, dispatcher, asked, toasts, vibrations, state, setScreen: (name) => { cur = name; hi = 0 } }
+	return { plugin, data, json, runtime, dispatcher, notificationUtils, calls, toasts, vibrations, state, setClipboard: (t) => { clipboard = t }, setScreen: (name) => { cur = name; hi = 0 } }
 }
 
 const listOf = (lists) => ({ listsJson: JSON.stringify({ users: [], channels: [], guilds: [], ...lists }) })
-const message = (author, channel, extra = {}) => ({
-	type: 'MESSAGE_CREATE',
-	message: { id: '9', channel_id: channel, guild_id: channel === GENERAL ? SERVER : channel === RANDOM ? OTHER_SERVER : undefined, author: { id: author, username: 'x' }, content: 'hello there', ...extra },
-})
-const mentionsMe = { mentions: [{ id: ME }] }
+const message = (author, channel, extra = {}) => ({ id: '9', channel_id: channel, guild_id: channel === GENERAL ? SERVER : undefined, author: { id: author, username: 'x' }, content: 'hello there', ...extra })
 const texts = (node, out = []) => {
 	if (Array.isArray(node)) node.forEach((n) => texts(n, out))
 	else if (typeof node === 'string') out.push(node)
@@ -99,87 +98,95 @@ const texts = (node, out = []) => {
 }
 const expand = (node) => (Array.isArray(node) ? node.map(expand) : node && typeof node === 'object' && typeof node.type === 'function' ? expand(node.type(node.props)) : node && typeof node === 'object' ? { ...node, props: { ...node.props, children: expand(node.props && node.props.children) } } : node)
 const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEach((n) => findAll(n, test, out)); else if (tree && typeof tree === 'object') { if (test(tree)) out.push(tree); findAll(tree.props && tree.props.children, test, out) } return out }
+const asks = (app, msg, channel) => app.notificationUtils.shouldNotify(msg, channel || msg.channel_id, true)
 
-/** Sends a message through the fake dispatcher and says whether it got through. */
-function gotThrough(app, event) {
-	app.asked.length = 0
-	const before = app.toasts.length
-	app.dispatcher.dispatch(event)
-	return { passed: app.toasts.length > before, status: app.asked[0] && app.asked[0].status }
-}
-
-// 1. Who gets through
+// 1. Discord's own function is asked again with ignoreStatus, for the right people
 {
-	const app = load(listOf({ users: [ANNA], channels: [GROUP, RANDOM], guilds: [SERVER] }))
-	check('a chosen person in a direct message', gotThrough(app, message(ANNA, DM_ANNA)).passed)
-	check('a chosen person in a group chat', gotThrough(app, message(ANNA, GROUP)).passed)
-	check('anyone in a chosen group chat', gotThrough(app, message(EVE, GROUP)).passed)
-	check('a stranger in a chat that is not on the list', !gotThrough(app, message(EVE, DM_ANNA)).passed)
-	check('a chosen server: only when you are mentioned', !gotThrough(app, message(EVE, GENERAL)).passed && gotThrough(app, message(EVE, GENERAL, mentionsMe)).passed)
-	check('a chosen channel: only when you are mentioned', !gotThrough(app, message(EVE, RANDOM)).passed && gotThrough(app, message(EVE, RANDOM, mentionsMe)).passed)
-	check('@everyone counts as a mention', gotThrough(app, message(EVE, GENERAL, { mention_everyone: true })).passed)
-	check('a role you have counts as a mention', gotThrough(app, message(EVE, GENERAL, { mention_roles: [ROLE] })).passed)
-	check('a role you do not have does not', !gotThrough(app, message(EVE, GENERAL, { mention_roles: ['999'] })).passed)
-	const all = load({ ...listOf({ guilds: [SERVER] }), onlyMentions: false })
-	check('with "only when mentioned" off, every message of a chosen server', gotThrough(all, message(EVE, GENERAL)).passed)
-	const person = load(listOf({ users: [ANNA] }))
-	check('a chosen person in a server does not get through on their own', !gotThrough(person, message(ANNA, GENERAL, mentionsMe)).passed)
-	const outside = load({ ...listOf({ users: [ANNA] }), allowOutsideOfDms: true })
-	check('with "also in servers" on, a chosen person who mentions you', gotThrough(outside, message(ANNA, GENERAL, mentionsMe)).passed && !gotThrough(outside, message(ANNA, GENERAL)).passed)
+	const app = load(listOf({ users: [ANNA], channels: [GROUP], guilds: [SERVER] }))
+	check('without the plugin Discord says no in Do Not Disturb (the fake behaves like the real function)', (() => { const raw = load({}, { status: 'dnd' }); return raw.notificationUtils.shouldNotify(message(ANNA, DM_ANNA), DM_ANNA, true) === false })())
+	check('a chosen person in a direct message gets through', asks(app, message(ANNA, DM_ANNA)) === true)
+	check('a stranger does not', asks(app, message(EVE, DM_ANNA)) === false)
+	check('anyone in a chosen group chat gets through', asks(app, message(EVE, GROUP)) === true)
+	check('anyone in a chosen server gets through', asks(app, message(EVE, GENERAL)) === true)
+	check('a message of another server does not', asks(app, message(EVE, '999000000000000009')) === false)
+	const last = app.calls[app.calls.length - 1]
+	app.calls.length = 0
+	asks(app, message(ANNA, DM_ANNA))
+	check('Discord is asked again with ignoreStatus = true and the other arguments unchanged', app.calls.length === 1 && app.calls[0].ignoreStatus === true && app.calls[0].includeSelected === true, JSON.stringify(app.calls))
+	const everyone = load({ everyone: true })
+	check('with "Everyone" on, anybody gets through', asks(everyone, message(EVE, DM_ANNA)) === true)
+	const online = load(listOf({ users: [ANNA] }), { status: 'online' })
+	online.calls.length = 0
+	asks(online, message(ANNA, DM_ANNA))
+	check('when you are not in Do Not Disturb nothing is changed', online.calls[0].ignoreStatus === undefined, JSON.stringify(online.calls))
+	const explicit = load(listOf({ users: [ANNA] }))
+	explicit.calls.length = 0
+	explicit.notificationUtils.shouldNotify(message(ANNA, DM_ANNA), DM_ANNA, true, true)
+	check('a call that already ignores the status is left alone', explicit.calls.length === 1)
+	check('a message without an author is left alone', asks(load(listOf({ users: [ANNA] })), { id: '1', channel_id: DM_ANNA, content: 'x' }) === false)
 }
 
-// 2. What never gets through
-{
-	const list = listOf({ users: [ANNA] })
-	check('your own messages', !gotThrough(load(list), message(ME, DM_ANNA)).passed)
-	check('a message that is not sent yet', !gotThrough(load(list), { ...message(ANNA, DM_ANNA), optimistic: true }).passed)
-	check('an empty message', !gotThrough(load(list), message(ANNA, DM_ANNA, { content: '' })).passed)
-	check('a message with only a picture', gotThrough(load(list), message(ANNA, DM_ANNA, { content: '', attachments: [{ id: '1' }] })).passed)
-	check('a silent message', !gotThrough(load(list), message(ANNA, DM_ANNA, { flags: 1 << 12 })).passed)
-	check('a silent message when silent messages are not respected', gotThrough(load({ ...list, respectSilentPings: false }), message(ANNA, DM_ANNA, { flags: 1 << 12 })).passed)
-	check('the chat you are looking at', !gotThrough(load(list, { viewing: DM_ANNA }), message(ANNA, DM_ANNA)).passed)
-	const away = load(list, { viewing: DM_ANNA }); away.state.appState = 'background'
-	check('the chat you were in, when the app is in the background', gotThrough(away, message(ANNA, DM_ANNA)).passed)
-	check('when your status is online', !gotThrough(load(list, { status: 'online' }), message(ANNA, DM_ANNA)).passed)
-	check('when your status is idle (not the one you chose)', !gotThrough(load(list, { status: 'idle' }), message(ANNA, DM_ANNA)).passed)
-	check('an event that is not a new message', (() => { const app = load(list); app.dispatcher.dispatch({ type: 'TYPING_START' }); return app.toasts.length === 0 })())
-}
-
-// 3. The status to use
-{
-	const list = listOf({ users: [ANNA] })
-	check('idle can be the status to use', gotThrough(load({ ...list, statusToUse: 'idle' }, { status: 'idle' }), message(ANNA, DM_ANNA)).passed)
-	check('...and then Do Not Disturb no longer is', !gotThrough(load({ ...list, statusToUse: 'idle' }, { status: 'dnd' }), message(ANNA, DM_ANNA)).passed)
-}
-
-// 4. How you are told
-{
-	const list = listOf({ users: [ANNA], guilds: [SERVER] })
-	const app = load(list)
-	gotThrough(app, message(ANNA, DM_ANNA, { author: { id: ANNA, username: 'anna', global_name: 'Anna' }, content: 'hi <@' + EVE + '> see <#' + GENERAL + '>' }))
-	check('the banner says who wrote what, with names for mentions', app.toasts[0] === 'Anna: hi @eve see #general', app.toasts[0])
-	check('the phone buzzes once', app.vibrations.length === 1 && app.vibrations[0] === 200)
-	gotThrough(app, message(EVE, GENERAL, { ...mentionsMe, author: { id: EVE, username: 'eve' } }))
-	check('a server message says in which channel', app.toasts[1] === 'eve in #general: hello there', app.toasts[1])
-	const quiet = load({ ...list, showBanner: false, vibrate: false })
-	gotThrough(quiet, message(ANNA, DM_ANNA))
-	check('banner and buzz can be turned off', quiet.toasts.length === 0 && quiet.vibrations.length === 0)
-}
-
-// 5. Letting Discord notify too
-{
-	const list = listOf({ users: [ANNA] })
-	const on = load(list)
-	on.dispatcher.dispatch(message(ANNA, DM_ANNA)); on.dispatcher.dispatch(message(EVE, DM_ANNA))
-	check('while Discord handles the message the status stores answer online', on.asked[0].status === 'online' && on.asked[0].flag === false)
-	check('other messages still see Do Not Disturb', on.asked[1].status === 'dnd' && on.asked[1].flag === true)
-	const off = load({ ...list, letDiscordNotify: false })
-	off.dispatcher.dispatch(message(ANNA, DM_ANNA))
-	check('the switch turns this off', off.asked[0].status === 'dnd')
-}
-
-// 6. The hold-down menu
+// 2. The settings: paste IDs, one switch for everyone
 pending.push((async () => {
+	const app = load({})
+	app.setScreen('s')
+	let tree = expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } }))
+	const shown = () => texts(tree).join('|')
+	const press = (label) => findAll(tree, (n) => n.props && n.props.text === label && n.props.onPress)[0].props.onPress()
+	check('the screen has the Everyone switch and a place to paste IDs', /Everyone/.test(shown()) && findAll(tree, (n) => n.type === 'TextInput' && n.props.label === 'User IDs').length === 1, shown().slice(0, 200))
+	const redraw = () => { app.setScreen('s'); tree = expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })) }
+	const type = (text) => findAll(tree, (n) => n.type === 'TextInput' && n.props.label === 'User IDs')[0].props.onChange(text)
+	type(`${ANNA}, ${EVE}\n  and also junk 12345 and ${ANNA}`); redraw(); press('Add'); redraw()
+	let list = JSON.parse(app.data.cache.listsJson)
+	check('pasted IDs are found among other text, once each', list.users.length === 2 && list.users.includes(ANNA) && list.users.includes(EVE), app.data.cache.listsJson)
+	check('the people show with their names and IDs', /Anna/.test(shown()) && findAll(tree, (n) => n.props && typeof n.props.subLabel === 'string' && n.props.subLabel.includes(ANNA)).length === 1, shown().slice(0, 300))
+	check('the pasted text is cleared after Add', findAll(tree, (n) => n.type === 'TextInput' && n.props.label === 'User IDs')[0].props.value === '')
+	type(ANNA); redraw(); press('Add'); redraw()
+	check('an ID that is already there is not added twice', JSON.parse(app.data.cache.listsJson).users.length === 2)
+	app.setClipboard(`ids: ${'700000000000000007'}`)
+	press('Add from clipboard'); await sleep(10)
+	check('IDs can be added from the clipboard', JSON.parse(app.data.cache.listsJson).users.includes('700000000000000007'))
+	findAll(tree, (n) => n.props && n.props.label === 'Anna' && n.props.onPress)[0].props.onPress()
+	check('tapping a person removes them', !JSON.parse(app.data.cache.listsJson).users.includes(ANNA))
+	findAll(tree, (n) => n.type === 'TableSwitchRow' && n.props.label === 'Everyone')[0].props.onValueChange(true); redraw()
+	check('the Everyone switch saves', app.data.cache.everyone === true)
+	check('with Everyone on, the lists are hidden', !/Find a chat or a server/.test(shown()) && findAll(tree, (n) => n.type === 'TextInput' && n.props.label === 'User IDs').length === 0, shown().slice(0, 200))
+	check('...and the card says everyone can notify you', /Everyone can notify you/.test(shown()))
+	findAll(tree, (n) => n.props && n.props.label === 'Copy report')
+	press('Copy report')
+	check('the report says whether Discord\'s function was found', /Bypass Status report/.test(global.copied) && /notification function: found/.test(global.copied) && /NotificationTextUtils\.shouldNotify/.test(global.copied), global.copied)
+})())
+
+// 3. The banner of its own
+pending.push((async () => {
+	await sleep(50)
+	const event = (author, channel, extra = {}) => ({ type: 'MESSAGE_CREATE', message: message(author, channel, extra) })
+	const withFunction = load(listOf({ users: [ANNA] }))
+	withFunction.dispatcher.dispatch(event(ANNA, DM_ANNA))
+	check('with Discord\'s function found, no banner of its own by default', withFunction.toasts.length === 0)
+	const both = load({ ...listOf({ users: [ANNA] }), ownBanner: true })
+	both.dispatcher.dispatch(event(ANNA, DM_ANNA, { author: { id: ANNA, username: 'anna', global_name: 'Anna' }, content: 'hi <@' + EVE + '> see <#' + GENERAL + '>' }))
+	check('turned on, it shows who wrote what and buzzes once', both.toasts[0] === 'Anna: hi @eve see #general' && both.vibrations.length === 1, both.toasts[0])
+	const missing = load(listOf({ users: [ANNA] }), { noUtils: true })
+	missing.dispatcher.dispatch(event(ANNA, DM_ANNA))
+	check('if Discord\'s function is not found the banner is used on its own', missing.toasts.length === 1, String(missing.toasts.length))
+	missing.dispatcher.dispatch(event(EVE, DM_ANNA))
+	missing.dispatcher.dispatch(event(ME, DM_ANNA))
+	missing.dispatcher.dispatch(event(ANNA, DM_ANNA, { flags: 1 << 12 }))
+	missing.dispatcher.dispatch({ ...event(ANNA, DM_ANNA), optimistic: true })
+	missing.dispatcher.dispatch({ type: 'TYPING_START' })
+	check('...and it ignores strangers, your own, silent and unsent messages', missing.toasts.length === 1, String(missing.toasts.length))
+	const online = load({ ...listOf({ users: [ANNA] }), ownBanner: true }, { status: 'online' })
+	online.dispatcher.dispatch(event(ANNA, DM_ANNA))
+	check('when you are not in Do Not Disturb there is no banner', online.toasts.length === 0)
+	const everyone = load({ everyone: true, ownBanner: true })
+	everyone.dispatcher.dispatch(event(EVE, DM_ANNA))
+	check('with Everyone on, everybody gets the banner', everyone.toasts.length === 1)
+})())
+
+// 4. The hold-down menu
+pending.push((async () => {
+	await sleep(100)
 	function Sheet() {}
 	function Group() {}
 	function Row() {}
@@ -197,7 +204,6 @@ pending.push((async () => {
 
 	let group = open({ channel: { id: DM_ANNA, type: 1 } })
 	check('a direct message gets the row after Mute', labels(group) === 'Mark As Read|Mute Conversation|Bypass Do Not Disturb', labels(group))
-	check('the row looks like the others', rowsOf(group)[2].type === Row)
 	await press(group)
 	check('choosing it adds the person', list().users.includes(ANNA) && list().channels.length === 0, app.data.cache.listsJson)
 	group = open({ channel: { id: DM_ANNA, type: 1 } })
@@ -211,38 +217,11 @@ pending.push((async () => {
 	await press(open({ guild: { id: SERVER, name: 'My Server', icon: 'x' } }))
 	check('a server is saved as a server', list().guilds.includes(SERVER))
 	check('the menu of a message is left alone', rowsOf(open({ channel: { id: DM_ANNA, type: 1 }, message: { id: '1' } })).length === 2)
-	const lone = load({}); lone.runtime.jsx(function X() {}, {})
-	check('without a chat behind the sheet nothing is added', rowsOf(lone.runtime.jsx(Group, { children: [lone.runtime.jsx(Row, { label: 'Mark As Read' }), lone.runtime.jsx(Row, { label: 'Mute', icon: lone.runtime.jsx(MuteIcon, {}) })] })).length === 2)
 	const plain = load({}); plain.runtime.jsx(Sheet, { channel: { id: DM_ANNA, type: 1 } })
 	check('a group without a Mute row is left alone', rowsOf(plain.runtime.jsx(Group, { children: [plain.runtime.jsx(Row, { label: 'Profile' }), plain.runtime.jsx(Row, { label: 'Close DM' })] })).length === 2)
 })())
 
-// 7. The settings screen
-pending.push((async () => {
-	await sleep(120)
-	const app = load(listOf({ users: [ANNA], guilds: [SERVER] }))
-	app.setScreen('settings')
-	const tree = expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } }))
-	const shown = texts(tree).join('|')
-	check('the screen lists the chosen person and server', /Anna/.test(shown) && /My Server/.test(shown), shown.slice(0, 200))
-	check('it offers other chats and servers', /Study group/.test(shown) && /Other/.test(shown))
-	const tap = (label) => findAll(tree, (n) => n.props && n.props.label === label && n.props.onPress)[0]
-	tap('Study group').props.onPress()
-	check('tapping a chat adds it', JSON.parse(app.data.cache.listsJson).channels.includes(GROUP))
-	tap('Other').props.onPress()
-	check('tapping a server adds it', JSON.parse(app.data.cache.listsJson).guilds.includes(OTHER_SERVER))
-	const radio = findAll(tree, (n) => n.type === 'TableRadioGroup')[0]
-	radio.props.onChange('idle')
-	check('the status to use can be changed', app.data.cache.statusToUse === 'idle')
-	const switches = findAll(tree, (n) => n.type === 'TableSwitchRow' && n.props.label)
-	check('every rule and notice has a switch', switches.length === 6, String(switches.length))
-	findAll(tree, (n) => n.type === 'TableSwitchRow' && /Vibrate/.test(n.props.label))[0].props.onValueChange(false)
-	check('a switch saves', app.data.cache.vibrate === false)
-	findAll(tree, (n) => n.props && n.props.label === 'Copy diagnostic report')[0].props.onPress()
-	check('the report names the hooks and the counts', /Bypass Status report/.test(global.copied) && /Dispatcher\.dispatch/.test(global.copied) && /messages let through/.test(global.copied), global.copied)
-})())
-
-Promise.all(pending).then(() => sleep(200)).then(() => {
+Promise.all(pending).then(() => sleep(300)).then(() => {
 	console.log(failed ? `\n${failed} check(s) failed` : '\nAll checks passed')
 	process.exit(failed ? 1 : 0)
 })

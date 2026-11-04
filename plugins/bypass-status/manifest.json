@@ -2,12 +2,13 @@
 	"format": 1,
 	"id": "marklong.bypass-status",
 	"name": "Bypass Status",
-	"description": "Get notified by chosen people, chats and servers even when your status is Do Not Disturb. Hold a DM, channel or server and choose Bypass Do Not Disturb, or manage the list in the plugin settings.",
+	"description": "Get Discord's normal notification, banner and sound from chosen people (paste their IDs) or from everyone while your status is Do Not Disturb. Hold a DM, channel or server and choose Bypass Do Not Disturb, or manage the list in the plugin settings.",
 	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
 	"contributors": [
-		"Bypass Status for Equicord (the idea; code written from scratch for Valenced)"
+		"Bypass Status for Equicord (the idea; code written from scratch for Valenced)",
+		"Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
 	],
-	"version": "2.0.0",
+	"version": "3.0.0",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"
