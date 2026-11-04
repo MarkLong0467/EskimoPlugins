@@ -1444,6 +1444,32 @@
       "channels": {
         "latest": "1.1.0"
       }
+    },
+    "marklong.crop-plus": {
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.crop-plus@1.0.0.zip",
+          "sha256": "aee50ed6e3cfa6bb6c8eaf2ae76b5a6b3666d98b626a3643e487b80b921b6e6c",
+          "size": 9052,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "name": "Crop Plus",
+      "description": "Crop pictures much smaller than Discord allows: after each crop a sheet offers to crop the result again, so the passes add up. Also sets the cropper's starting shape, grid, rotation and can shrink the result. With a self-check.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "contributors": [
+        "Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
+      ],
+      "channels": {
+        "latest": "1.0.0"
+      }
     }
   }
 }
