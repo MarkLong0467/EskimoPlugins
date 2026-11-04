@@ -2,238 +2,176 @@
 
 package marklong.avatarlab
 
+import android.graphics.drawable.Animatable
+import android.graphics.drawable.Drawable
+import android.os.Handler
+import android.os.Looper
+import android.view.View
+import android.view.ViewGroup
+import android.widget.ImageView
 import app.valenced.plugins.PluginScope
 import app.valenced.plugins.plugin
-import app.valenced.xposed.api.registerNativeAsyncMethod
 import app.valenced.xposed.api.registerNativeMethod
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
+import java.lang.reflect.Modifier
+import java.util.Collections
+import java.util.IdentityHashMap
+import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
-import org.luckypray.dexkit.query.enums.StringMatchType
 
-private val NAME_WORDS = listOf(
-    "avatar", "Avatar", "decoration", "Decoration", "chat.presentation", "MessageView", "ChatView", "ChatList",
-    "Playback", "AutoPlay", "Autoplay", "Animat", "Gif", "Fresco", "Drawable",
+/**
+ * Avatar Fix test.
+ * The chat's own code (MessageView.b / .f and v50.l.w) binds avatars. We note every view it touches, then
+ * a timer on the main thread looks through those views for animated pictures and starts any that are not running.
+ */
+private val HOOK_TARGETS = listOf(
+    "com.discord.chat.presentation.message.MessageView" to "b",
+    "com.discord.chat.presentation.message.MessageView" to "f",
+    "v50.l" to "w",
 )
-private val ROW_STRINGS = listOf("avatarURL", "avatarDecorationURL", "gifAutoPlay", "animateEmoji", "isCurrentUserMessageAuthor", "usernameColor")
-private const val FAST_IMAGE = "com.discord.image.fast_image.react.FastImageViewManager"
-private const val APNG_DECORATION = "com.discord.avatar.react.APNGDecorationViewManager"
+private val OWN_PACKAGES = listOf("com.discord", "v50.", "f9.", "kn.", "hc.", "ij.", "pj.")
 
-private val hits = ConcurrentHashMap<String, AtomicInteger>()
+private val tracked: MutableSet<View> = Collections.synchronizedSet(Collections.newSetFromMap(WeakHashMap<View, Boolean>()))
+private val stats = ConcurrentHashMap<String, AtomicInteger>()
+private val notes = Collections.synchronizedList(mutableListOf<String>())
+private val classesSeen = Collections.synchronizedSet(LinkedHashSet<String>())
 private val unhooks = mutableListOf<XC_MethodHook.Unhook>()
+private val handler = Handler(Looper.getMainLooper())
+@Volatile private var running = false
+@Volatile private var started = false
 
-private fun dump(c: Class<*>, limit: Int = 45): String {
-    val sb = StringBuilder("\n").append(c.name).append(" extends ").append(c.superclass?.name).append('\n')
-    c.declaredFields.take(40).forEach { sb.append("  field ").append(it.type.simpleName).append(' ').append(it.name).append('\n') }
-    if (c.isEnum) sb.append("  constants: ").append(c.enumConstants.joinToString()).append('\n')
-    c.declaredMethods.sortedBy { it.name }.take(limit).forEach { m ->
-        sb.append("  ").append(m.returnType.simpleName).append(' ').append(m.name).append('(')
-            .append(m.parameterTypes.joinToString { it.simpleName }).append(")\n")
-    }
-    return sb.toString()
-}
+private fun bump(key: String) = stats.getOrPut(key) { AtomicInteger() }.incrementAndGet()
 
-/** Forces a boolean argument of every overload of [method] to [value], and counts how often it ran. */
-private fun force(scope: PluginScope, className: String, method: String, index: Int, value: Boolean, notes: MutableList<String>) {
-    val c = runCatching { scope.classLoader.loadClass(className) }.getOrNull()
-    if (c == null) { notes += "no class $className"; return }
-    var n = 0
-    c.declaredMethods.filter {
-        it.name == method && it.parameterCount == index + 1 && it.parameterTypes[index] == Boolean::class.javaPrimitiveType
-    }.forEach { m ->
-        val key = "${c.simpleName}.$method(${m.parameterTypes.first().simpleName}..)"
-        hits.getOrPut(key) { AtomicInteger() }
-        unhooks += XposedBridge.hookMethod(m, object : XC_MethodHook() {
-            override fun beforeHookedMethod(p: MethodHookParam) {
-                val was = p.args[index] as? Boolean
-                if (was != value) hits.getValue("$key changed").incrementAndGet()
-                hits.getValue(key).incrementAndGet()
-                p.args[index] = value
-            }
-        })
-        hits.getOrPut("$key changed") { AtomicInteger() }
-        n++
-    }
-    notes += "$className.$method: hooked $n overload(s)"
-}
-
-
-private val callers = ConcurrentHashMap<String, MutableSet<String>>()
-@Volatile private var blockStops = false
-
-/** Counts calls to every overload of [method], notes who called it, and optionally cancels the call. */
-private fun watch(scope: PluginScope, className: String, method: String, cancel: Boolean, notes: MutableList<String>) {
-    val c = runCatching { scope.classLoader.loadClass(className) }.getOrNull()
-    if (c == null) { notes += "no class $className"; return }
-    var n = 0
-    c.declaredMethods.filter { it.name == method && !it.isBridge && !it.isSynthetic }.forEach { m ->
-        val key = "${c.simpleName}.$method"
-        hits.getOrPut(key) { AtomicInteger() }
-        if (cancel) hits.getOrPut("$key cancelled") { AtomicInteger() }
-        unhooks += XposedBridge.hookMethod(m, object : XC_MethodHook() {
-            override fun beforeHookedMethod(p: MethodHookParam) {
-                hits.getValue(key).incrementAndGet()
-                val set = callers.getOrPut(key) { java.util.Collections.synchronizedSet(LinkedHashSet()) }
-                if (set.size < 10) {
-                    val frame = Throwable().stackTrace.drop(3).firstOrNull { !it.className.startsWith("com.facebook") && !it.className.startsWith("android.") && !it.className.startsWith("java.") && !it.className.startsWith("de.robv") }
-                    if (frame != null) set += "${frame.className}.${frame.methodName}"
+private fun hookTargets(scope: PluginScope) {
+    for ((className, method) in HOOK_TARGETS) {
+        val c = runCatching { scope.classLoader.loadClass(className) }.getOrNull()
+        if (c == null) { notes += "no class $className"; continue }
+        var n = 0
+        c.declaredMethods.filter { it.name == method && !it.isBridge && !it.isSynthetic }.forEach { m ->
+            val key = "${c.simpleName}.$method"
+            unhooks += XposedBridge.hookMethod(m, object : XC_MethodHook() {
+                override fun afterHookedMethod(p: MethodHookParam) {
+                    runCatching {
+                        bump("$key calls")
+                        (p.thisObject as? View)?.let { tracked += it }
+                        p.args?.forEach { a -> if (a is View) tracked += a }
+                        if (stats["$key calls"]?.get() == 1) {
+                            notes += "first call of $key: this=${p.thisObject?.javaClass?.name}; args=" +
+                                (p.args?.joinToString { it?.javaClass?.name ?: "null" } ?: "-")
+                        }
+                    }
                 }
-                if (cancel && blockStops) { hits.getValue("$key cancelled").incrementAndGet(); p.result = null }
-            }
-        })
-        n++
-    }
-    notes += "$className.$method: watching $n overload(s)${if (cancel) " (can block)" else ""}"
-}
-
-private fun inspect(scope: PluginScope): String {
-    val sb = StringBuilder()
-    val names = listOf("e7.g", "e7.i", "p7.a", "p7.c", "b7.q", "com.discord.chat.presentation.message.MessageView", "com.discord.chat.bridge.Message")
-    val interesting = Regex("(?i)avatar|image|anim|gif|play|load|bind|decor|url|drawable|fresco")
-    for (n in names) runCatching {
-        val c = scope.classLoader.loadClass(n)
-        sb.append("\n").append(c.name).append(" extends ").append(c.superclass?.name)
-            .append(" implements ").append(c.interfaces.joinToString { it.name }).append('\n')
-        c.declaredFields.filter { interesting.containsMatchIn(it.name) || interesting.containsMatchIn(it.type.name) }.take(40)
-            .forEach { sb.append("  field ").append(it.type.name).append(' ').append(it.name).append('\n') }
-        c.declaredMethods.filter { interesting.containsMatchIn(it.name) || it.parameterTypes.any { p -> interesting.containsMatchIn(p.name) } }
-            .sortedBy { it.name }.take(70).forEach { m ->
-                sb.append("  ").append(m.returnType.simpleName).append(' ').append(m.name).append('(')
-                    .append(m.parameterTypes.joinToString { it.name.substringAfterLast('.') }).append(")\n")
-            }
-    }.onFailure { sb.append("\n$n: ${it::class.java.simpleName}\n") }
-    return sb.toString()
-}
-
-
-private val GETTERS = listOf(
-    "Lcom/discord/chat/bridge/Message;->getAvatarURL\$chat_androidRelease()Ljava/lang/String;",
-    "Lcom/discord/chat/bridge/Message;->getAvatarDecorationURL()Ljava/lang/String;",
-    "Lcom/discord/chat/bridge/Message;->getGifAutoPlay()Ljava/lang/Boolean;",
-    "Lcom/discord/chat/bridge/Message;->getAvatarURLs()Ljava/util/List;",
-)
-
-/** Which methods read the avatar fields of the native row, and what do they call? */
-private fun scanReaders(scope: PluginScope): String =
-    scope.dexFinder.findValue("avatar-lab:readers1", { s: String -> s }, { it }) {
-        val out = StringBuilder()
-        for (getter in GETTERS) {
-            val callers = findMethod { matcher { addInvoke(getter) } }
-            out.append("# readers of ${getter.substringAfter("->").substringBefore("(")} (${callers.size})\n")
-            callers.take(25).forEach { m ->
-                out.append(m.className).append('.').append(m.methodName).append('\n')
-                val calls = m.invokes.map { it.className.substringAfterLast('.') + "." + it.methodName }
-                    .filterNot { it.startsWith("Intrinsics.") || it.startsWith("Object.") || it.startsWith("String") }
-                    .distinct().take(30)
-                if (calls.isNotEmpty()) out.append("    calls: ").append(calls.joinToString(", ")).append('\n')
+            })
+            n++
+        }
+        notes += "$className.$method: hooked $n"
+        if (c.simpleName == "l") {
+            c.declaredMethods.filter { it.name == method }.forEach {
+                notes += "  signature ${it.returnType.simpleName} ${it.name}(${it.parameterTypes.joinToString { p -> p.name }}) static=${Modifier.isStatic(it.modifiers)}"
             }
         }
-        out.toString()
-    } ?: "no result"
+    }
+}
 
-/** Does nothing at startup. Everything runs only when a button is tapped, so a bad step can't stop Discord from opening. */
+private fun addDrawable(d: Drawable?, out: MutableMap<Animatable, Boolean>, depth: Int = 0) {
+    if (d == null || depth > 4) return
+    if (d is Animatable) { out[d] = true; classesSeen += d.javaClass.name }
+    val current = runCatching { d.current }.getOrNull()
+    if (current != null && current !== d) addDrawable(current, out, depth + 1)
+    if (d is android.graphics.drawable.LayerDrawable) for (i in 0 until d.numberOfLayers) addDrawable(d.getDrawable(i), out, depth + 1)
+}
+
+private fun addObject(o: Any?, out: MutableMap<Animatable, Boolean>, seen: MutableMap<Any, Boolean>, depth: Int) {
+    if (o == null || depth < 0 || seen.put(o, true) != null) return
+    if (o is Drawable) { addDrawable(o, out); return }
+    if (o is Animatable) { out[o] = true; classesSeen += o.javaClass.name }
+    if (o is View) return
+    val name = o.javaClass.name
+    if (OWN_PACKAGES.none { name.startsWith(it) }) return
+    var c: Class<*>? = o.javaClass
+    while (c != null && c != Any::class.java && !c.name.startsWith("android.")) {
+        for (f in c.declaredFields) {
+            if (Modifier.isStatic(f.modifiers) || f.type.isPrimitive) continue
+            runCatching { f.isAccessible = true; addObject(f.get(o), out, seen, depth - 1) }
+        }
+        c = c.superclass
+    }
+}
+
+private fun collect(v: View, out: MutableMap<Animatable, Boolean>, seen: MutableMap<Any, Boolean>, budget: IntArray) {
+    if (budget[0]-- <= 0) return
+    runCatching {
+        (v as? ImageView)?.let { addDrawable(it.drawable, out) }
+        addDrawable(v.background, out)
+        if (android.os.Build.VERSION.SDK_INT >= 23) addDrawable(v.foreground, out)
+        // The chat's own views keep their pictures in fields.
+        addObject(v, out, seen, 3)
+        var c: Class<*>? = v.javaClass
+        while (c != null && !c.name.startsWith("android.")) {
+            for (f in c.declaredFields) {
+                if (Modifier.isStatic(f.modifiers) || f.type.isPrimitive) continue
+                runCatching { f.isAccessible = true; addObject(f.get(v), out, seen, 3) }
+            }
+            c = c.superclass
+        }
+    }
+    if (v is ViewGroup) for (i in 0 until v.childCount) collect(v.getChildAt(i), out, seen, budget)
+}
+
+private fun sweep() {
+    val roots = synchronized(tracked) { tracked.toList() }
+    bump("sweeps")
+    stats.getOrPut("views tracked now") { AtomicInteger() }.set(roots.size)
+    val found = IdentityHashMap<Animatable, Boolean>()
+    val seen = IdentityHashMap<Any, Boolean>()
+    val budget = intArrayOf(600)
+    for (root in roots.take(120)) if (root.isAttachedToWindow) collect(root, found, seen, budget)
+    stats.getOrPut("animations found now") { AtomicInteger() }.set(found.size)
+    for (a in found.keys) {
+        runCatching {
+            if (!a.isRunning) { a.start(); bump("restarted") } else bump("already running")
+        }.onFailure { bump("errors"); notes += "start failed: ${it::class.java.simpleName}: ${it.message}" }
+    }
+}
+
+private val loop = object : Runnable {
+    override fun run() {
+        if (!running) return
+        runCatching { sweep() }.onFailure { bump("errors"); if (notes.size < 40) notes += "sweep error: ${it::class.java.simpleName}: ${it.message}" }
+        handler.postDelayed(this, 400)
+    }
+}
+
 val avatarLab = plugin {
+    // Nothing runs at startup. The button below starts it.
     start {
-        val notes = mutableListOf<String>()
-        var names = "not asked"
-        var rows = "not asked"
-        var inspected = "not asked"
-        var readers = "not asked"
+        registerNativeMethod("marklong.avatar-lab.go") {
+            if (!started) {
+                started = true
+                runCatching { hookTargets(this) }.onFailure { notes += "hook error: ${it::class.java.name}: ${it.message}" }
+            }
+            if (!running) { running = true; handler.post(loop) }
+            "running"
+        }
+        registerNativeMethod("marklong.avatar-lab.stop") { running = false; "stopped" }
         registerNativeMethod("marklong.avatar-lab.report") {
             buildString {
-                append("## hooks\n")
-                notes.forEach { append(it).append('\n') }
-                hits.entries.sortedBy { it.key }.forEach { append("  ${it.key}: ${it.value.get()}\n") }
-                append("## who called\n")
-                callers.entries.sortedBy { it.key }.forEach { append("  ${it.key}: ${it.value.joinToString(" | ")}\n") }
-                append("\n## readers\n").append(readers).append("\n## inspect\n").append(inspected).append('\n')
-                append("\n## names\n").append(names).append("\n\n## rows\n").append(rows)
-            }
-        }
-        registerNativeMethod("marklong.avatar-lab.inspect") {
-            inspected = runCatching { inspect(this) }.getOrElse { "error: ${it::class.java.name}: ${it.message}" }
-            "inspect done (${inspected.length} chars)"
-        }
-        registerNativeAsyncMethod("marklong.avatar-lab.readers") {
-            readers = runCatching { scanReaders(this) }.getOrElse { "error: ${it::class.java.name}: ${it.message}" }
-            "readers done (${readers.length} chars)"
-        }
-        registerNativeMethod("marklong.avatar-lab.watch") {
-            if (callers.isEmpty() && hits.keys.none { it.startsWith("AnimatedDrawable2") }) {
-                runCatching {
-                    watch(this, "com.facebook.fresco.animation.drawable.AnimatedDrawable2", "start", false, notes)
-                    watch(this, "com.facebook.fresco.animation.drawable.AnimatedDrawable2", "stop", true, notes)
-                    watch(this, "android.graphics.drawable.AnimatedImageDrawable", "start", false, notes)
-                    watch(this, "android.graphics.drawable.AnimatedImageDrawable", "stop", true, notes)
-                }.onFailure { notes += "watch error: ${it::class.java.name}: ${it.message}" }
-            }
-            "watching"
-        }
-        registerNativeMethod("marklong.avatar-lab.block") { blockStops = !blockStops; "stops are ${if (blockStops) "BLOCKED" else "allowed"}" }
-        registerNativeAsyncMethod("marklong.avatar-lab.names") {
-            names = runCatching { scanNames(this) }.getOrElse { "error: ${it::class.java.name}: ${it.message}" }
-            "names done (${names.length} chars)"
-        }
-        registerNativeAsyncMethod("marklong.avatar-lab.rows") {
-            rows = runCatching { scanRows(this) }.getOrElse { "error: ${it::class.java.name}: ${it.message}" }
-            "rows done (${rows.length} chars)"
-        }
-        registerNativeMethod("marklong.avatar-lab.hooks") {
-            if (unhooks.isNotEmpty()) "already on" else {
-                runCatching {
-                    force(this, FAST_IMAGE, "setPaused", 1, false, notes)
-                    force(this, FAST_IMAGE, "setEnableAnimation", 1, true, notes)
-                    force(this, FAST_IMAGE, "setAutoPlay", 1, true, notes)
-                    force(this, APNG_DECORATION, "setAutoplay", 1, true, notes)
-                }.onFailure { notes += "hook error: ${it::class.java.name}: ${it.message}" }
-                "hooks on: ${unhooks.size}"
+                append("running=$running\n## counts\n")
+                stats.entries.sortedBy { it.key }.forEach { append("  ${it.key}: ${it.value.get()}\n") }
+                append("## animated picture classes found\n")
+                synchronized(classesSeen) { classesSeen.forEach { append("  $it\n") } }
+                append("## hooks and first calls\n")
+                synchronized(notes) { notes.take(40).forEach { append("  $it\n") } }
             }
         }
     }
     stop {
+        running = false
         unhooks.forEach { runCatching { it.unhook() } }
         unhooks.clear()
+        started = false
+        tracked.clear()
     }
-}
-
-private fun scanNames(scope: PluginScope): String {
-    val loader = scope.classLoader
-    val found = scope.dexFinder.findValue("avatar-lab:names2", { s: String -> s }, { it }) {
-        val out = StringBuilder()
-        for (word in NAME_WORDS) {
-            val hit = findClass {
-                searchPackages("com.discord")
-                matcher { className(word, StringMatchType.Contains) }
-            }.map { it.name }.sorted()
-            out.append("# $word (${hit.size})\n")
-            hit.take(70).forEach { out.append(it).append('\n') }
-        }
-        out.toString()
-    } ?: return "dex scan returned nothing"
-    val sb = StringBuilder(found).append("\n## details\n")
-    runCatching {
-        val manager = loader.loadClass(FAST_IMAGE)
-        val playback = manager.declaredMethods.firstOrNull { it.name == "getPlayback" && it.returnType != Any::class.java }
-        playback?.parameterTypes?.firstOrNull()?.let { sb.append("\nFastImageView class:").append(dump(it, 70)) }
-        playback?.returnType?.let { sb.append("\nPlayback type:").append(dump(it)) }
-    }
-    return sb.toString()
-}
-
-private fun scanRows(scope: PluginScope): String {
-    val loader = scope.classLoader
-    val found = scope.dexFinder.findValue("avatar-lab:rows2", { s: String -> s }, { it }) {
-        val out = StringBuilder()
-        for (s in ROW_STRINGS) {
-            val hit = findClass { matcher { usingStrings(s) } }.map { it.name }.sorted()
-            out.append("# \"$s\" (${hit.size})\n")
-            hit.take(40).forEach { out.append(it).append('\n') }
-        }
-        out.toString()
-    } ?: return "dex scan returned nothing"
-    val sb = StringBuilder(found).append("\n## details\n")
-    found.lines().filter { it.startsWith("com.") }.distinct().take(12)
-        .forEach { name -> runCatching { sb.append(dump(loader.loadClass(name), 60)) } }
-    return sb.toString()
 }
