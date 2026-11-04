@@ -40,6 +40,8 @@ function load(settings = {}, options = {}) {
 	const accessStore = new AccessProto()
 	accessStore.emitChange = () => emitted.push('AccessibilityStore')
 	const chatModule = { default: function createMessageContent(input) { return { id: 'row', ...(input || {}) } } }
+	const sentToNative = []
+	const chatUtils = { updateRows: (ref, update) => { sentToNative.push([ref, update]); return 'sent' }, scrollToBottom() {}, clearRows() {} }
 	const rowsModule = { generateMessageRowData: (input) => ({ type: 'MESSAGE', message: { id: 'row', ...(input || {}) } }) }
 	const React = {
 		useState: (initial) => { const state = [initial]; return [initial, (v) => { state[0] = v }] },
@@ -61,6 +63,7 @@ function load(settings = {}, options = {}) {
 				lookupModule: (f) => {
 					if (options.viaCallbackOnly && f !== 'jsx,jsxs') return []
 					if (typeof f === 'function') return []
+					if (f === 'updateRows,scrollToBottom,clearRows') return options.noChatUtils ? [] : [options.chatUtilsOnDefault ? { default: chatUtils } : chatUtils]
 					if (f === 'generateMessageRowData') return options.noRows || options.noChat ? [] : [rowsModule]
 					if (f === 'name:createMessageContent') return options.noChat ? [] : [options.chatOnDefault ? { default: chatModule } : chatModule]
 					if (f === 'jsx,jsxs') return [runtime]
@@ -78,7 +81,7 @@ function load(settings = {}, options = {}) {
 	const plugin = new Function('valenced', 'plugin', `return ${source}`)(global.valenced, global.plugin).default
 	const cleanups = []
 	plugin.start({ cleanup: (fn) => { cleanups.push(fn); return fn }, jsonStorage: json })
-	return { plugin, data, json, runtime, log, avatarUtils, avatarModule, accessibility, toasts, emitted, subs, chatModule, rowsModule, accessStore, cleanups }
+	return { plugin, data, json, runtime, log, avatarUtils, avatarModule, accessibility, toasts, emitted, subs, chatModule, rowsModule, accessStore, cleanups, chatUtils, sentToNative }
 }
 const user = (animated) => ({ id: '123456789012345678', avatar: `${animated ? 'a_' : ''}0123456789abcdef`, discriminator: '0' })
 const texts = (node, out = []) => {
@@ -283,6 +286,54 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	check('without the store the plugin starts and says so', /motion: on; not found/.test(global.copied), global.copied)
 }
 
+// 2h. The chat rows as they go to the native chat
+{
+	const message = (over = {}) => ({ id: '1', avatarURL: 'https://cdn.discordapp.com/avatars/1/a_abc.gif?size=64', avatarDecorationURL: 'https://cdn.discordapp.com/media/v1/collectibles-shop/1/animated', animateEmoji: false, gifAutoPlay: false, username: 'x', ...over })
+	const update = (...messages) => ({ rows: messages.map((m) => ({ type: 1, index: 0, row: { type: 1, message: m } })), isLoadingAtTop: false })
+	const app = load()
+	const report = (a) => { findAll(expand(a.plugin.SettingsComponent({ api: { jsonStorage: a.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress(); return global.copied }
+	const msg = message()
+	const given = update(msg)
+	check('the rows go on to the native chat as before', app.chatUtils.updateRows('ref', given) === 'sent' && app.sentToNative[0][0] === 'ref' && app.sentToNative[0][1] === given)
+	check('animation switches that are off in a row are turned on', msg.animateEmoji === true && msg.gifAutoPlay === true)
+	check('...but nothing is added to the row', Object.keys(msg).join() === 'id,avatarURL,avatarDecorationURL,animateEmoji,gifAutoPlay,username')
+	const text = report(app)
+	check('the report lists the change keys, where the row is, its fields and the avatar-related values', /chat json: NativeChatUtils\.updateRows .*; updates 1, change ops 1; flipped 2 \(animateEmoji, gifAutoPlay\); added 0/.test(text) && /chat json op keys: type, index, row/.test(text) && /chat json row found at: op\.row\.message/.test(text) && /chat json row fields \(6\): id, avatarURL, avatarDecorationURL, animateEmoji, gifAutoPlay, username/.test(text) && /avatarURL=cdn\.discordapp\.com\/avatars\/1\/a_abc\.gif\?size=64/.test(text) && /animateEmoji=false/.test(text), text)
+	const flipOff = load({ chatFlip: false })
+	const m2 = message()
+	flipOff.chatUtils.updateRows('ref', update(m2))
+	check('with "switch on animation flags" off the row is left as it is', m2.animateEmoji === false && m2.gifAutoPlay === false)
+	const extra = load({ chatExtra: true })
+	const m3 = message()
+	extra.chatUtils.updateRows('ref', update(m3))
+	check('the experiment adds the nine animation flags', m3.animateAvatar === true && m3.shouldAnimateAvatar === true && m3.autoPlayAvatars === true && Object.keys(m3).length === 6 + 9, Object.keys(m3).join())
+	const m4 = message({ animateAvatar: false })
+	extra.chatUtils.updateRows('ref', update(m4))
+	check('...a flag the row already has is not duplicated, only switched on', m4.animateAvatar === true && Object.keys(m4).length === 6 + 9)
+	const mixed = load()
+	const other = { type: 0, id: 'sep', separator: true }
+	mixed.chatUtils.updateRows('ref', { rows: [{ type: 1, row: other }, null, 5, { type: 1, row: { type: 1, message: message() } }] })
+	check('rows without a message (separators) and odd entries are passed on', mixed.sentToNative.length === 1 && other.separator === true)
+	const bad = load()
+	check('an update that is not in the expected shape is passed on', bad.chatUtils.updateRows('ref', undefined) === 'sent' && bad.chatUtils.updateRows('ref', { rows: 'x' }) === 'sent')
+	const deep = load()
+	deep.chatUtils.updateRows('ref', { rows: [{ a: { b: { c: { d: { e: { f: { avatarURL: 'x', animate: false } } } } } } }] })
+	check('a row buried too deep is not chased', !/chat json row found at: op\.a\.b/.test(report(deep)))
+	const ext = load({}, { chatUtilsOnDefault: true })
+	ext.chatUtils.updateRows('ref', update(message()))
+	check('the chat helper is found on a default export too', /updates 1, change ops 1/.test(report(ext)))
+	const late = load({}, { noChatUtils: true })
+	const sub = late.subs.find((x) => x.f === 'updateRows,scrollToBottom,clearRows')
+	check('a helper that is not loaded yet is hooked when it loads, and only once', !!sub && (sub.cb(late.chatUtils), sub.cb(late.chatUtils), late.chatUtils.updateRows('ref', update(message())), /updates 1, change ops 1/.test(report(late))))
+	check('while it is missing the report says not found', /chat json: not found/.test(report(load({}, { noChatUtils: true }))))
+	const hidden = load({ chat: false })
+	check('the chat row switches are hidden when the chat switch is off', !findAll(expand(hidden.plugin.SettingsComponent({ api: { jsonStorage: hidden.json } })), (n) => n.props && n.props.label === 'Switch on animation flags in chat rows').length)
+	const shown = load()
+	const flip = findAll(expand(shown.plugin.SettingsComponent({ api: { jsonStorage: shown.json } })), (n) => n.props && n.props.label === 'Experiment: add animation flags to chat rows')[0]
+	flip.props.onValueChange(true)
+	check('the experiment switch saves and warns', shown.data.cache.chatExtra === true && shown.toasts.some((x) => /Turn this off if it looks broken/.test(x)))
+}
+
 // 2c. Drawing the pictures on screen again
 {
 	const app = load()
@@ -336,7 +387,7 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	check('the screen shows all nine switches', ['Pictures', 'Emoji', 'Stickers', 'GIFs', 'Status emoji', 'Still pictures of animated things', 'Chat: pictures and decorations next to messages', 'Ignore "Reduce motion"', 'Everything else (advanced)'].every((t) => shown.includes(t)), shown.slice(0, 300))
 	check('each switch says what it covers and whether it was found', /AvatarUtils \(\d+ places?, \d+ functions\)/.test(shown) && /UserSettings\.AnimateEmoji/.test(shown), shown.slice(0, 400))
 	const switches = findAll(tree, (n) => n.type === 'TableSwitchRow' && n.props.label)
-	check('there are nine switches', switches.length === 9, String(switches.length))
+	check('there are nine feature switches and two chat row switches', switches.length === 11, String(switches.length))
 	switches.find((s) => s.props.label === 'GIFs').props.onValueChange(false)
 	check('a switch saves', a.data.cache.gifs === false)
 	const reportApp = load()

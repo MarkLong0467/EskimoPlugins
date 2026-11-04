@@ -21,7 +21,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.4.0'
+	const VERSION = '1.5.0'
 
 	// ---------------------------------------------------------------------------------------------------
 	// Small helpers
@@ -61,7 +61,7 @@
 		{ key: 'motion', on: true, title: 'Ignore "Reduce motion"', blurb: 'Discord switches animations off in the chat and elsewhere when your phone or Discord says "reduce motion" (or Game Mode is throttling). This makes Discord think motion is always fine.' },
 		{ key: 'everything', on: false, title: 'Everything else (advanced)', blurb: 'Switches on every `animate` or `canAnimate` property Discord gives its screens. This can animate things Discord keeps still on purpose.' },
 	]
-	const defaults = { ...Object.fromEntries(FEATURES.map((f) => [f.key, f.on])), chatFormat2: 'gif' }
+	const defaults = { ...Object.fromEntries(FEATURES.map((f) => [f.key, f.on])), chatFormat2: 'gif', chatFlip: true, chatExtra: false }
 
 	let storage
 	let screenListeners = []
@@ -419,6 +419,71 @@
 		try { if (typeof store.emitChange === 'function') store.emitChange() } catch (e) {}
 	}
 
+	// ---------------------------------------------------------------------------------------------------
+	// The last stop in JavaScript: the chat rows as the JSON that goes to the native chat
+	// ---------------------------------------------------------------------------------------------------
+	// `NativeChatUtils.updateRows(chatRef, { rows, ... })` (modules/chat/native/NativeChatUtils.tsx) turns `rows` into JSON
+	// and hands it to the native chat (`NativeChatModule.updateRows`). `rows` is a list of changes (INSERT, UPDATE...)
+	// whose rows hold the message data that `createMessageContent` made. This looks at them just before they leave:
+	//  - it records which fields a row really has (the report shows them), so it is known what the native chat is told;
+	//  - it flips any switch in a row that is false and is about animation (animate..., autoPlay...), like "everything";
+	//  - as an experiment (off by default) it adds animation flags the row does not have yet.
+	const chatJson = { updates: 0, ops: 0, opKeys: new Set(), holderKeys: new Set(), samples: {}, flipped: 0, flippedKeys: new Set(), added: 0, depthPaths: new Set() }
+	const ANIMATION_KEY = /anim|autoplay|auto_play|gifplay/i
+	const AVATAR_SAMPLE_KEY = /avatar|anim|play|motion|gif|decor|nameplate/i
+	const EXTRA_FLAGS = ['animateAvatar', 'animateAvatars', 'animatedAvatar', 'shouldAnimateAvatar', 'avatarAnimated', 'animateAvatarDecoration', 'animateDecoration', 'avatarDecorationAnimated', 'autoPlayAvatars']
+	function visitChatRow(node, path, depth, seen) {
+		if (!node || typeof node !== 'object' || depth > 5 || seen.count > 400) return
+		seen.count += 1
+		if (Array.isArray(node)) { node.slice(0, 20).forEach((child, i) => visitChatRow(child, `${path}[]`, depth + 1, seen)); return }
+		if ('avatarURL' in node || 'avatarDecorationURL' in node) {
+			chatJson.depthPaths.add(path)
+			Object.keys(node).forEach((key) => {
+				chatJson.holderKeys.add(key)
+				if (AVATAR_SAMPLE_KEY.test(key) && !(key in chatJson.samples)) {
+					const value = node[key]
+					chatJson.samples[key] = typeof value === 'string' ? value.replace(/^https?:\/\//, '').slice(0, 70) : JSON.stringify(value) === undefined ? String(value) : String(JSON.stringify(value)).slice(0, 40)
+				}
+			})
+			if (setting('chatFlip')) {
+				Object.keys(node).forEach((key) => { if (ANIMATION_KEY.test(key) && node[key] === false) { node[key] = true; chatJson.flipped += 1; chatJson.flippedKeys.add(key) } })
+			}
+			if (setting('chatExtra')) {
+				EXTRA_FLAGS.forEach((key) => { if (!(key in node)) { node[key] = true; chatJson.added += 1 } })
+			}
+		}
+		Object.keys(node).forEach((key) => {
+			const child = node[key]
+			if (child && typeof child === 'object') visitChatRow(child, `${path}.${key}`, depth + 1, seen)
+		})
+	}
+	function hookChatUpdates(cleanup) {
+		const patched = new WeakSet()
+		watchModules(cleanup, (filters) => filters.withProps('updateRows', 'scrollToBottom', 'clearRows'), (mod) => {
+			;[mod, mod && mod.default].forEach((holder) => {
+				if (!holder || (typeof holder !== 'object' && typeof holder !== 'function') || typeof holder.updateRows !== 'function' || patched.has(holder)) return
+				patched.add(holder)
+				cleanup(valenced.patcher.instead(holder, 'updateRows', function (args, original) {
+					try {
+						const update = args[1]
+						const list = update && Array.isArray(update.rows) ? update.rows : null
+						if (list) {
+							chatJson.updates += 1
+							list.slice(0, 60).forEach((op) => {
+								chatJson.ops += 1
+								if (op && typeof op === 'object') Object.keys(op).forEach((key) => chatJson.opKeys.add(key))
+								visitChatRow(op, 'op', 0, { count: 0 })
+							})
+						}
+					} catch (e) { reportProblem('chat json', e) }
+					return Reflect.apply(original, this, args)
+				}))
+				found.chatJson = 'NativeChatUtils.updateRows (the rows as they go to the native chat)'
+			})
+		})
+		if (!found.chatJson) found.chatJson = 'not found'
+	}
+
 	/** Makes the pictures that are already on screen be drawn again, now that the plugin is in place. */
 	function refreshPictures() {
 		let count = 0
@@ -512,6 +577,11 @@
 
 	function buildReport() {
 		const lines = ['Always Animate report', `version: ${VERSION}`]
+		lines.push(`chat json: ${found.chatJson || 'not hooked'}; updates ${chatJson.updates}, change ops ${chatJson.ops}; flipped ${chatJson.flipped}${chatJson.flippedKeys.size ? ` (${[...chatJson.flippedKeys].join(', ')})` : ''}; added ${chatJson.added}`)
+		lines.push(`chat json op keys: ${[...chatJson.opKeys].join(', ') || '-'}`)
+		lines.push(`chat json row found at: ${[...chatJson.depthPaths].join(' | ') || '-'}`)
+		lines.push(`chat json row fields (${chatJson.holderKeys.size}): ${[...chatJson.holderKeys].join(', ') || '-'}`)
+		lines.push(`chat json avatar-related values: ${Object.keys(chatJson.samples).map((key) => `${key}=${chatJson.samples[key]}`).join(' ; ') || '-'}`)
 		lines.push(`reduce motion before the plugin: Discord said ${motionWas.reduced}, phone/Discord setting ${motionWas.prefers}; answered no ${forced.motion} of ${seen.motion} times`)
 		lines.push(`chat picture format: ${setting('chatFormat2')}; chat sample: ${chatSample || 'none yet'}`)
 		lines.push(`chat rows seen ${chatCounts.rows}: with an animated profile picture ${chatCounts.animatedAvatars}, with a decoration ${chatCounts.decorations}; animated picture sample: ${chatAvatarSample || 'none yet'}`)
@@ -612,6 +682,10 @@
 				h(RN.View, { style: { gap: 4 } },
 					h(Design.Text, { variant: 'text-sm/semibold', color: 'text-muted' }, 'WHAT ANIMATES'),
 					h(Design.TableRowGroup, { title: '' }, ...FEATURES.slice(0, 8).map(featureRow))),
+				setting('chat') && h(Design.TableRowGroup, { key: 'chatJson', title: 'Chat rows (what the native chat is sent)' },
+					h(Design.TableSwitchRow, { key: 'chatFlip', label: 'Switch on animation flags in chat rows', subLabel: 'Any animation switch in a row that is off is turned on. Nothing is added to the row', value: !!setting('chatFlip'), onValueChange: (value) => saveSettings({ chatFlip: !!value }) }),
+					h(Design.TableSwitchRow, { key: 'chatExtra', label: 'Experiment: add animation flags to chat rows', subLabel: 'Adds nine made-up animation flags (animateAvatar and so on). If the native chat does not know a field it may refuse the row: turn this off if the chat breaks', value: !!setting('chatExtra'), onValueChange: (value) => { saveSettings({ chatExtra: !!value }); toast(value ? 'Open the chat again. Turn this off if it looks broken.' : 'Off') } }),
+				),
 				setting('chat') && h(Radio, { key: 'chatFormat2', title: 'Chat: kind of animated picture', value: setting('chatFormat2'), onChange: (v) => { saveSettings({ chatFormat2: v }); scheduleRefresh() }, items: [
 					{ v: 'webp', l: 'Animated webp', s: 'What Discord uses for animated pictures' },
 					{ v: 'gif', l: 'GIF', s: 'Try this if the chat does not play the webp. Only for profile pictures' },
@@ -643,6 +717,7 @@
 			attempt('status emoji', () => animateElements(api.cleanup))
 			attempt('chat rows', () => hookChatRows(api.cleanup))
 			attempt('reduce motion', () => ignoreReducedMotion(api.cleanup))
+			attempt('chat json', () => hookChatUpdates(api.cleanup))
 			// The server list and other screens were drawn before the plugin was in place: draw them again.
 			const timers = [1500, 5000].map((ms) => setTimeout(refreshPictures, ms))
 			// What was not found yet is looked for again a few times, and the pictures drawn again when it turns up.
