@@ -48,4 +48,5 @@ jobs:
           cp out/*.zip .
           git add *.zip
           git commit -qm "lab build ${GITHUB_SHA}"
-          git push -f origin lab-builds
+          for i in 1 2 3 4 5; do git push -f origin lab-builds && break; sleep $((i*5)); done
+          git ls-remote --heads origin lab-builds | grep -q "$(git rev-parse HEAD)"
