@@ -3,8 +3,7 @@
 	 * Status Presets for Valenced
 	 *
 	 * Save a status as a preset (Online / Idle / Do Not Disturb / Invisible, plus a custom status with an emoji
-	 * and a "clear after" time) and switch to it with one tap. Presets are in the plugin's settings and also
-	 * under the status picker of your own account sheet (You tab, tap your avatar).
+	 * and a "clear after" time) and switch to it with one tap.
 	 *
 	 * How it works. The decompiled Discord app (Wumpus-Central/discord-mobile-datamining, version 354) stores
 	 * your status as four "proto settings" in `discord_app/modules/user_settings/UserSettings.tsx`:
@@ -14,16 +13,20 @@
 	 *     StatusCreatedAtSetting   milliseconds as text
 	 *     CustomStatusSetting      { text, emojiId, emojiName, expiresAtMs, createdAtMs } or undefined
 	 *
+	 * The presets are shown in the plugin settings, under the status picker of your account sheet (You tab, tap
+	 * your avatar) and on the "Set your status" screen (`modules/custom_status/native/EditCustomStatusWithPreview.tsx`).
+	 *
 	 * Discord's own screens call `.updateSetting(value)` on these (see `modules/custom_status/setCustomStatus.tsx`
 	 * and `modules/multi_account/setUserStatus.tsx`). This plugin calls the very same functions, so the result
 	 * is saved and synced exactly like a status picked by hand.
 	 *
 	 * The file reads top to bottom:  1 Settings  2 Presets  3 Reading and writing the status  4 Applying a preset
-	 *                                5 The status sheet  6 Report and self-check  7 Settings screen  8 The plugin
+	 *                                5 The status sheet and the "Set your status" screen  6 Report and self-check
+	 *                                7 Settings screen  8 The plugin
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.0.0'
+	const VERSION = '1.1.0'
 	const INSTANCE = {}
 
 	// ---------------------------------------------------------------------------------------------------
@@ -64,6 +67,7 @@
 		presetsJson: JSON.stringify(STARTER_PRESETS),
 		undoJson: '',
 		inSheet: true, // show the presets under the status picker of your account sheet
+		inEditor: true, // show the presets on the "Set your status" screen
 		buzz: true,
 	}
 
@@ -174,7 +178,7 @@
 	// ---------------------------------------------------------------------------------------------------
 	// 3. Reading and writing the status
 	// ---------------------------------------------------------------------------------------------------
-	const found = { settings: 'not found', sheet: 0 }
+	const found = { settings: 'not found', sheet: 0, editor: 0 }
 	let cachedSettings
 	/** The four settings from `UserSettings.tsx`, found by their names (they may sit on `.default`). */
 	function settingsModules() {
@@ -359,7 +363,7 @@
 	}
 
 	// ---------------------------------------------------------------------------------------------------
-	// 5. The status sheet: presets under the status picker of your account sheet
+	// 5. The status sheet and the "Set your status" screen
 	// ---------------------------------------------------------------------------------------------------
 	function SheetPresets() {
 		const Design = valenced.discord.design.Design
@@ -381,6 +385,57 @@
 		)
 	}
 
+	function closeScreen() {
+		try {
+			const finders = valenced.modules.finders
+			const modals = (valenced.discord.actions && valenced.discord.actions.ModalActionCreators) || finders.lookupModule(finders.filters.withProps('pushLazy', 'popAll'))[0]
+			const target = modals && (typeof modals.pop === 'function' ? modals : modals.default)
+			if (target && typeof target.pop === 'function') target.pop()
+		} catch (e) {}
+	}
+
+	/** The presets as a group of rows on the "Set your status" screen. Tapping one applies it and closes the screen. */
+	function EditorPresets() {
+		const Design = valenced.discord.design.Design
+		const presets = readPresets()
+		const now = readNow()
+		return h(
+			Design.TableRowGroup,
+			{ title: 'Status presets' },
+			...presets.map((p) => h(Design.TableRow, {
+				key: p.id,
+				label: titleOf(p),
+				subLabel: isActive(p, now) ? `Active · ${summary(p)}` : summary(p),
+				onPress: () => {
+					if (applyPreset(p)) setTimeout(closeScreen, 0)
+				},
+			})),
+			h(Design.TableRow, {
+				key: 'save-current',
+				label: '＋ Save my current status as a preset',
+				onPress: () => {
+					writePresets([...readPresets(), presetFromNow()])
+					toast('Saved. Open Status Presets in the plugin settings to rename it.')
+				},
+			}),
+		)
+	}
+
+	/**
+	 * True for the "Set your status" screen: a column of [preview, status box, "Clear at" row group, optional
+	 * "Delete status" group]. The "Clear at" group holds one row with an arrow and a trailing value.
+	 */
+	function isStatusEditor(element) {
+		const kids = element && element.props && element.props.children
+		if (!Array.isArray(kids) || kids.length < 3 || kids.length > 4) return false
+		const status = kids[1] && kids[1].props && kids[1].props.children
+		if (!Array.isArray(status) || status.length !== 2) return false
+		const group = kids[2] && kids[2].props
+		if (!group || group.hasIcons !== false) return false
+		const row = Array.isArray(group.children) ? group.children[0] : group.children
+		return !!(row && row.props && row.props.arrow === true && row.props.trailing)
+	}
+
 	/** True for the block with the four status rows (online, idle, dnd, invisible) found by their keys. */
 	function isStatusPicker(element) {
 		const kids = element && element.props && element.props.children
@@ -398,11 +453,20 @@
 		const onNewElement = (element) => {
 			try {
 				if (globalThis.__statusPresetsInstance !== INSTANCE) return element // an older copy of the plugin is still loaded
-				if (!element || !element.props || element.props.__presetsAdded || !isStatusPicker(element)) return element
-				found.sheet += 1
-				if (!setting('inSheet')) return element
+				if (!element || !element.props || element.props.__presetsAdded) return element
 				const React = valenced.react.React
-				return React.cloneElement(element, { __presetsAdded: true }, [...element.props.children, h(SheetPresets, { key: 'status-presets' })])
+				if (isStatusPicker(element)) {
+					found.sheet += 1
+					if (!setting('inSheet')) return element
+					return React.cloneElement(element, { __presetsAdded: true }, [...element.props.children, h(SheetPresets, { key: 'status-presets' })])
+				}
+				if (isStatusEditor(element)) {
+					found.editor += 1
+					if (!setting('inEditor')) return element
+					const kids = element.props.children
+					return React.cloneElement(element, { __presetsAdded: true }, [...kids.slice(0, 3), h(EditorPresets, { key: 'status-presets' }), ...kids.slice(3)])
+				}
+				return element
 			} catch (e) { return element }
 		}
 		;['jsx', 'jsxs'].forEach((name) => {
@@ -424,7 +488,8 @@
 			`version: ${VERSION}`,
 			`presets: ${presets.length} (${presets.map((p) => p.name).join(', ') || '-'})`,
 			`status settings: ${found.settings}`,
-			`status sheet seen: ${found.sheet} time(s); presets in the sheet: ${setting('inSheet') ? 'on' : 'off'}`,
+			`account sheet seen: ${found.sheet} time(s); presets there: ${setting('inSheet') ? 'on' : 'off'}`,
+			`"Set your status" screen seen: ${found.editor} time(s); presets there: ${setting('inEditor') ? 'on' : 'off'}`,
 			`my status now: ${nowLine()}`,
 			`undo saved: ${readUndo() ? readUndo().name : 'no'}`,
 			'last actions:',
@@ -453,7 +518,8 @@
 		let presence
 		try { presence = stores().SelfPresenceStore.getStatus() } catch (e) {}
 		add(!presence || presence === now.status, 'Both ways of reading your status agree', `settings: ${now.status}; presence store: ${presence || 'not found'}`)
-		add(found.sheet > 0, 'Status sheet found', found.sheet > 0 ? `seen ${found.sheet} time(s)` : 'Open your account sheet (You tab, tap your avatar) once, then run this again')
+		add(found.sheet > 0, 'Account sheet found', found.sheet > 0 ? `seen ${found.sheet} time(s)` : 'Open your account sheet (You tab, tap your avatar) once, then run this again')
+		add(found.editor > 0, '"Set your status" screen found', found.editor > 0 ? `seen ${found.editor} time(s)` : 'Open it once (tap your custom status), then run this again')
 		const presets = readPresets()
 		add(presets.length > 0, 'Presets saved', `${presets.length} preset(s)`)
 		if (!s) return done(results)
@@ -697,6 +763,7 @@
 							Design.TableRowGroup,
 							{ key: 'options', title: 'Options' },
 							h(Design.TableSwitchRow, { key: 'inSheet', label: 'Show presets in my account sheet', subLabel: 'Under the status picker (You tab, tap your avatar)', value: !!setting('inSheet'), onValueChange: (value) => saveSettings({ inSheet: !!value }) }),
+							h(Design.TableSwitchRow, { key: 'inEditor', label: 'Show presets on the “Set your status” screen', subLabel: 'Between “Clear at” and “Delete status”. Tapping one applies it and closes the screen.', value: !!setting('inEditor'), onValueChange: (value) => saveSettings({ inEditor: !!value }) }),
 							h(Design.TableSwitchRow, { key: 'buzz', label: 'Vibrate when a preset is applied', value: !!setting('buzz'), onValueChange: (value) => saveSettings({ buzz: !!value }) }),
 						),
 						h(

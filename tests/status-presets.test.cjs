@@ -73,7 +73,7 @@ function load(settings = {}, options = {}) {
 		react: { React, ReactNative: { View: 'View', ScrollView: 'ScrollView', Pressable: 'Pressable', Vibration: { vibrate() {} } }, ReactJSXRuntime: runtime },
 		externals: { ReactNativeClipboard: { Clipboard: { setString: (text) => { global.copied = text } } } },
 		discord: {
-			actions: { ToastActionCreators: { open: (k, o) => toasts.push(o.text) }, ActionSheetActionCreators: { hideAllActionSheets: () => hidden.push(1) } },
+			actions: { ToastActionCreators: { open: (k, o) => toasts.push(o.text) }, ActionSheetActionCreators: { hideAllActionSheets: () => hidden.push(1) }, ModalActionCreators: { pop: () => hidden.push('modal') } },
 			design: { Design: new Proxy({}, { get: (_, key) => key }) },
 			flux: { Stores: { SelfPresenceStore: { getStatus: () => mods.StatusSetting.value } } },
 		},
@@ -297,6 +297,42 @@ const has = (tree, text) => texts(tree).some((t) => t.includes(text))
 		check('an older copy of the plugin does nothing once a newer one is loaded', stale.props.children.length === 2)
 	}
 
+	// 7b. The "Set your status" screen
+	{
+		const app = load({}, { status: 'online' })
+		const editor = () => {
+			const row = app.runtime.jsx('Row', { label: 'Clear at', arrow: true, trailing: 'Don\'t clear' })
+			return app.runtime.jsx('View', { children: [
+				app.runtime.jsx('View', { children: 'preview' }),
+				app.runtime.jsxs('View', { children: [app.runtime.jsx('Text', {}), app.runtime.jsx('View', {})] }),
+				app.runtime.jsx('Group', { hasIcons: false, children: row }),
+				app.runtime.jsx('Group', { hasIcons: true, children: app.runtime.jsx('Row', { label: 'Delete status' }) }),
+			] })
+		}
+		const screen = editor()
+		const kids = screen.props.children
+		check('presets are added to the "Set your status" screen, between Clear at and Delete', kids.length === 5 && kids[3].type.name === 'EditorPresets' && kids[4].props.children.props.label === 'Delete status', JSON.stringify(kids.map((c) => c.type && (c.type.name || c.type))))
+		const group = expandAt(kids[3], 'editor', { dirty: false })
+		check('...listing the presets and a "save current status" row', has(group, 'Sleeping') && has(group, '＋ Save my current status as a preset'))
+		press(group, '😴 Sleeping')
+		check('tapping one applies it', app.mods.StatusSetting.value === 'dnd')
+		await sleep(5)
+		check('...and closes the screen', app.hidden.includes('modal'))
+		press(group, '＋ Save my current status as a preset')
+		check('"save current status" adds a preset', app.presets().length === 8)
+		const noCustom = app.runtime.jsx('View', { children: [app.runtime.jsx('View', {}), app.runtime.jsxs('View', { children: [1, 2] }), app.runtime.jsx('Group', { hasIcons: false, children: app.runtime.jsx('Row', { arrow: true, trailing: 'x' }) })] })
+		check('it also works when there is no "Delete status" group yet', noCustom.props.children.length === 4)
+		const unrelated = app.runtime.jsx('View', { children: [app.runtime.jsx('A', {}), app.runtime.jsx('B', {}), app.runtime.jsx('Group', { hasIcons: false, children: app.runtime.jsx('Row', {}) })] })
+		check('other screens are left alone', unrelated.props.children.length === 3)
+		const copy = load()
+		const e2 = copy.runtime.jsx('View', { children: [copy.runtime.jsx('View', {}), copy.runtime.jsxs('View', { children: [1, 2] }), copy.runtime.jsx('Group', { hasIcons: false, children: copy.runtime.jsx('Row', { arrow: true, trailing: 'x' }) })] })
+		findAll(copy.screen(), (n) => n.props && n.props.label === 'Show presets on the “Set your status” screen')[0].props.onValueChange(false)
+		const e3 = copy.runtime.jsx('View', { children: [copy.runtime.jsx('View', {}), copy.runtime.jsxs('View', { children: [1, 2] }), copy.runtime.jsx('Group', { hasIcons: false, children: copy.runtime.jsx('Row', { arrow: true, trailing: 'x' }) })] })
+		check('the switch turns it off', e2.props.children.length === 4 && e3.props.children.length === 3)
+		press(copy.screen(), 'Copy report')
+		check('the report counts both screens', /"Set your status" screen seen: 2 time/.test(global.copied) && /account sheet seen: 0/.test(global.copied), global.copied)
+	}
+
 	// 8. Self-check and report
 	{
 		const app = load({}, { status: 'dnd' })
@@ -304,9 +340,9 @@ const has = (tree, text) => texts(tree).some((t) => t.includes(text))
 		await sleep(700)
 		const text = texts(app.screen()).join('|')
 		check('the self-check finds the settings and passes the round trip', /✓ Found Discord’s status settings/.test(text) && /✓ Round trip/.test(text), text)
-		check('...and says the sheet has not been opened yet', /✗ Status sheet found/.test(text))
+		check('...and says the sheets have not been opened yet', /✗ Account sheet found/.test(text))
 		press(app.screen(), 'Copy report')
-		check('the report lists version, presets, status and actions', /Status Presets report/.test(global.copied) && /version: 1\.0\.0/.test(global.copied) && /my status now: Do Not Disturb/.test(global.copied), global.copied)
+		check('the report lists version, presets, status and actions', /Status Presets report/.test(global.copied) && /version: 1\.1\.0/.test(global.copied) && /my status now: Do Not Disturb/.test(global.copied), global.copied)
 		const lost = load({}, { missing: true })
 		press(lost.screen(), 'Run the self-check')
 		await sleep(50)
