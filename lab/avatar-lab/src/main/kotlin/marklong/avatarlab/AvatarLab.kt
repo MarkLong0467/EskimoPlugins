@@ -141,6 +141,43 @@ private fun draweeAnimatable(v: View): Pair<String, Animatable?> {
     return "${ctrl.javaClass.name}${if (ag == null) " (no animatable getter)" else ""}" to a
 }
 
+
+private fun uriOf(ctrl: Any): String? {
+    var c: Class<*>? = ctrl.javaClass
+    while (c != null && c != Any::class.java) {
+        for (f in c.declaredFields) {
+            if (Modifier.isStatic(f.modifiers) || f.type.isPrimitive || f.type == String::class.java) continue
+            val o = runCatching { f.isAccessible = true; f.get(ctrl) }.getOrNull() ?: continue
+            val m = o.javaClass.methods.firstOrNull { it.parameterCount == 0 && it.returnType == android.net.Uri::class.java } ?: continue
+            return runCatching { (m.invoke(o) as? android.net.Uri)?.toString() }.getOrNull()
+        }
+        c = c.superclass
+    }
+    return null
+}
+
+private val stopCallers = Collections.synchronizedSet(LinkedHashSet<String>())
+
+/** Counts start/stop of Fresco's animated drawable and notes who calls stop. */
+private fun hookAnimation(scope: PluginScope) {
+    val c = runCatching { scope.classLoader.loadClass("xj.a") }.getOrNull()
+    if (c == null) { notes += "no class xj.a"; return }
+    for (name in listOf("start", "stop")) {
+        c.declaredMethods.filter { it.name == name && it.parameterCount == 0 && !it.isBridge }.forEach { m ->
+            unhooks += XposedBridge.hookMethod(m, object : XC_MethodHook() {
+                override fun beforeHookedMethod(p: MethodHookParam) {
+                    bump("xj.a.$name calls")
+                    if (name == "stop" && stopCallers.size < 12) {
+                        val f = Throwable().stackTrace.drop(3).firstOrNull { !it.className.startsWith("xj.") && !it.className.startsWith("android.") && !it.className.startsWith("java.") && !it.className.startsWith("de.robv") }
+                        if (f != null) stopCallers += "${f.className}.${f.methodName}"
+                    }
+                }
+            })
+            notes += "xj.a.$name: hooked"
+        }
+    }
+}
+
 private fun collect(v: View, out: MutableMap<Animatable, Boolean>, seen: MutableMap<Any, Boolean>, budget: IntArray) {
     if (budget[0]-- <= 0) return
     if (isDrawee(v) && v.width > 0) runCatching {
@@ -148,8 +185,11 @@ private fun collect(v: View, out: MutableMap<Animatable, Boolean>, seen: Mutable
         bump("drawee views seen")
         if (a != null) { out[a] = true; classesSeen += a.javaClass.name; bump("drawee with animation") }
         else if (v.width >= 100) bump("drawee big without animation")
-        draweeLines["${v.width}x${v.height} #${System.identityHashCode(v) % 1000}"] =
-            "controller=$ctrl; animation=${a?.javaClass?.name ?: "none"}${if (a != null) " running=" + a.isRunning else ""}"
+        if (v.width >= 100) {
+            val uri = (runCatching { v.javaClass.getMethod("getController").invoke(v) }.getOrNull() ?: ctrlGetter?.let { m -> runCatching { m.invoke(v) }.getOrNull() })?.let { uriOf(it) }
+            draweeLines["${if (a != null) "A" else "-"} ${v.width}x${v.height} #${System.identityHashCode(v) % 1000}"] =
+                "animation=${a?.javaClass?.name ?: "none"}${if (a != null) " running=" + a.isRunning else ""}; uri=${uri?.substringAfter("://")?.take(120) ?: "?"}"
+        }
     }
     runCatching {
         (v as? ImageView)?.let { addDrawable(it.drawable, out) }
@@ -243,6 +283,7 @@ val avatarLab = plugin {
             if (!started) {
                 started = true
                 runCatching { hookTargets(this) }.onFailure { notes += "hook error: ${it::class.java.name}: ${it.message}" }
+                runCatching { hookAnimation(this) }.onFailure { notes += "animation hook error: ${it::class.java.name}: ${it.message}" }
             }
             if (!running) { running = true; handler.post(loop) }
             "running"
@@ -255,7 +296,9 @@ val avatarLab = plugin {
                 append("## animated picture classes found\n")
                 synchronized(classesSeen) { classesSeen.forEach { append("  $it\n") } }
                 append("## fresco views on screen (latest sweep)\n")
-                synchronized(draweeLines) { draweeLines.entries.take(24).forEach { append("  ${it.key}: ${it.value}\n") } }
+                synchronized(draweeLines) { draweeLines.entries.sortedBy { it.key }.take(30).forEach { append("  ${it.key}: ${it.value}\n") } }
+                append("## who stops Fresco animations\n")
+                synchronized(stopCallers) { stopCallers.forEach { append("  $it\n") } }
                 append("## tree of one chat message\n")
                 append(lastTree ?: "  no chat message was on screen yet. Tap Start, open a chat, scroll it, then come back.\n")
                 append("## hooks and first calls\n")

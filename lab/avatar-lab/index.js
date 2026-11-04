@@ -1,6 +1,6 @@
 (function (exports) {
 	/* Avatar Fix test (native). One button. Keeps the animated pictures in the chat playing. */
-	const VERSION = '0.6.1'
+	const VERSION = '0.7.0'
 	let text = 'Tap the button, then open a chat with animated avatars.'
 	let listeners = []
 	const redraw = () => listeners.forEach((fn) => { try { fn() } catch (e) {} })
@@ -43,7 +43,7 @@
 				h(Design.Button, { text: 'Start', variant: 'primary', size: 'md', onPress: go }),
 				h(Design.Button, { text: 'Refresh and copy report', variant: 'secondary', size: 'md', onPress: async () => { await refresh(); try { valenced.externals.ReactNativeClipboard.Clipboard.setString(`Avatar Fix test ${VERSION}\n${text}`); toast('Copied') } catch (e) { toast('Could not copy') } } }),
 				h(Design.Button, { text: 'Stop', variant: 'tertiary', size: 'sm', onPress: stop }),
-				h(Design.Text, { variant: 'text-xs/normal', selectable: true }, text.slice(0, 1500))))
+				h(Design.Text, { variant: 'text-xs/normal', selectable: true }, text.slice(0, 1200))))
 	}
 	Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
 	exports.default = plugin({ SettingsComponent: Screen, start(api) { api.cleanup(() => { listeners = [] }) } })
