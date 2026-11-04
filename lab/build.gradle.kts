@@ -6,6 +6,7 @@ import javax.inject.Inject
 
 plugins {
     id("com.android.library") version "9.2.1" apply false
+    id("org.jetbrains.kotlin.android") version "2.4.10" apply false
 }
 
 interface Exec { @get:Inject val ops: ExecOperations }
