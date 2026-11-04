@@ -1,0 +1,23 @@
+{
+	"format": 1,
+	"id": "marklong.status-presets",
+	"name": "Status Presets",
+	"description": "Save your online status and custom status (text, emoji and an end time) as presets and switch with one tap, from the plugin settings or from your account sheet. Includes Undo and a self-check.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [
+		"StatusPresets for Equicord (the idea; code written from scratch for Valenced)",
+		"Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
+	],
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
