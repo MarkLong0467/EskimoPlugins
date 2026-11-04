@@ -1405,6 +1405,19 @@
               "version": "*"
             }
           }
+        },
+        "1.2.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.always-animate@1.2.0.zip",
+          "sha256": "e8ec0a0c7f7854dee00068a7a2920ba533e74e93beee86af65c82ecb2cf9dad7",
+          "size": 9526,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
         }
       },
       "name": "Always Animate",
@@ -1415,7 +1428,7 @@
         "Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
       ],
       "channels": {
-        "latest": "1.1.0"
+        "latest": "1.2.0"
       }
     },
     "marklong.status-presets": {
