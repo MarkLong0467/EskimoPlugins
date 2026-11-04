@@ -1,6 +1,6 @@
 (function (exports) {
 	/* Avatar Fix test (native). One button. Keeps the animated pictures in the chat playing. */
-	const VERSION = '0.5.1'
+	const VERSION = '0.5.2'
 	let text = 'Tap the button, then open a chat with animated avatars.'
 	let listeners = []
 	const redraw = () => listeners.forEach((fn) => { try { fn() } catch (e) {} })

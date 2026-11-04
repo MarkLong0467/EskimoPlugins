@@ -40,6 +40,8 @@ private val classesSeen = Collections.synchronizedSet(LinkedHashSet<String>())
 private val unhooks = mutableListOf<XC_MethodHook.Unhook>()
 private val handler = Handler(Looper.getMainLooper())
 @Volatile private var running = false
+@Volatile private var lastTree: String? = null
+@Volatile private var lastTreeAt = 0L
 @Volatile private var started = false
 
 private fun bump(key: String) = stats.getOrPut(key) { AtomicInteger() }.incrementAndGet()
@@ -127,8 +129,17 @@ private fun sweep() {
     val found = IdentityHashMap<Animatable, Boolean>()
     val seen = IdentityHashMap<Any, Boolean>()
     val budget = intArrayOf(600)
-    for (root in roots.take(120)) if (root.isAttachedToWindow) collect(root, found, seen, budget)
+    var attached = 0
+    for (root in roots.take(120)) if (root.isAttachedToWindow) { attached++; collect(root, found, seen, budget) }
+    stats.getOrPut("attached views now") { AtomicInteger() }.set(attached)
     stats.getOrPut("animations found now") { AtomicInteger() }.set(found.size)
+    if (found.size > (stats["animations found at most"]?.get() ?: 0)) stats.getOrPut("animations found at most") { AtomicInteger() }.set(found.size)
+    // Snapshot of a chat message while the chat is on screen, so the report is right even when read from settings.
+    val now = System.currentTimeMillis()
+    if (now - lastTreeAt > 3000) {
+        val msg = roots.firstOrNull { it.javaClass.name.endsWith("MessageView") && it.isAttachedToWindow && it.height > 0 }
+        if (msg != null) { lastTree = describeTree(msg); lastTreeAt = now; bump("tree snapshots") }
+    }
     for (a in found.keys) {
         runCatching {
             if (!a.isRunning) { a.start(); bump("restarted") } else bump("already running")
@@ -196,8 +207,7 @@ val avatarLab = plugin {
                 append("## animated picture classes found\n")
                 synchronized(classesSeen) { classesSeen.forEach { append("  $it\n") } }
                 append("## tree of one chat message\n")
-                val root = synchronized(tracked) { tracked.firstOrNull { it.javaClass.name.endsWith("MessageView") && it.isAttachedToWindow && it.height > 0 } }
-                append(if (root == null) "  none attached\n" else describeTree(root))
+                append(lastTree ?: "  no chat message was on screen yet. Tap Start, open a chat, scroll it, then come back.\n")
                 append("## hooks and first calls\n")
                 synchronized(notes) { notes.take(40).forEach { append("  $it\n") } }
             }
