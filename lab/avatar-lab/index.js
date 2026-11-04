@@ -1,6 +1,6 @@
 (function (exports) {
 	/* Avatar Lab (native test): shows what the native part found inside Discord's Android code. Changes nothing. */
-	const VERSION = '0.1.0'
+	const VERSION = '0.2.0'
 	let text = 'Not asked yet.'
 	let listeners = []
 	const redraw = () => listeners.forEach((fn) => { try { fn() } catch (e) {} })
@@ -36,7 +36,7 @@
 				h(RN.View, { style: { flexDirection: 'row', gap: 10 } },
 					h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Ask the native part', variant: 'primary', size: 'sm', onPress: ask })),
 					h(RN.View, { style: { flex: 1 } }, h(Design.Button, { text: 'Copy report', variant: 'secondary', size: 'sm', onPress: () => { try { valenced.externals.ReactNativeClipboard.Clipboard.setString(`Avatar Lab ${VERSION}\n${text}`); toast('Copied') } catch (e) { toast('Could not copy') } } }))),
-				h(Design.Text, { variant: 'text-xs/normal', selectable: true }, text.slice(0, 1500))))
+				h(Design.Text, { variant: 'text-xs/normal', selectable: true }, text.slice(0, 2500))))
 	}
 	Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
 	exports.default = plugin({ SettingsComponent: Screen, start(api) { api.cleanup(() => { listeners = [] }); ask() } })
