@@ -36,6 +36,9 @@ function load(settings = {}, options = {}) {
 	const toasts = []
 	const emitted = []
 	const subs = []
+	class AccessProto { get prefersReducedMotion() { return options.prefersMotion !== false } get useReducedMotion() { return this.prefersReducedMotion } }
+	const accessStore = new AccessProto()
+	accessStore.emitChange = () => emitted.push('AccessibilityStore')
 	const chatModule = { default: function createMessageContent(input) { return { id: 'row', ...(input || {}) } } }
 	const rowsModule = { generateMessageRowData: (input) => ({ type: 'MESSAGE', message: { id: 'row', ...(input || {}) } }) }
 	const React = {
@@ -46,7 +49,7 @@ function load(settings = {}, options = {}) {
 	global.valenced = {
 		react: { React, ReactNative: { View: 'V', ScrollView: 'S' }, ReactJSXRuntime: runtime },
 		externals: { ReactNativeClipboard: { Clipboard: { setString: (text) => { global.copied = text } } } },
-		discord: { actions: { ToastActionCreators: { open: (k, o) => toasts.push(o.text) } }, design: { Design: new Proxy({}, { get: (_, key) => key }) }, flux: { Stores: options.noStores ? {} : { GuildStore: { emitChange: () => emitted.push('GuildStore') }, GuildMemberStore: { emitChange: () => emitted.push('GuildMemberStore') }, UserStore: { emitChange: () => emitted.push('UserStore') }, MessageStore: { emitChange: () => emitted.push('MessageStore') } } } },
+		discord: { actions: { ToastActionCreators: { open: (k, o) => toasts.push(o.text) } }, design: { Design: new Proxy({}, { get: (_, key) => key }) }, flux: { Stores: options.noStores ? {} : { AccessibilityStore: options.noAccessibility ? undefined : accessStore, GuildStore: { emitChange: () => emitted.push('GuildStore') }, GuildMemberStore: { emitChange: () => emitted.push('GuildMemberStore') }, UserStore: { emitChange: () => emitted.push('UserStore') }, MessageStore: { emitChange: () => emitted.push('MessageStore') } } } },
 		patcher: {
 			after: (object, key, fn) => { const original = object[key]; object[key] = function (...a) { const r = original.apply(this, a); const x = fn.call(this, r); return x === undefined ? r : x }; return () => { object[key] = original } },
 			instead: (object, key, fn) => { const original = object[key]; object[key] = function (...a) { return fn.call(this, a, original) }; return () => { object[key] = original } },
@@ -73,8 +76,9 @@ function load(settings = {}, options = {}) {
 	const json = { get cache() { return data.cache }, use() { return data.cache }, set(patch) { Object.assign(data.cache, patch) } }
 	const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'always-animate', 'index.js'), 'utf8')
 	const plugin = new Function('valenced', 'plugin', `return ${source}`)(global.valenced, global.plugin).default
-	plugin.start({ cleanup: (fn) => fn, jsonStorage: json })
-	return { plugin, data, json, runtime, log, avatarUtils, avatarModule, accessibility, toasts, emitted, subs, chatModule, rowsModule }
+	const cleanups = []
+	plugin.start({ cleanup: (fn) => { cleanups.push(fn); return fn }, jsonStorage: json })
+	return { plugin, data, json, runtime, log, avatarUtils, avatarModule, accessibility, toasts, emitted, subs, chatModule, rowsModule, accessStore, cleanups }
 }
 const user = (animated) => ({ id: '123456789012345678', avatar: `${animated ? 'a_' : ''}0123456789abcdef`, discriminator: '0' })
 const texts = (node, out = []) => {
@@ -258,12 +262,33 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	check('with the chat switch off the format choice is hidden', !findAll(expand(off.plugin.SettingsComponent({ api: { jsonStorage: off.json } })), (n) => n.props && n.props.title === 'Chat: kind of animated picture').length)
 }
 
+// 2g. Reduce motion
+{
+	const app = load()
+	check('"reduce motion" is answered no while the switch is on', app.accessStore.useReducedMotion === false && app.accessStore.prefersReducedMotion === false)
+	const report = () => { findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress(); return global.copied }
+	check('the report says what Discord answered before and how often the plugin changed it', /reduce motion before the plugin: Discord said true, phone\/Discord setting true; answered no [1-9]\d* of [1-9]\d* times/.test(report()), report())
+	check('the stores are told to announce a change, so open screens read it again', app.emitted.includes('AccessibilityStore'))
+	check('the switch is listed as hooked', /motion: on; AccessibilityStore \(useReducedMotion, prefersReducedMotion\)/.test(global.copied))
+	app.json.set({ motion: false })
+	check('with the switch off Discord\u2019s own answer comes back', app.accessStore.useReducedMotion === true && app.accessStore.prefersReducedMotion === true)
+	app.json.set({ motion: true })
+	check('...and on again', app.accessStore.useReducedMotion === false)
+	app.cleanups.forEach((fn) => { try { fn() } catch (e) {} })
+	check('when the plugin stops, Discord\u2019s own getters are back', !Object.prototype.hasOwnProperty.call(app.accessStore, 'useReducedMotion') && app.accessStore.useReducedMotion === true)
+	const calm = load({}, { prefersMotion: false })
+	check('if reduce motion was off already nothing is said to have been changed, and it stays off', calm.accessStore.useReducedMotion === false && (() => { findAll(expand(calm.plugin.SettingsComponent({ api: { jsonStorage: calm.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress(); return /Discord said false/.test(global.copied) && /answered no 0 of/.test(global.copied) })(), global.copied)
+	const none = load({}, { noAccessibility: true })
+	findAll(expand(none.plugin.SettingsComponent({ api: { jsonStorage: none.json } })), (n) => n.props && n.props.text === 'Copy report')[0].props.onPress()
+	check('without the store the plugin starts and says so', /motion: on; not found/.test(global.copied), global.copied)
+}
+
 // 2c. Drawing the pictures on screen again
 {
 	const app = load()
 	const screenFind = (label) => findAll(expand(app.plugin.SettingsComponent({ api: { jsonStorage: app.json } })), (n) => n.props && n.props.text === label)[0]
 	screenFind('Refresh the pictures on screen').props.onPress()
-	check('the button makes the stores that draw pictures announce a change', app.emitted.join() === 'GuildStore,GuildMemberStore,UserStore,MessageStore' && app.toasts.some((x) => /drawn again/.test(x)))
+	check('the button makes the stores that draw pictures announce a change', app.emitted.filter((x) => x !== 'AccessibilityStore').join() === 'GuildStore,GuildMemberStore,UserStore,MessageStore' && app.toasts.some((x) => /drawn again/.test(x)))
 	const lost = load({}, { noStores: true })
 	findAll(expand(lost.plugin.SettingsComponent({ api: { jsonStorage: lost.json } })), (n) => n.props && n.props.text === 'Refresh the pictures on screen')[0].props.onPress()
 	check('without the stores it says so', lost.toasts.some((x) => /Could not refresh/.test(x)))
@@ -308,10 +333,10 @@ const findAll = (tree, test, out = []) => { if (Array.isArray(tree)) tree.forEac
 	const screen = (settings) => { const a = load(settings); return { a, tree: expand(a.plugin.SettingsComponent({ api: { jsonStorage: a.json } })) } }
 	const { a, tree } = screen({})
 	const shown = texts(tree).join('|')
-	check('the screen shows all eight switches', ['Pictures', 'Emoji', 'Stickers', 'GIFs', 'Status emoji', 'Still pictures of animated things', 'Chat: pictures and decorations next to messages', 'Everything else (advanced)'].every((t) => shown.includes(t)), shown.slice(0, 300))
+	check('the screen shows all nine switches', ['Pictures', 'Emoji', 'Stickers', 'GIFs', 'Status emoji', 'Still pictures of animated things', 'Chat: pictures and decorations next to messages', 'Ignore "Reduce motion"', 'Everything else (advanced)'].every((t) => shown.includes(t)), shown.slice(0, 300))
 	check('each switch says what it covers and whether it was found', /AvatarUtils \(\d+ places?, \d+ functions\)/.test(shown) && /UserSettings\.AnimateEmoji/.test(shown), shown.slice(0, 400))
 	const switches = findAll(tree, (n) => n.type === 'TableSwitchRow' && n.props.label)
-	check('there are eight switches', switches.length === 8, String(switches.length))
+	check('there are nine switches', switches.length === 9, String(switches.length))
 	switches.find((s) => s.props.label === 'GIFs').props.onValueChange(false)
 	check('a switch saves', a.data.cache.gifs === false)
 	const reportApp = load()

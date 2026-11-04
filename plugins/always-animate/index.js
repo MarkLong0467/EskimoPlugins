@@ -21,7 +21,7 @@
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
 
-	const VERSION = '1.3.2'
+	const VERSION = '1.4.0'
 
 	// ---------------------------------------------------------------------------------------------------
 	// Small helpers
@@ -58,6 +58,7 @@
 		{ key: 'statusEmoji', on: true, title: 'Status emoji', blurb: 'The emoji of a custom status.' },
 		{ key: 'chat', on: true, title: 'Chat: pictures and decorations next to messages', blurb: 'The profile picture and avatar decoration beside each message. Discord builds these from plain addresses, so they are fixed on the way to the chat.' },
 		{ key: 'addresses', on: true, title: 'Still pictures of animated things', blurb: 'A safety net: when a screen is about to show the still version of an animated server icon, profile picture or banner, it gets the animated one. This catches what the other switches miss, for example the server list.' },
+		{ key: 'motion', on: true, title: 'Ignore "Reduce motion"', blurb: 'Discord switches animations off in the chat and elsewhere when your phone or Discord says "reduce motion" (or Game Mode is throttling). This makes Discord think motion is always fine.' },
 		{ key: 'everything', on: false, title: 'Everything else (advanced)', blurb: 'Switches on every `animate` or `canAnimate` property Discord gives its screens. This can animate things Discord keeps still on purpose.' },
 	]
 	const defaults = { ...Object.fromEntries(FEATURES.map((f) => [f.key, f.on])), chatFormat2: 'gif' }
@@ -378,12 +379,52 @@
 		return valenced.react.React.cloneElement(element, { source: fixed })
 	}
 
+	// "Reduce motion": `AccessibilityStore.useReducedMotion` is `GameModeStore.isThrottling || prefersReducedMotion`
+	// (modules/a11y/AccessibilityStore.tsx). Rows of the chat are built with it (`createMessageContent` reads it for
+	// attachments and embeds) and many screens read it. Both are getters on the store's prototype, so the store itself
+	// gets its own getters in front of them, which answer "no" while the switch is on.
+	const motionWas = { reduced: undefined, prefers: undefined, found: false, overridden: 0 }
+	function descriptorOf(object, name) {
+		for (let o = object; o; o = Object.getPrototypeOf(o)) { const d = Object.getOwnPropertyDescriptor(o, name); if (d) return d }
+		return null
+	}
+	function ignoreReducedMotion(cleanup) {
+		let store
+		try { store = valenced.discord.flux.Stores.AccessibilityStore } catch (e) {}
+		if (!store) { found.motion = 'not found'; return }
+		const names = ['useReducedMotion', 'prefersReducedMotion']
+		const own = {}
+		names.forEach((name) => {
+			const original = descriptorOf(store, name)
+			if (!original) return
+			own[name] = Object.getOwnPropertyDescriptor(store, name)
+			const read = () => (original.get ? original.get.call(store) : original.value)
+			try { motionWas[name === 'useReducedMotion' ? 'reduced' : 'prefers'] = read() } catch (e) {}
+			try {
+				Object.defineProperty(store, name, {
+					configurable: true,
+					enumerable: original.enumerable,
+					get() {
+						const real = read()
+						if (!setting('motion')) return real
+						if (real) countSeen('motion', true); else countSeen('motion', false)
+						return false
+					},
+				})
+				motionWas.found = true
+			} catch (e) { reportProblem(`could not override ${name}`, e) }
+		})
+		found.motion = motionWas.found ? 'AccessibilityStore (useReducedMotion, prefersReducedMotion)' : 'not found'
+		cleanup(() => { names.forEach((name) => { try { if (own[name]) Object.defineProperty(store, name, own[name]); else delete store[name] } catch (e) {} }) })
+		try { if (typeof store.emitChange === 'function') store.emitChange() } catch (e) {}
+	}
+
 	/** Makes the pictures that are already on screen be drawn again, now that the plugin is in place. */
 	function refreshPictures() {
 		let count = 0
 		try {
 			const stores = valenced.discord.flux.Stores
-			;['GuildStore', 'GuildMemberStore', 'UserStore', 'MessageStore'].forEach((name) => {
+			;['GuildStore', 'GuildMemberStore', 'UserStore', 'MessageStore', 'AccessibilityStore'].forEach((name) => {
 				const store = stores && stores[name]
 				if (store && typeof store.emitChange === 'function') { store.emitChange(); count += 1 }
 			})
@@ -393,7 +434,7 @@
 		return count
 	}
 	const refreshed = { count: 0, at: 0 }
-	const PICTURE_SWITCHES = ['pictures', 'addresses', 'chat', 'everything']
+	const PICTURE_SWITCHES = ['pictures', 'addresses', 'chat', 'motion', 'everything']
 	let refreshTimer
 	/** After a switch changed, the pictures on screen are drawn again once things have settled. */
 	function scheduleRefresh() {
@@ -471,6 +512,7 @@
 
 	function buildReport() {
 		const lines = ['Always Animate report', `version: ${VERSION}`]
+		lines.push(`reduce motion before the plugin: Discord said ${motionWas.reduced}, phone/Discord setting ${motionWas.prefers}; answered no ${forced.motion} of ${seen.motion} times`)
 		lines.push(`chat picture format: ${setting('chatFormat2')}; chat sample: ${chatSample || 'none yet'}`)
 		lines.push(`chat rows seen ${chatCounts.rows}: with an animated profile picture ${chatCounts.animatedAvatars}, with a decoration ${chatCounts.decorations}; animated picture sample: ${chatAvatarSample || 'none yet'}`)
 		lines.push(`pictures drawn again: ${refreshed.count}x${refreshed.at ? `, last ${new Date(refreshed.at).toLocaleTimeString()}` : ''}`)
@@ -569,12 +611,12 @@
 				),
 				h(RN.View, { style: { gap: 4 } },
 					h(Design.Text, { variant: 'text-sm/semibold', color: 'text-muted' }, 'WHAT ANIMATES'),
-					h(Design.TableRowGroup, { title: '' }, ...FEATURES.slice(0, 7).map(featureRow))),
+					h(Design.TableRowGroup, { title: '' }, ...FEATURES.slice(0, 8).map(featureRow))),
 				setting('chat') && h(Radio, { key: 'chatFormat2', title: 'Chat: kind of animated picture', value: setting('chatFormat2'), onChange: (v) => { saveSettings({ chatFormat2: v }); scheduleRefresh() }, items: [
 					{ v: 'webp', l: 'Animated webp', s: 'What Discord uses for animated pictures' },
 					{ v: 'gif', l: 'GIF', s: 'Try this if the chat does not play the webp. Only for profile pictures' },
 				] }),
-				h(Design.TableRowGroup, { title: 'Advanced' }, featureRow(FEATURES[7])),
+				h(Design.TableRowGroup, { title: 'Advanced' }, featureRow(FEATURES[8])),
 				h(
 					Design.TableRowGroup,
 					{ title: 'Good to know' },
@@ -600,6 +642,7 @@
 			attempt('emoji, stickers and GIFs', () => allowAccessibilityAnimations(api.cleanup))
 			attempt('status emoji', () => animateElements(api.cleanup))
 			attempt('chat rows', () => hookChatRows(api.cleanup))
+			attempt('reduce motion', () => ignoreReducedMotion(api.cleanup))
 			// The server list and other screens were drawn before the plugin was in place: draw them again.
 			const timers = [1500, 5000].map((ms) => setTimeout(refreshPictures, ms))
 			// What was not found yet is looked for again a few times, and the pictures drawn again when it turns up.
