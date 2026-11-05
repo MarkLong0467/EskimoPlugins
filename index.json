@@ -356,7 +356,7 @@
         "pylix (https://github.com/nexpid/RevengePlugins \"Original Message Preview for Revenge\")"
       ],
       "channels": {
-        "latest": "1.0.2"
+        "latest": "1.0.3"
       },
       "versions": {
         "1.0.0": {
@@ -389,6 +389,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.message-preview@1.0.2.zip",
           "sha256": "423b81958739aacd98137f2295a4e47d5e761b80170ba1d16d675f80abc92dae",
           "size": 4948,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.0.3": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.message-preview@1.0.3.zip",
+          "sha256": "5f7bc6f8750d36aec5dbd5a474eb93bd34f55c88bea2874dc35ce2bb4261fdb2",
+          "size": 3600,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -1195,7 +1208,7 @@
         "MSMA (https://github.com/Martinz64/vendetta-plugins \"Original CopyRoleColor for Vendetta, public domain\")"
       ],
       "channels": {
-        "latest": "1.0.1"
+        "latest": "1.0.2"
       },
       "versions": {
         "1.0.0": {
@@ -1215,6 +1228,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.role-options@1.0.1.zip",
           "sha256": "07e2088a40611d9a25b1381bb80b46eecadb52f16c8258eb2c42424c08d71371",
           "size": 4050,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.0.2": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.role-options@1.0.2.zip",
+          "sha256": "aeb79d8eebe780b9e268d8d440e974b0b8c3b24f63d9012618286687685c9de6",
+          "size": 2818,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
