@@ -21,6 +21,9 @@ const reply = (body, status = 200, url) => ({ ok: status >= 200 && status < 300,
 globalThis.fetch = async (url) => {
 	net.calls.push(url)
 	const u = new URL(url)
+	// A slow network: the extra lookups (track info, Apple Music) take net.delay milliseconds.
+	if (net.delay && (u.host === 'itunes.apple.com' || (u.host === 'ws.audioscrobbler.com' && u.searchParams.get('method') === 'track.getinfo'))) await sleep(net.delay)
+	if (net.hang && u.host === 'ws.audioscrobbler.com') return new Promise(() => {})
 	if (u.host === 'ws.audioscrobbler.com') {
 		if (u.searchParams.get('api_key') !== 'KEY') return reply({ error: 10, message: 'Invalid API key - You must be granted a valid key by last.fm' }, 403)
 		if (u.searchParams.get('method') === 'user.getrecenttracks') return reply(net.recent)
@@ -87,10 +90,10 @@ const stopped = () => ({ recenttracks: { track: [{ artist: { '#text': 'Forss' },
 
 ;(async () => {
 	const cleanups = []
-	const sc = load('soundcloud-presence', '{ parseLink, lookup, poll, fetchNowPlaying, pickImage, effective, merge, read, apply, SettingsComponent, getAuto: function () { return auto }, showTrack, setGap: function (n) { gapMs = n }, setRecheck: function (n) { recheckMs = n } }')
+	const sc = load('soundcloud-presence', '{ parseLink, lookup, poll, fetchNowPlaying, pickImage, effective, merge, read, apply, SettingsComponent, getAuto: function () { return auto }, showTrack, dispatchActivity, setRate: function (max, ms) { rateMax = max; rateWindow = ms }, setTimeoutMs: function (n) { requestTimeout = n }, setRecheck: function (n) { recheckMs = n } }')
 	const rp = load('rich-presence')
 	const T = sc.__t
-	T.setGap(0) // no waiting between updates, except in the test that checks the waiting
+	T.setRate(1000, 1) // no waiting between updates, except in the tests that check the waiting
 	T.setRecheck(60)
 
 	// -- Rich Presence: the preset button builds a SoundCloud profile
@@ -114,8 +117,15 @@ const stopped = () => ({ recenttracks: { track: [{ artist: { '#text': 'Forss' },
 	check('nothing playing: Rich Presence shows nothing (showOnlyWhen)', idle && idle.activity === null, idle)
 
 	// -- SoundCloud Presence: automatic mode, handing the track to Rich Presence
-	const scStore = makeStore({ autoEnabled: true, lfmUser: 'chase', lfmKey: 'KEY', output: 'rich', pollSeconds: '15' })
+	// The timer is recorded but never fires, so the tests decide exactly when Last.fm is checked.
+	const intervals = []
+	const realSetInterval = global.setInterval
+	global.setInterval = (fn, ms) => { intervals.push(ms); return 0 }
+	const scStore = makeStore({ autoEnabled: true, lfmUser: 'chase', lfmKey: 'KEY', output: 'rich', pollSeconds: '5' })
 	sc.default.start({ jsonStorage: scStore, cleanup: (fn) => cleanups.push(fn) })
+	await sleep(50)
+	global.setInterval = realSetInterval
+	check('Last.fm can be checked every 5 seconds', intervals.includes(5000), intervals)
 	await sleep(100)
 
 	net.recent = nowPlaying('Forss', 'Flickermood')
@@ -214,11 +224,13 @@ const stopped = () => ({ recenttracks: { track: [{ artist: { '#text': 'Forss' },
 	net.itunes = [{ trackName: 'Song Z', artistName: 'Artist Z', artworkUrl100: 'https://is1.example/art/100x100bb.jpg' }]
 	net.recent = nowPlaying('Artist Z', 'Song Z (Radio Edit)', [])
 	await T.poll()
+	await sleep(150) // the cover is looked up after the song is already shown
 	check('Apple Music supplies the cover when Last.fm has none', T.getAuto().artwork === 'https://is1.example/art/600x600bb.jpg', T.getAuto())
 
 	net.itunes = [{ trackName: 'Song Y', artistName: 'Somebody Different', artworkUrl100: 'https://is1.example/wrong/100x100bb.jpg' }]
 	net.recent = nowPlaying('Artist Y', 'Song Y', [])
 	await T.poll()
+	await sleep(150)
 	check('a result by a different artist is never used', T.getAuto().artwork === '', T.getAuto())
 
 	net.itunes = [{ trackName: 'Song X', artistName: 'Artist X', artworkUrl100: 'https://is1.example/x/100x100bb.jpg' }]
@@ -226,6 +238,7 @@ const stopped = () => ({ recenttracks: { track: [{ artist: { '#text': 'Forss' },
 	const appleBefore = appleCalls()
 	net.recent = nowPlaying('Artist X', 'Song X', [])
 	await T.poll()
+	await sleep(150)
 	check('with "Find missing covers" off, Apple is not asked', appleCalls() === appleBefore && T.getAuto().artwork === '', [appleBefore, appleCalls()])
 
 	await scStore.set({ ...scStore.cache, fallbackCover: false }, true)
@@ -257,7 +270,7 @@ const stopped = () => ({ recenttracks: { track: [{ artist: { '#text': 'Forss' },
 
 	// -- Updates are spaced out and repeats are dropped (Discord allows 5 updates per 20 seconds)
 	const countSc = () => dispatched.filter((d) => d.socketId === 'EskimoSoundCloudPresence').length
-	T.setGap(400)
+	T.setRate(1, 400)
 	await sleep(450)
 	let before = countSc()
 	await T.apply(); await T.apply(); await T.apply()
@@ -275,7 +288,53 @@ const stopped = () => ({ recenttracks: { track: [{ artist: { '#text': 'Forss' },
 	const burstTotal = countSc() - before
 	check('the burst becomes two updates in all, not three', burstTotal === 2, burstTotal)
 	check('and the last one sent is the newest song', lastFor('EskimoSoundCloudPresence').activity.details === 'Song C', lastFor('EskimoSoundCloudPresence').activity)
-	T.setGap(0)
+	T.setRate(1000, 1)
+
+	// -- Discord's limit is 5 updates per 20 seconds, so 4 are sent at once and only the newest one after that waits
+	T.setRate(2, 600)
+	await sleep(700)
+	before = countSc()
+	T.dispatchActivity({ name: 'rate-1' })
+	T.dispatchActivity({ name: 'rate-2' })
+	T.dispatchActivity({ name: 'rate-3' })
+	check('updates inside the allowance are sent at once', countSc() === before + 2, [before, countSc()])
+	T.dispatchActivity({ name: 'rate-3' })
+	await sleep(750)
+	check('the update over the allowance waits, then goes out', countSc() === before + 3 && lastFor('EskimoSoundCloudPresence').activity.name === 'rate-3', [before, countSc()])
+	check('and an identical repeat of it is never sent', (T.dispatchActivity({ name: 'rate-3' }), countSc() === before + 3))
+	T.setRate(1000, 1)
+
+	// -- A song change shows up at once, before the extra lookups finish
+	await scStore.set({ ...scStore.cache, output: 'own' }, true)
+	net.delay = 300
+	net.info = { track: { duration: '180000' } }
+	net.itunes = []
+	net.recent = nowPlaying('Fast Artist', 'Fast Song', [])
+	const t0 = Date.now()
+	await T.poll()
+	const quickMs = Date.now() - t0
+	const quick = lastFor('EskimoSoundCloudPresence').activity
+	check('the new song is on the profile before the slow lookups return', quickMs < 250 && quick && quick.details === 'Fast Song', [quickMs, quick && quick.details])
+	check('first it has no progress bar, because the length is not known yet', quick && quick.timestamps && !quick.timestamps.end, quick && quick.timestamps)
+	await sleep(600)
+	const filled = lastFor('EskimoSoundCloudPresence').activity
+	check('then the length arrives and the progress bar appears', filled && filled.details === 'Fast Song' && filled.timestamps.end - filled.timestamps.start === 180000, filled && filled.timestamps)
+	net.delay = 0
+
+	// -- A request that never answers cannot block the next check
+	T.setTimeoutMs(150)
+	net.hang = true
+	let hung = null
+	const h0 = Date.now()
+	try { await T.fetchNowPlaying() } catch (e) { hung = String(e.message) }
+	check('a stuck Last.fm request gives up and says so', hung && /did not answer in time/.test(hung) && Date.now() - h0 < 1000, [hung, Date.now() - h0])
+	await T.poll()
+	net.hang = false
+	T.setTimeoutMs(8000)
+	net.recent = nowPlaying('After Hang', 'Works Again', [])
+	await T.poll()
+	await sleep(100)
+	check('the next check works normally afterwards', T.getAuto() && T.getAuto().title === 'Works Again', T.getAuto())
 
 	// -- Discord reconnecting drops local activities, so the last one is sent again
 	before = countSc()
@@ -294,11 +353,42 @@ const stopped = () => ({ recenttracks: { track: [{ artist: { '#text': 'Forss' },
 	await sleep(100)
 	check('Test Last.fm reports what is playing', toasts.some((t) => /Connected\. Now playing: Flickermood by Forss/.test(t)), toasts)
 
+	check('the settings offer 5 and 10 second checks', JSON.stringify(tree).includes('Every 5 seconds') && JSON.stringify(tree).includes('Every 10 seconds'))
+
+	// -- When a song with a known length ends, Last.fm is asked at once what is next (the timer never fires in this test)
+	net.info = { track: { duration: '600' } }
+	net.recent = nowPlaying('End Artist', 'End Song', [])
+	await T.poll()
+	await sleep(150)
+	check('a song with a known length is on the profile', T.getAuto() && T.getAuto().title === 'End Song' && T.getAuto().duration === 600, T.getAuto())
+	net.recent = nowPlaying('Next Artist', 'Next Song', [])
+	await sleep(2000)
+	check('the next song is picked up when the last one ends, without waiting for a timed check', T.getAuto() && T.getAuto().title === 'Next Song', T.getAuto())
+	net.info = { track: { duration: '180000' } }
+
 	// -- Clean up
 	cleanups.forEach((fn) => fn())
 	await sleep(50)
 	check('stopping the plugins clears the status', lastFor('EskimoSoundCloudPresence').activity === null)
 	check('and removes the Rich Presence hook', globalThis.eskimoRichPresence === undefined)
+
+	// -- Upgrading: the old 30 second default becomes 10 once, other choices are kept (a fresh copy of the plugin for each)
+	for (const [saved, expected, label] of [['30', '10', 'the old 30 second default moves to 10'], ['15', '15', 'a chosen 15 seconds is kept'], ['60', '60', 'a chosen minute is kept']]) {
+		const fresh = load('soundcloud-presence')
+		const upgradeStore = makeStore({ pollSeconds: saved })
+		const doneFns = []
+		fresh.default.start({ jsonStorage: upgradeStore, cleanup: (fn) => doneFns.push(fn) })
+		await sleep(100)
+		check(`on upgrade, ${label}`, upgradeStore.cache.pollSeconds === expected && upgradeStore.cache.fastDefaultApplied === true, upgradeStore.cache)
+		doneFns.forEach((fn) => fn())
+	}
+	const again = load('soundcloud-presence')
+	const changedStore = makeStore({ pollSeconds: '30', fastDefaultApplied: true })
+	const againFns = []
+	again.default.start({ jsonStorage: changedStore, cleanup: (fn) => againFns.push(fn) })
+	await sleep(100)
+	check('after the upgrade, choosing 30 seconds yourself is left alone', changedStore.cache.pollSeconds === '30', changedStore.cache)
+	againFns.forEach((fn) => fn())
 
 	console.log(failed ? `\n${failed} FAILED` : '\nall passed')
 	process.exit(failed ? 1 : 0)

@@ -22,8 +22,15 @@
 	var LINK_RE = /https?:\/\/(?:www\.|m\.|on\.)?soundcloud\.com\/[^\s<>"')]+/i
 	var LASTFM_BLANK = '2a96cbd8b46e442fc41c2b86b821562f'
 	var RICH_VARS = ['sc_title', 'sc_artist', 'sc_url', 'sc_art', 'sc_button']
-	// Discord allows a client 5 presence updates per 20 seconds, so updates are spaced out and repeats are dropped.
-	var MIN_GAP_MS = 4500
+	// Discord allows a client 5 presence updates per 20 seconds. Four are sent inside any 20 seconds, so a song change goes
+	// out at once and only a long burst has to wait. Repeats of the same update are dropped.
+	var RATE_MAX = 4
+	var RATE_WINDOW_MS = 20000
+	// A stuck request must not block the next check.
+	var REQUEST_TIMEOUT_MS = 8000
+	// When a track with a known length ends, Last.fm is asked right away what plays next.
+	var END_POLL_GRACE_MS = 1000
+	var MIN_POLL_SECONDS = 5
 	// Between two songs Last.fm can briefly report nothing. One quick second look stops the status flickering off.
 	var MISS_RECHECK_MS = 8000
 	// Shown as the cover when no real one can be found. It lives in the plugin's own repository.
@@ -40,9 +47,11 @@
 		{ v: 2, l: 'Track title', s: 'Listening to the song' },
 	]
 	var POLLS = [
-		{ v: '15', l: 'Every 15 seconds', s: 'Quickest to notice a new song. Uses the most battery.' },
-		{ v: '30', l: 'Every 30 seconds', s: 'A good balance.' },
-		{ v: '60', l: 'Every minute', s: 'Lightest on battery.' },
+		{ v: '5', l: 'Every 5 seconds', s: 'Fastest. A new song shows up within seconds. Uses the most battery and data.' },
+		{ v: '10', l: 'Every 10 seconds', s: 'Quick, and a fair balance.' },
+		{ v: '15', l: 'Every 15 seconds', s: 'A little lighter.' },
+		{ v: '30', l: 'Every 30 seconds', s: 'Slower to notice a new song. Lighter on battery.' },
+		{ v: '60', l: 'Every minute', s: 'Slowest. Lightest on battery.' },
 	]
 	var OUTPUTS = [
 		{ v: 'own', l: 'This plugin', s: 'SoundCloud Presence sets your status itself.' },
@@ -68,7 +77,8 @@
 		autoEnabled: false,
 		lfmUser: '',
 		lfmKey: '',
-		pollSeconds: '30',
+		pollSeconds: '10',
+		fastDefaultApplied: false,
 		current: null,
 		recents: [],
 	}
@@ -86,11 +96,15 @@
 	var missPending = false
 	var missTimer
 	var lastSentJson = ''
-	var lastSentAt = 0
+	var sentTimes = []
 	var sendTimer
 	var pendingSend
-	var gapMs = MIN_GAP_MS
+	var rateMax = RATE_MAX
+	var rateWindow = RATE_WINDOW_MS
 	var recheckMs = MISS_RECHECK_MS
+	var requestTimeout = REQUEST_TIMEOUT_MS
+	var endPollTimer
+	var lastPollAt = 0
 	var status = { state: 'idle', text: '' }
 	var statusListeners = []
 	var assetCache = new Map()
@@ -122,6 +136,11 @@
 	}
 
 	function pad(n) { return n < 10 ? '0' + n : '' + n }
+
+	/** " · checked 4s ago" for the preview, so you can see the plugin is keeping up. */
+	function checkedAgo() {
+		return lastPollAt ? ' · checked ' + Math.max(0, Math.round((Date.now() - lastPollAt) / 1000)) + 's ago' : ''
+	}
 
 	function fmt(ms) {
 		var s = Math.max(0, Math.round(ms / 1000))
@@ -211,11 +230,29 @@
 		var key = String(s.lfmKey || '').trim()
 		if (!user || !key) throw new Error('Enter your Last.fm name and API key first')
 		var qs = Object.keys(params).map(function (k) { return k + '=' + encodeURIComponent(params[k]) }).join('&')
-		var res = await fetch('https://ws.audioscrobbler.com/2.0/?method=' + method + '&api_key=' + encodeURIComponent(key) + '&format=json&' + qs)
-		var data
-		try { data = await res.json() } catch (e) {}
-		if (!res.ok || (data && data.error)) throw new Error(data && data.message ? 'Last.fm: ' + data.message : 'Last.fm said no (' + res.status + ')')
-		return data
+		// The changing "_" value keeps a cached copy of an older answer from being served.
+		var url = 'https://ws.audioscrobbler.com/2.0/?method=' + method + '&api_key=' + encodeURIComponent(key) + '&format=json&' + qs + '&_=' + Date.now()
+		return withTimeout(
+			(async function () {
+				var res = await fetch(url)
+				var data
+				try { data = await res.json() } catch (e) {}
+				if (!res.ok || (data && data.error)) throw new Error(data && data.message ? 'Last.fm: ' + data.message : 'Last.fm said no (' + res.status + ')')
+				return data
+			})(),
+			'Last.fm did not answer in time',
+		)
+	}
+
+	/** Gives up on a request that takes too long, so one stuck request cannot hold up every later check. */
+	function withTimeout(promise, message) {
+		return new Promise(function (resolve, reject) {
+			var timer = setTimeout(function () { reject(new Error(message)) }, requestTimeout)
+			promise.then(
+				function (value) { clearTimeout(timer); resolve(value) },
+				function (error) { clearTimeout(timer); reject(error) },
+			)
+		})
 	}
 
 	function normalize(s) {
@@ -232,7 +269,7 @@
 	 */
 	async function findCover(artist, title) {
 		try {
-			var res = await fetch('https://itunes.apple.com/search?media=music&entity=song&limit=5&term=' + encodeURIComponent(artist + ' ' + title))
+			var res = await withTimeout(fetch('https://itunes.apple.com/search?media=music&entity=song&limit=5&term=' + encodeURIComponent(artist + ' ' + title)), 'Apple Music did not answer in time')
 			if (!res.ok) return ''
 			var data = await res.json()
 			var wantTitle = normalize(title)
@@ -281,6 +318,7 @@
 		var s = read()
 		if (polling || !active || !s.autoEnabled || !String(s.lfmUser).trim() || !String(s.lfmKey).trim()) return
 		polling = true
+		lastPollAt = Date.now()
 		try {
 			var np = await fetchNowPlaying()
 			if (!active) return
@@ -303,35 +341,61 @@
 			clearTimeout(missTimer)
 			var key = np.artist + '\u0001' + np.title
 			if (auto && auto.key === key) return
-			var duration = 0
-			var artwork = np.artwork
-			var album = np.album
-			try {
-				var info = await lastfm('track.getinfo', { artist: np.artist, track: np.title, autocorrect: '1' })
-				var found = info && info.track
-				duration = Number(found && found.duration) || 0
-				// The track's own album art fills in when the recent tracks list has none.
-				if (!artwork && found && found.album) artwork = pickImage(found.album.image)
-				if (!album && found && found.album) album = found.album.title || ''
-			} catch (e) {}
-			if (!artwork && s.coverLookup) artwork = await findCover(np.artist, np.title)
-			auto = {
+			// The new song goes on your profile right away. The length and a better cover are looked up afterwards.
+			var track = {
 				key: key,
 				url: '',
 				searchUrl: searchLink(np.artist, np.title),
 				title: np.title,
 				artist: np.artist,
 				artistUrl: '',
-				album: album || '',
-				artwork: artwork || '',
-				duration: duration,
+				album: np.album || '',
+				artwork: np.artwork || '',
+				duration: 0,
 				startedAt: Date.now(),
 			}
+			auto = track
 			await apply()
+			enrich(track)
 		} catch (error) {
 			setStatus({ state: 'error', text: String((error && error.message) || error) })
 		} finally {
 			polling = false
+			statusListeners.forEach(function (listener) { listener() })
+		}
+	}
+
+	/** Fills in what takes extra requests (length, album, cover) and updates the status once if anything was found. */
+	async function enrich(track) {
+		try {
+			var wantCover = !track.artwork && read().coverLookup
+			var results = await Promise.all([
+				lastfm('track.getinfo', { artist: track.artist, track: track.title, autocorrect: '1' }).then(function (v) { return v }, function () { return null }),
+				wantCover ? findCover(track.artist, track.title) : '',
+			])
+			if (!active || auto !== track) return
+			var found = results[0] && results[0].track
+			var changed = false
+			var duration = Number(found && found.duration) || 0
+			if (duration && duration !== track.duration) {
+				track.duration = duration
+				changed = true
+			}
+			if (!track.album && found && found.album && found.album.title) {
+				track.album = found.album.title
+				changed = true
+			}
+			if (!track.artwork) {
+				// The track's own album art is preferred, then the Apple Music result.
+				var art = (found && found.album && pickImage(found.album.image)) || results[1] || ''
+				if (art) {
+					track.artwork = art
+					changed = true
+				}
+			}
+			if (changed) await apply()
+		} catch (e) {
+			console.warn(TAG + ' extra lookups failed:', String(e))
 		}
 	}
 
@@ -346,7 +410,7 @@
 			}
 			return
 		}
-		var seconds = Math.max(15, parseInt(String(s.pollSeconds), 10) || 30)
+		var seconds = Math.max(MIN_POLL_SECONDS, parseInt(String(s.pollSeconds), 10) || 10)
 		pollTimer = setInterval(poll, seconds * 1000)
 		poll()
 	}
@@ -470,20 +534,22 @@
 
 	function flushSend() {
 		if (!pendingSend) return
-		var wait = lastSentAt + gapMs - Date.now()
-		if (wait > 0) {
-			// Too soon after the last update. Only the newest one waits, so a burst becomes two updates.
+		var now = Date.now()
+		sentTimes = sentTimes.filter(function (t) { return now - t < rateWindow })
+		if (sentTimes.length >= rateMax) {
+			// The allowance for this window is used up. Only the newest update waits for the oldest send to age out.
+			var wait = sentTimes[0] + rateWindow - now + 50
 			if (!sendTimer) sendTimer = setTimeout(function () { sendTimer = undefined; flushSend() }, wait)
 			return
 		}
 		var next = pendingSend
 		pendingSend = undefined
 		lastSentJson = next.json
-		lastSentAt = Date.now()
+		sentTimes.push(now)
 		sendActivity(next.activity)
 	}
 
-	/** Sends a status update, unless it is identical to the last one, and never faster than Discord allows. */
+	/** Sends a status update, unless it is identical to the last one, and never faster than Discord allows (4 per 20 s). */
 	function dispatchActivity(activity) {
 		var json = JSON.stringify(activity == null ? null : activity)
 		if (!pendingSend && json === lastSentJson) return
@@ -497,7 +563,7 @@
 		sendTimer = undefined
 		pendingSend = undefined
 		lastSentJson = JSON.stringify(activity == null ? null : activity)
-		lastSentAt = Date.now()
+		sentTimes.push(Date.now())
 		sendActivity(activity)
 	}
 
@@ -551,6 +617,7 @@
 
 	async function apply() {
 		clearTimeout(endTimer)
+		clearTimeout(endPollTimer)
 		if (!active) return
 		var seq = ++applySeq
 		var settings = read()
@@ -581,6 +648,11 @@
 				dispatchActivity(activity)
 			}
 			setStatus({ state: 'ok', text: '' })
+			// When a song with a known length is about to end, ask Last.fm what comes next without waiting for the next check.
+			if (settings.autoEnabled && track === auto && track.duration > 0) {
+				var trackEnd = track.startedAt + track.duration
+				endPollTimer = setTimeout(poll, Math.max(500, trackEnd - Date.now() + END_POLL_GRACE_MS))
+			}
 			if (settings.clearAtEnd && end) endTimer = setTimeout(function () { apply() }, Math.max(1000, end - Date.now() + 1500))
 		} catch (error) {
 			console.warn(TAG + ' apply failed:', String(error))
@@ -710,7 +782,7 @@
 				Design.Text,
 				{ variant: 'text-sm/medium', color: 'text-muted', style: { marginTop: 8 } },
 				s.autoEnabled
-					? 'Nothing is playing. Last.fm is checked ' + (s.pollSeconds || 30) + ' seconds apart.'
+					? 'Nothing is playing. Last.fm is checked ' + (s.pollSeconds || 10) + ' seconds apart.'
 					: 'Nothing is shown yet. Paste a SoundCloud link below to put a track on your profile.',
 			)
 		} else {
@@ -725,7 +797,7 @@
 				h(
 					RN.View,
 					{ style: st.text },
-					line('Listening to ' + side + (fromAuto ? ' · automatic' : ''), 'text-xs/semibold', 'text-muted'),
+					line('Listening to ' + side + (fromAuto ? ' · automatic' + checkedAgo() : ''), 'text-xs/semibold', 'text-muted'),
 					line(t.title, 'text-md/semibold'),
 					s.showArtist ? line(t.artist, 'text-sm/medium') : null,
 					s.timerMode === 'progress' && t.duration > 0
@@ -942,13 +1014,20 @@
 				active = false
 				clearTimeout(endTimer)
 				clearInterval(pollTimer)
+				clearTimeout(endPollTimer)
 				clearTimeout(missTimer)
 				missPending = false
 				try { clearRich() } catch (e) {}
 				try { dispatchNow(null) } catch (e) {}
 			})
-			Promise.resolve(storage.cache || storage.get()).then(function () {
+			Promise.resolve(storage.cache || storage.get()).then(async function () {
 				if (!active) return
+				if (!read().fastDefaultApplied) {
+					// 0.4.0 made 10 seconds the default. Anyone still on the old 30 second default moves to it once; any other choice stays.
+					var current = read()
+					await save({ fastDefaultApplied: true, pollSeconds: String(current.pollSeconds) === '30' ? '10' : current.pollSeconds })
+					if (!active) return
+				}
 				if (read().applyOnStart) apply()
 				restartPolling()
 				if (read().clipboardOnOpen) setTimeout(function () { checkClipboard(true) }, 2000)
