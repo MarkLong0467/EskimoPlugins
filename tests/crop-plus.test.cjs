@@ -1,6 +1,6 @@
 // Mock tests for Crop Plus. Run with: node tests/crop-plus.test.cjs
-const fs = require('fs')
-const path = require('path')
+// (build first: bun run build:dev, or just run `bun run test`). BUNDLE_DIR runs them against another build.
+const { readBundleSource } = require('./lib/harness.cjs')
 let failed = 0
 const check = (name, ok, extra) => {
 	console.log(`${ok ? 'ok   ' : 'FAIL '}${name}${ok || extra === undefined ? '' : `  -> ${extra}`}`)
@@ -80,7 +80,7 @@ function load(settings = {}, options = {}) {
 	global.plugin = (d) => d
 	const data = { cache: { ...settings } }
 	const json = { get cache() { return data.cache }, use() { return data.cache }, set(patch) { Object.assign(data.cache, patch) } }
-	const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'crop-plus', 'index.js'), 'utf8')
+	const { source } = readBundleSource('crop-plus')
 	const plugin = new Function('valenced', 'plugin', `return ${source}`)(global.valenced, global.plugin).default
 	plugin.start({ cleanup: (fn) => fn, jsonStorage: json })
 	const screen = () => expandAt({ type: plugin.SettingsComponent, props: { api: { jsonStorage: json } } }, 'root')
@@ -327,7 +327,7 @@ const sheets = async (app, n) => { for (let i = 0; i < 100 && app.state.sheets.l
 	{
 		const app = load()
 		let tree = app.screen()
-		check('the screen shows the state and how to use it', has(tree, 'Crop Plus 1.3.0') && has(tree, 'On') && has(tree, 'choose Edit image'))
+		check('the screen shows the state and how to use it', texts(tree).some((t) => /^Crop Plus \d+\.\d+\.\d+$/.test(t)) && has(tree, 'On') && has(tree, 'choose Edit image'))
 		findAll(tree, (n) => n.props && n.props.title === 'Where it works')[0].props.onChange('everywhere')
 		check('the scope is saved', app.data.cache.scope === 'everywhere')
 		findAll(app.screen(), (n) => n.props && n.props.title === 'Starting shape of the frame')[0].props.onChange('1:1')
@@ -350,7 +350,7 @@ const sheets = async (app, n) => { for (let i = 0; i < 100 && app.state.sheets.l
 		check('after a crop the self-check says so and shows the options', has(done.screen(), '✓ A crop has been done') && has(done.screen(), 'Options the cropper got last time') && has(done.screen(), '"path":"file:///photos/a.jpg"'))
 		check('...without Discord’s colours and texts', !has(done.screen(), 'cropperChooseColor'))
 		press(done.screen(), 'Copy report')
-		check('the report lists settings, hooks, counts and passes', /Crop Plus report/.test(global.copied) && /version: 1\.3\.0/.test(global.copied) && /cropper found; patched: openCropper/.test(global.copied) && /crops 1, passes 1/.test(global.copied) && /last passes: 1000 × 800/.test(global.copied), global.copied)
+		check('the report lists settings, hooks, counts and passes', /Crop Plus report/.test(global.copied) && /version: \d+\.\d+\.\d+/.test(global.copied) && /cropper found; patched: openCropper/.test(global.copied) && /crops 1, passes 1/.test(global.copied) && /last passes: 1000 × 800/.test(global.copied), global.copied)
 		const none = load({}, { late: true })
 		press(none.screen(), 'Self-check')
 		check('without the cropper the self-check says so and the state says waiting', has(none.screen(), '✗ Found the cropper') && has(none.screen(), 'Waiting for the cropper'))

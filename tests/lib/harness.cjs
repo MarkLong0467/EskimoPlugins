@@ -669,6 +669,22 @@ function mergeInto(target, source) {
 // ---------------------------------------------------------------------------------------------------------------
 
 /**
+ * Finds a plugin's bundle and reads it as text, without running it. For tests that run the bundle themselves against
+ * their own fake Discord. `BUNDLE_DIR` works as described for `loadPlugin`.
+ *
+ * @param {string} name The plugin's folder name.
+ * @returns {{ file: string, source: string }}
+ */
+function readBundleSource(name) {
+	const base = process.env.BUNDLE_DIR ? path.resolve(process.env.BUNDLE_DIR) : path.join(ROOT, 'plugins')
+	const candidates = [path.join(base, name, 'build', 'js', 'index.js')]
+	if (process.env.BUNDLE_DIR) candidates.push(path.join(base, name, 'index.js'))
+	const file = candidates.find(candidate => fs.existsSync(candidate))
+	if (!file) throw new Error(`No build for "${name}". Run: bun run build:dev ${name}`)
+	return { file, source: fs.readFileSync(file, 'utf8') }
+}
+
+/**
  * Loads a built plugin bundle. Build it first with `bun run build:dev <name>` (the test runner does this).
  *
  * Setting `BUNDLE_DIR` loads `<BUNDLE_DIR>/<name>/build/js/index.js` (or `<BUNDLE_DIR>/<name>/index.js` for a plugin
@@ -679,12 +695,7 @@ function mergeInto(target, source) {
  * @returns {{ definition: object, exports: object, source: string }}
  */
 function loadPlugin(name) {
-	const base = process.env.BUNDLE_DIR ? path.resolve(process.env.BUNDLE_DIR) : path.join(ROOT, 'plugins')
-	const candidates = [path.join(base, name, 'build', 'js', 'index.js')]
-	if (process.env.BUNDLE_DIR) candidates.push(path.join(base, name, 'index.js'))
-	const file = candidates.find(candidate => fs.existsSync(candidate))
-	if (!file) throw new Error(`No build for "${name}". Run: bun run build:dev ${name}`)
-	const source = fs.readFileSync(file, 'utf8')
+	const { file, source } = readBundleSource(name)
 	const exports = vm.runInThisContext(source, { filename: file })
 	if (!exports || !exports.default) throw new Error(`"${name}" did not export a plugin definition`)
 	return { definition: exports.default, exports, source }
@@ -740,6 +751,7 @@ module.exports = {
 	createReporter,
 	createRuntime,
 	loadPlugin,
+	readBundleSource,
 	startPlugin,
 	findNode,
 	findNodes,
