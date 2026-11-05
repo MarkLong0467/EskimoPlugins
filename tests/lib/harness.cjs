@@ -466,6 +466,8 @@ function recorder(log, label) {
  * @param {object} [options]
  * @param {object} [options.stores] Fake Flux stores, for example `{ UserStore: { getCurrentUser: () => ({}) } }`.
  * @param {object} [options.overrides] Deep-merged over the defaults, to add or replace any part of `valenced`.
+ * @param {boolean} [options.loopback] When true, `Dispatcher.dispatch(action)` also runs the action through the handlers
+ * plugins registered with `onFluxEventDispatched`, as Discord's own Flux would. The action is still recorded.
  */
 function createRuntime(options = {}) {
 	const react = createReact()
@@ -528,7 +530,16 @@ function createRuntime(options = {}) {
 				},
 			},
 			common: {
-				flux: { Dispatcher: { dispatch: action => log.dispatched.push(action), subscribe() {}, unsubscribe() {} } },
+				flux: {
+					Dispatcher: {
+						dispatch: action => {
+							log.dispatched.push(action)
+							if (options.loopback) fire(action.type, action)
+						},
+						subscribe() {},
+						unsubscribe() {},
+					},
+				},
 				tokens: { Tokens: { default: { colors: new Proxy({}, { get: (target, name) => `#${String(name)}` }) } } },
 				constants: {},
 				logger: { Logger: class {} },
@@ -662,13 +673,20 @@ function loadPlugin(name) {
 async function startPlugin(definition, runtime, options = {}) {
 	const cleanups = []
 	const errors = []
+	/** What the plugin asked the loader to do through `api.plugin`. */
+	const requests = { reload: 0, disable: 0, stop: 0 }
 	const storage = options.storage ?? runtime.makeStorage(definition.jsonStorage?.default ?? {})
 	const api = {
 		cleanup: (...fns) => cleanups.push(...fns),
 		decorate: () => {},
 		jsonStorage: storage,
 		logger: { log() {}, warn() {}, error() {}, info() {}, debug() {} },
-		plugin: { reportError: error => errors.push(error), disable() {}, stop() {}, requireReload() {} },
+		plugin: {
+			reportError: error => errors.push(error),
+			disable: () => requests.disable++,
+			stop: () => requests.stop++,
+			requireReload: () => requests.reload++,
+		},
 		unscoped: runtime.valenced,
 	}
 	if (definition.preInit) await definition.preInit(api)
@@ -678,6 +696,7 @@ async function startPlugin(definition, runtime, options = {}) {
 		api,
 		storage,
 		errors,
+		requests,
 		cleanups,
 		async stop() {
 			if (definition.stop) await definition.stop(api)

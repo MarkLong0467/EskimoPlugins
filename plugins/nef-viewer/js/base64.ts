@@ -1,4 +1,5 @@
-const Alphabet =
+/** The 64 characters base64 uses. */
+const ALPHABET =
 	'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 
 /** Encodes bytes as base64. Hermes lacks a guaranteed `btoa` for binary data. */
@@ -14,9 +15,9 @@ export function toBase64(bytes: Uint8Array) {
 			const b = i + 1 < end ? bytes[i + 1]! : 0
 			const c = i + 2 < end ? bytes[i + 2]! : 0
 			const n = (a << 16) | (b << 8) | c
-			s += Alphabet[(n >> 18) & 63]! + Alphabet[(n >> 12) & 63]!
-			s += i + 1 < end ? Alphabet[(n >> 6) & 63]! : '='
-			s += i + 2 < end ? Alphabet[n & 63]! : '='
+			s += ALPHABET[(n >> 18) & 63]! + ALPHABET[(n >> 12) & 63]!
+			s += i + 1 < end ? ALPHABET[(n >> 6) & 63]! : '='
+			s += i + 2 < end ? ALPHABET[n & 63]! : '='
 		}
 		parts.push(s)
 	}

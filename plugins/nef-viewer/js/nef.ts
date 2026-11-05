@@ -15,13 +15,15 @@ export interface PreviewLocation {
 	orientation: number
 }
 
-const TagCompression = 0x0103
-const TagOrientation = 0x0112
-const TagSubIFDs = 0x014a
-const TagJpegOffset = 0x0201
-const TagJpegLength = 0x0202
+// TIFF tag numbers this file looks at.
+const TAG_COMPRESSION = 0x0103
+const TAG_ORIENTATION = 0x0112
+const TAG_SUB_IFDS = 0x014a
+const TAG_JPEG_OFFSET = 0x0201
+const TAG_JPEG_LENGTH = 0x0202
 
-const TypeSizes: Record<number, number> = {
+/** Bytes per value for each TIFF data type, so an entry's total size (and whether it fits inline) can be worked out. */
+const TYPE_SIZES: Record<number, number> = {
 	1: 1,
 	2: 1,
 	3: 2,
@@ -37,8 +39,10 @@ const TypeSizes: Record<number, number> = {
 	13: 4,
 }
 
-const MaxIfds = 32
+/** Most image file directories followed in one file. It stops a damaged file from looping forever. */
+const MAX_IFDS = 32
 
+/** One entry of an image file directory (IFD). */
 interface IfdEntry {
 	type: number
 	count: number
@@ -46,6 +50,10 @@ interface IfdEntry {
 	valueOffset: number
 }
 
+/**
+ * Reads numbers and IFDs from a TIFF file through a `ByteReader`, in the byte order (little or big endian) the file
+ * declares in its header.
+ */
 class TiffReader {
 	constructor(
 		readonly read: ByteReader,
@@ -75,7 +83,7 @@ class TiffReader {
 			const p = i * 12
 			const type = this.u16(body, p + 2)
 			const n = this.u32(body, p + 4)
-			const size = (TypeSizes[type] ?? 1) * n
+			const size = (TYPE_SIZES[type] ?? 1) * n
 			entries.set(this.u16(body, p), {
 				type,
 				count: n,
@@ -124,7 +132,7 @@ export async function findPreview(
 	let best: { offset: number; length: number } | null = null
 	let orientation = 1
 
-	while (queue.length && seen.size < MaxIfds) {
+	while (queue.length && seen.size < MAX_IFDS) {
 		const offset = queue.shift()!
 		if (!offset || seen.has(offset)) continue
 		const isIfd0 = seen.size === 0
@@ -135,18 +143,18 @@ export async function findPreview(
 		const { entries, next } = ifd
 
 		if (isIfd0)
-			orientation = (await tiff.value(entries.get(TagOrientation))) ?? 1
+			orientation = (await tiff.value(entries.get(TAG_ORIENTATION))) ?? 1
 
-		const subIfds = entries.get(TagSubIFDs)
+		const subIfds = entries.get(TAG_SUB_IFDS)
 		if (subIfds) queue.push(...(await tiff.values(subIfds)))
 		if (next) queue.push(next)
 
-		const jpegOffset = await tiff.value(entries.get(TagJpegOffset))
-		const jpegLength = await tiff.value(entries.get(TagJpegLength))
+		const jpegOffset = await tiff.value(entries.get(TAG_JPEG_OFFSET))
+		const jpegLength = await tiff.value(entries.get(TAG_JPEG_LENGTH))
 		if (!jpegOffset || !jpegLength) continue
 
 		// Compression 6 is old-style JPEG, 7 is JPEG. Absent tag still allows a JPEG interchange block.
-		const compression = await tiff.value(entries.get(TagCompression))
+		const compression = await tiff.value(entries.get(TAG_COMPRESSION))
 		if (compression !== undefined && compression !== 6 && compression !== 7)
 			continue
 
