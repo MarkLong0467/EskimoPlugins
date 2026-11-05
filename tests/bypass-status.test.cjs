@@ -1,6 +1,6 @@
 // Mock tests for Bypass Status. Run with: node tests/bypass-status.test.cjs
-const fs = require('fs')
-const path = require('path')
+// (build first: bun run build:dev, or just run `bun run test`). BUNDLE_DIR runs them against another build.
+const { readBundleSource } = require('./lib/harness.cjs')
 let failed = 0
 const pending = []
 const check = (name, ok, extra) => {
@@ -66,6 +66,7 @@ function load(settings = {}, options = {}) {
 				},
 				FluxDispatcher: dispatcher,
 			},
+			common: { flux: { Dispatcher: dispatcher } },
 			actions: { ToastActionCreators: { open: (key, opts) => toasts.push(opts.text) }, ActionSheetActionCreators: { hideAllActionSheets: () => {} } },
 			design: { Design: new Proxy({}, { get: (_, key) => key }) },
 		},
@@ -78,7 +79,7 @@ function load(settings = {}, options = {}) {
 	global.plugin = (definition) => definition
 	const data = { cache: { ...settings } }
 	const json = { get cache() { return data.cache }, use() { return data.cache }, set(patch) { Object.assign(data.cache, JSON.parse(JSON.stringify(patch))) } }
-	const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'bypass-status', 'index.js'), 'utf8')
+	const { source } = readBundleSource('bypass-status')
 	const plugin = new Function('valenced', 'plugin', `return ${source}`)(global.valenced, global.plugin).default
 	plugin.start({ cleanup: (fn) => fn, jsonStorage: json })
 	return { plugin, data, json, runtime, dispatcher, notificationUtils, calls, toasts, vibrations, state, setClipboard: (t) => { clipboard = t }, setScreen: (name) => { cur = name; hi = 0 } }
