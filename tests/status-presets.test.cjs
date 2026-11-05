@@ -1,6 +1,6 @@
 // Mock tests for Status Presets. Run with: node tests/status-presets.test.cjs
-const fs = require('fs')
-const path = require('path')
+// (build first: bun run build:dev, or just run `bun run test`). BUNDLE_DIR runs them against another build.
+const { readBundleSource } = require('./lib/harness.cjs')
 let failed = 0
 const check = (name, ok, extra) => {
 	console.log(`${ok ? 'ok   ' : 'FAIL '}${name}${ok || extra === undefined ? '' : `  -> ${extra}`}`)
@@ -95,7 +95,7 @@ function load(settings = {}, options = {}) {
 	global.plugin = (definition) => definition
 	const data = { cache: { ...settings } }
 	const json = { get cache() { return data.cache }, use() { return data.cache }, set(patch) { Object.assign(data.cache, patch) } }
-	const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'status-presets', 'index.js'), 'utf8')
+	const { source } = readBundleSource('status-presets')
 	const plugin = new Function('valenced', 'plugin', `return ${source}`)(global.valenced, global.plugin).default
 	plugin.start({ cleanup: (fn) => fn, jsonStorage: json })
 	const screen = () => { const root = { dirty: false }; return expandAt({ type: plugin.SettingsComponent, props: { api: { jsonStorage: json } } }, 'root', root) }
@@ -278,7 +278,7 @@ const has = (tree, text) => texts(tree).some((t) => t.includes(text))
 		const radioRow = (v) => app.runtime.jsx('Row', { label: v }, v)
 		const group = app.runtime.jsx('Group', { children: ['online', 'idle', 'dnd', 'invisible'].map(radioRow) })
 		const sheet = app.runtime.jsxs('View', { children: [app.runtime.jsx('Heading', {}), group] })
-		check('presets are added under the status picker', sheet.props.children.length === 3 && sheet.props.children[2].type.name === 'SheetPresets', JSON.stringify(sheet.props.children.map((c) => c.type && (c.type.name || c.type))))
+		check('presets are added under the status picker', sheet.props.children.length === 3 && typeof sheet.props.children[2].type === 'function', JSON.stringify(sheet.props.children.map((c) => c.type && (c.type.name || c.type))))
 		const expanded = expandAt(sheet.props.children[2], 'sheet', { dirty: false })
 		check('...listing the presets', has(expanded, 'Sleeping'))
 		press(expanded, '😴 Sleeping')
@@ -311,7 +311,7 @@ const has = (tree, text) => texts(tree).some((t) => t.includes(text))
 		}
 		const screen = editor()
 		const kids = screen.props.children
-		check('presets are added to the "Set your status" screen, between Clear at and Delete', kids.length === 5 && kids[3].type.name === 'EditorPresets' && kids[4].props.children.props.label === 'Delete status', JSON.stringify(kids.map((c) => c.type && (c.type.name || c.type))))
+		check('presets are added to the "Set your status" screen, between Clear at and Delete', kids.length === 5 && typeof kids[3].type === 'function' && kids[4].props.children.props.label === 'Delete status', JSON.stringify(kids.map((c) => c.type && (c.type.name || c.type))))
 		const group = expandAt(kids[3], 'editor', { dirty: false })
 		check('...listing the presets and a "save current status" row', has(group, 'Sleeping') && has(group, '＋ Save my current status as a preset'))
 		press(group, '😴 Sleeping')
@@ -342,7 +342,7 @@ const has = (tree, text) => texts(tree).some((t) => t.includes(text))
 		check('the self-check finds the settings and passes the round trip', /✓ Found Discord’s status settings/.test(text) && /✓ Round trip/.test(text), text)
 		check('...and says the sheets have not been opened yet', /✗ Account sheet found/.test(text))
 		press(app.screen(), 'Copy report')
-		check('the report lists version, presets, status and actions', /Status Presets report/.test(global.copied) && /version: 1\.1\.0/.test(global.copied) && /my status now: Do Not Disturb/.test(global.copied), global.copied)
+		check('the report lists version, presets, status and actions', /Status Presets report/.test(global.copied) && /version: \d+\.\d+\.\d+/.test(global.copied) && /my status now: Do Not Disturb/.test(global.copied), global.copied)
 		const lost = load({}, { missing: true })
 		press(lost.screen(), 'Run the self-check')
 		await sleep(50)
