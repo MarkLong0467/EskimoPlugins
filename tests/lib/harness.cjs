@@ -113,6 +113,11 @@ function createReact() {
 		},
 		memo: component => component,
 		forwardRef: render => ({ $$render: render }),
+		Component: class Component {
+			constructor(props) {
+				this.props = props
+			}
+		},
 		useState(initial) {
 			const owner = current
 			const slot = useSlot(() => ({ value: typeof initial === 'function' ? initial() : initial }))
@@ -187,7 +192,9 @@ function createReact() {
 			type.$$context._value = props.value
 			return expand(props.children, position)
 		}
-		const component = typeof type === 'function' ? type : type?.$$render ? props0 => type.$$render(props0, null) : null
+		// A class component is made once per position and asked to render; it has no hooks, only props and state.
+		const isClass = typeof type === 'function' && type.prototype && typeof type.prototype.render === 'function'
+		const component = isClass ? props0 => { const made = new type(props0); made.props = props0; return made.render() } : typeof type === 'function' ? type : type?.$$render ? props0 => type.$$render(props0, null) : null
 		if (component) {
 			const where = `${position}/${component.displayName || component.name || 'Component'}${node.key != null ? `:${node.key}` : ''}`
 			let instance = instances.get(where)

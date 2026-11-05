@@ -105,6 +105,8 @@ const dateOf = id => new Date(Number(BigInt(id) >> 22n) + 1420070400000).toLocal
 		const s = await setup({ guild: undefined })
 		s.menu.default(GUILD)[1].action()
 		const view = await s.mountSheet(SHEET_KEY)
+		const scroller = findNode(view.tree, n => n.type === 'Design.BottomSheetScrollView')
+		check('the sheet scrolls with the own scroll view of the sheet, so it can be scrolled and pulled open', !!scroller && scroller.props.nestedScrollEnabled === true && scroller.props.maxHeight === undefined && scroller.props.style.maxHeight === 600, scroller && scroller.props)
 		check('the sheet has the server name', !!findNode(view.tree, n => n.type === 'Design.Text' && n.props.children === 'Test Server'))
 		check('the sheet has the description', !!findNode(view.tree, n => n.type === 'Design.Text' && n.props.children === 'About us'))
 		check('the banner is shown, animated hashes as gifs', !!findNode(view.tree, n => n.type === 'Image' && n.props.source?.uri === `https://cdn.discordapp.com/banners/${GUILD}/a_banner1.gif?size=512`))
