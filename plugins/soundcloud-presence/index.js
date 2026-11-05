@@ -22,6 +22,10 @@
 	var LINK_RE = /https?:\/\/(?:www\.|m\.|on\.)?soundcloud\.com\/[^\s<>"')]+/i
 	var LASTFM_BLANK = '2a96cbd8b46e442fc41c2b86b821562f'
 	var RICH_VARS = ['sc_title', 'sc_artist', 'sc_url', 'sc_art', 'sc_button']
+	// Discord allows a client 5 presence updates per 20 seconds, so updates are spaced out and repeats are dropped.
+	var MIN_GAP_MS = 4500
+	// Between two songs Last.fm can briefly report nothing. One quick second look stops the status flickering off.
+	var MISS_RECHECK_MS = 8000
 
 	var TIMER_MODES = [
 		{ v: 'progress', l: 'Progress bar', s: 'Counts up to the length of the track, then the status clears.' },
@@ -51,6 +55,8 @@
 		showArtwork: true,
 		showArtist: true,
 		showButton: true,
+		hideWithSpotify: true,
+		smallIcon: '',
 		buttonLabel: 'Listen on SoundCloud',
 		timerMode: 'progress',
 		statusText: 0,
@@ -73,6 +79,14 @@
 	var lastClip = ''
 	var auto = null
 	var richWarned = false
+	var missPending = false
+	var missTimer
+	var lastSentJson = ''
+	var lastSentAt = 0
+	var sendTimer
+	var pendingSend
+	var gapMs = MIN_GAP_MS
+	var recheckMs = MISS_RECHECK_MS
 	var status = { state: 'idle', text: '' }
 	var statusListeners = []
 	var assetCache = new Map()
@@ -218,7 +232,7 @@
 		var artist = (t.artist && (t.artist['#text'] || t.artist.name)) || ''
 		var title = t.name || ''
 		if (!title) return null
-		return { artist: artist, title: title, artwork: pickImage(t.image) }
+		return { artist: artist, title: title, album: (t.album && t.album['#text']) || '', artwork: pickImage(t.image) }
 	}
 
 	/** Checks Last.fm once and keeps `auto` in step with what is playing. */
@@ -231,17 +245,33 @@
 			if (!active) return
 			if (!np) {
 				if (auto) {
+					// The first time Last.fm reports nothing, look again shortly before clearing.
+					if (!missPending) {
+						missPending = true
+						clearTimeout(missTimer)
+						missTimer = setTimeout(poll, recheckMs)
+						return
+					}
+					missPending = false
 					auto = null
 					await apply()
 				}
 				return
 			}
+			missPending = false
+			clearTimeout(missTimer)
 			var key = np.artist + '\u0001' + np.title
 			if (auto && auto.key === key) return
 			var duration = 0
+			var artwork = np.artwork
+			var album = np.album
 			try {
-				var info = await lastfm('track.getinfo', { artist: np.artist, track: np.title })
-				duration = Number(info && info.track && info.track.duration) || 0
+				var info = await lastfm('track.getinfo', { artist: np.artist, track: np.title, autocorrect: '1' })
+				var found = info && info.track
+				duration = Number(found && found.duration) || 0
+				// The track's own album art fills in when the recent tracks list has none.
+				if (!artwork && found && found.album) artwork = pickImage(found.album.image)
+				if (!album && found && found.album) album = found.album.title || ''
 			} catch (e) {}
 			auto = {
 				key: key,
@@ -250,7 +280,8 @@
 				title: np.title,
 				artist: np.artist,
 				artistUrl: '',
-				artwork: np.artwork,
+				album: album || '',
+				artwork: artwork || '',
 				duration: duration,
 				startedAt: Date.now(),
 			}
@@ -361,8 +392,18 @@
 		if (settings.showArtwork && track.artwork) {
 			var image = await artworkAsset(track.artwork)
 			if (image) {
-				activity.assets = { large_image: image, large_text: track.title.slice(0, 128) }
+				// The hover text is the album when Last.fm knows it, else the title.
+				activity.assets = { large_image: image, large_text: (track.album || track.title).slice(0, 128) }
 				if (/^https?:\/\//i.test(track.url)) activity.assets.large_url = track.url
+			}
+		}
+		// An optional small icon, such as a SoundCloud logo you pick, in the corner of the cover.
+		var icon = String(settings.smallIcon || '').trim()
+		if (activity.assets && /^https?:\/\//i.test(icon)) {
+			var smallImage = await artworkAsset(icon)
+			if (smallImage) {
+				activity.assets.small_image = smallImage
+				activity.assets.small_text = 'SoundCloud'
 			}
 		}
 		if (settings.showButton) {
@@ -375,13 +416,59 @@
 		return activity
 	}
 
-	function dispatchActivity(activity) {
+	function sendActivity(activity) {
 		valenced.discord.common.flux.Dispatcher.dispatch({
 			type: 'LOCAL_ACTIVITY_UPDATE',
 			activity: activity,
 			pid: PID,
 			socketId: SOCKET,
 		})
+	}
+
+	function flushSend() {
+		if (!pendingSend) return
+		var wait = lastSentAt + gapMs - Date.now()
+		if (wait > 0) {
+			// Too soon after the last update. Only the newest one waits, so a burst becomes two updates.
+			if (!sendTimer) sendTimer = setTimeout(function () { sendTimer = undefined; flushSend() }, wait)
+			return
+		}
+		var next = pendingSend
+		pendingSend = undefined
+		lastSentJson = next.json
+		lastSentAt = Date.now()
+		sendActivity(next.activity)
+	}
+
+	/** Sends a status update, unless it is identical to the last one, and never faster than Discord allows. */
+	function dispatchActivity(activity) {
+		var json = JSON.stringify(activity == null ? null : activity)
+		if (!pendingSend && json === lastSentJson) return
+		pendingSend = { activity: activity, json: json }
+		flushSend()
+	}
+
+	/** Sends right away, for shutting down and for Discord reconnecting. */
+	function dispatchNow(activity) {
+		clearTimeout(sendTimer)
+		sendTimer = undefined
+		pendingSend = undefined
+		lastSentJson = JSON.stringify(activity == null ? null : activity)
+		lastSentAt = Date.now()
+		sendActivity(activity)
+	}
+
+	/** True while another app, such as Spotify, is already showing a "Listening to" card. */
+	function otherListening() {
+		try {
+			var store = valenced.discord.flux.Stores.LocalActivityStore
+			var list = (store && store.getActivities && store.getActivities()) || []
+			return list.some(function (a) {
+				return a && a.type === 2 && a.name !== 'SoundCloud' && String(a.application_id || '') !== '0'
+			})
+		} catch (e) {
+			return false
+		}
 	}
 
 	// ---- Handing the track to the Rich Presence plugin ---------------------------------------
@@ -427,6 +514,11 @@
 		var track = effective(settings)
 		try {
 			if (!settings.enabled || !track) {
+				clearRich()
+				return dispatchActivity(null)
+			}
+			if (settings.hideWithSpotify && otherListening()) {
+				setStatus({ state: 'hidden', text: 'Hidden while another app is showing what it plays, such as Spotify.' })
 				clearRich()
 				return dispatchActivity(null)
 			}
@@ -481,7 +573,7 @@
 		await save({ current: null })
 		setStatus({ state: 'idle', text: '' })
 		clearRich()
-		dispatchActivity(null)
+		dispatchNow(null)
 	}
 
 	async function checkClipboard(quiet) {
@@ -608,7 +700,7 @@
 				? h(RN.View, { style: st.button }, h(Design.Text, { variant: 'text-sm/semibold' }, buttonOf(s, t).label))
 				: null,
 			status.state === 'loading' ? h(Design.Text, { variant: 'text-xs/medium', color: 'text-muted', style: { marginTop: 8 } }, status.text) : null,
-			status.state === 'error' || status.state === 'ended'
+			status.state === 'error' || status.state === 'ended' || status.state === 'hidden'
 				? h(Design.Text, { variant: 'text-xs/medium', color: status.state === 'error' ? 'text-feedback-critical' : 'text-muted', style: { marginTop: 8 } }, status.text)
 				: null,
 			t && !s.enabled ? h(Design.Text, { variant: 'text-xs/medium', color: 'text-muted', style: { marginTop: 8 } }, 'Show status is off, so nothing is on your profile.') : null,
@@ -726,6 +818,7 @@
 				toggle('Show status', 'Put the current track on your Discord profile', 'enabled'),
 				toggle('Show again when Discord opens', 'Brings the last track back if it has not finished', 'applyOnStart'),
 				toggle('Clear when the track ends', 'Removes your status after the last second (progress bar only)', 'clearAtEnd'),
+				toggle('Hide while Spotify is playing', 'Steps aside so you do not show two "Listening to" cards at once', 'hideWithSpotify'),
 				toggle('Check the clipboard when Discord opens', 'In SoundCloud tap Share, then Copy link. Opening Discord shows it. Android may notify you that Discord read the clipboard.', 'clipboardOnOpen'),
 			),
 			radio('Show it with', 'output', OUTPUTS),
@@ -746,6 +839,15 @@
 						onCommit: function (value) { set('buttonLabel', value) },
 				  })
 				: null,
+			h(Field, {
+				key: 'smallIcon',
+				label: 'Small icon link',
+				description: 'Optional. A link to a small SoundCloud logo, or any image. It shows in the corner of the cover.',
+				placeholder: 'https://',
+				maxLength: 300,
+				value: settings.smallIcon,
+				onCommit: function (value) { set('smallIcon', value) },
+			}),
 			radio('Timer', 'timerMode', TIMER_MODES),
 			radio('Status text', 'statusText', STATUS_TEXTS),
 			section(
@@ -795,8 +897,10 @@
 				active = false
 				clearTimeout(endTimer)
 				clearInterval(pollTimer)
+				clearTimeout(missTimer)
+				missPending = false
 				try { clearRich() } catch (e) {}
-				try { dispatchActivity(null) } catch (e) {}
+				try { dispatchNow(null) } catch (e) {}
 			})
 			Promise.resolve(storage.cache || storage.get()).then(function () {
 				if (!active) return
@@ -814,13 +918,25 @@
 				})
 				cleanup(function () { try { sub.remove() } catch (e) {} })
 			} catch (e) {}
-			// Discord drops local activities on reconnect.
+			// Discord drops local activities on reconnect, so the last one has to be sent again.
 			cleanup(
 				valenced.discord.flux.onFluxEventDispatched('CONNECTION_OPEN', function (payload) {
+					lastSentJson = ''
 					setTimeout(function () { apply() }, 3000)
 					return payload
 				}),
 			)
+			// Spotify starting or stopping decides whether this status steps aside.
+			;['SPOTIFY_PLAYER_STATE', 'SPOTIFY_PLAYER_PLAY'].forEach(function (name) {
+				try {
+					cleanup(
+						valenced.discord.flux.onFluxEventDispatched(name, function (payload) {
+							if (read().hideWithSpotify) setTimeout(function () { apply() }, 1500)
+							return payload
+						}),
+					)
+				} catch (e) {}
+			})
 		},
 	})
 	return exports

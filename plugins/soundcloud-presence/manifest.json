@@ -4,7 +4,7 @@
 	"name": "SoundCloud Presence",
 	"description": "Show the SoundCloud track you are listening to on your Discord profile, with artwork, a progress bar and a button. It follows your Last.fm now playing automatically (with a scrobbler such as Pano Scrobbler), or takes a pasted link, and can hand the track to your Rich Presence plugin.",
 	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"

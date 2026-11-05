@@ -36,6 +36,7 @@ globalThis.fetch = async (url) => {
 // ---- A fake Discord --------------------------------------------------------------------------
 const dispatched = []
 const toasts = []
+const handlers = {} // Discord events the plugins subscribed to, so the tests can fire them
 const jsx = (t, p, k) => ({ t, p, k })
 const Design = new Proxy({ createStyles: () => () => ({}) }, { get: (o, k) => (k in o ? o[k] : String(k)) })
 globalThis.valenced = {
@@ -43,7 +44,10 @@ globalThis.valenced = {
 		common: { flux: { Dispatcher: { dispatch: (a) => dispatched.push(a) } }, tokens: { Tokens: { default: { colors: new Proxy({}, { get: () => '#000' }) } } } },
 		actions: { ToastActionCreators: { open: (id, o) => toasts.push(o.text) } },
 		design: { Design },
-		flux: { onFluxEventDispatched: () => () => {}, Stores: { UserStore: { getCurrentUser: () => ({ username: 'chase', globalName: 'Chase' }) } } },
+		flux: {
+			onFluxEventDispatched: (name, fn) => { (handlers[name] = handlers[name] || []).push(fn); return () => {} },
+			Stores: { UserStore: { getCurrentUser: () => ({ username: 'chase', globalName: 'Chase' }) } },
+		},
 	},
 	modules: {
 		finders: {
@@ -82,9 +86,11 @@ const stopped = () => ({ recenttracks: { track: [{ artist: { '#text': 'Forss' },
 
 ;(async () => {
 	const cleanups = []
-	const sc = load('soundcloud-presence', '{ parseLink, lookup, poll, fetchNowPlaying, pickImage, effective, merge, read, SettingsComponent, getAuto: function () { return auto }, showTrack }')
+	const sc = load('soundcloud-presence', '{ parseLink, lookup, poll, fetchNowPlaying, pickImage, effective, merge, read, apply, SettingsComponent, getAuto: function () { return auto }, showTrack, setGap: function (n) { gapMs = n }, setRecheck: function (n) { recheckMs = n } }')
 	const rp = load('rich-presence')
 	const T = sc.__t
+	T.setGap(0) // no waiting between updates, except in the test that checks the waiting
+	T.setRecheck(60)
 
 	// -- Rich Presence: the preset button builds a SoundCloud profile
 	const rpStore = makeStore(undefined)
@@ -137,10 +143,22 @@ const stopped = () => ({ recenttracks: { track: [{ artist: { '#text': 'Forss' },
 	check('Last.fm\'s blank star image is not used as artwork', act2 && !act2.assets, act2 && act2.assets)
 	check('with no known length it counts time elapsed', act2 && act2.timestamps && act2.timestamps.start && !act2.timestamps.end, act2 && act2.timestamps)
 
+	// A single empty report between songs must not clear the status: it looks again first.
+	net.recent = nowPlaying('Other Artist', 'Another Song')
+	await T.poll()
+	const keptStart = T.getAuto().startedAt
 	net.recent = stopped()
 	await T.poll()
-	await sleep(500)
-	check('when Last.fm stops reporting, the track is dropped', T.getAuto() === null)
+	check('one empty Last.fm report does not drop the track yet', T.getAuto() !== null)
+	net.recent = nowPlaying('Other Artist', 'Another Song')
+	await sleep(250)
+	check('and if it is playing again on the second look, nothing changes', T.getAuto() && T.getAuto().startedAt === keptStart)
+
+	net.recent = stopped()
+	await T.poll()
+	await sleep(300)
+	check('two empty reports in a row drop the track', T.getAuto() === null)
+	await sleep(400)
 	check('and Rich Presence clears your status', lastFor('EskimoRichPresence').activity === null)
 
 	// -- Errors
@@ -173,6 +191,66 @@ const stopped = () => ({ recenttracks: { track: [{ artist: { '#text': 'Forss' },
 	const manual = lastFor('EskimoSoundCloudPresence').activity
 	check('a pasted link shows with its real link, art and length', manual && manual.details === 'Flickermood' && manual.details_url === 'https://soundcloud.com/forss/flickermood' && manual.buttons[0] === 'Listen on SoundCloud' && manual.timestamps.end - manual.timestamps.start === 213890, manual)
 	check('the pasted link is remembered in Recent', scStore.cache.recents.length === 1 && scStore.cache.current.title === 'Flickermood')
+
+	// -- Artwork and album fallbacks, small icon, autocorrect
+	await scStore.set({ ...scStore.cache, output: 'own', smallIcon: 'https://example.com/sc.png' }, true)
+	net.recent = nowPlaying('Album Artist', 'Album Song', [])
+	net.info = { track: { duration: '180000', album: { title: 'Album X', image: [{ size: 'large', '#text': 'https://lastfm.example/i/u/300x300/album.jpg' }] } } }
+	await T.poll()
+	await sleep(300)
+	const withAlbum = lastFor('EskimoSoundCloudPresence').activity
+	check('with no recent-tracks art, the track\'s album art is used', T.getAuto().artwork === 'https://lastfm.example/i/u/300x300/album.jpg', T.getAuto())
+	check('the hover text on the cover is the album', withAlbum && withAlbum.assets && withAlbum.assets.large_text === 'Album X', withAlbum && withAlbum.assets)
+	check('the optional small icon is sent in the corner', withAlbum && withAlbum.assets && /^mp:/.test(withAlbum.assets.small_image) && withAlbum.assets.small_text === 'SoundCloud', withAlbum && withAlbum.assets)
+	check('track info is asked with autocorrect on', net.calls.some((u) => /method=track\.getinfo/.test(u) && /autocorrect=1/.test(u)))
+
+	// -- Hiding while Spotify is playing
+	const stores = globalThis.valenced.discord.flux.Stores
+	stores.LocalActivityStore = { getActivities: () => [{ type: 2, name: 'Spotify', application_id: '3201606009684' }] }
+	handlers.SPOTIFY_PLAYER_STATE.forEach((fn) => fn({}))
+	await sleep(1800)
+	check('a Spotify event makes the status step aside', lastFor('EskimoSoundCloudPresence').activity === null)
+	await scStore.set({ ...scStore.cache, hideWithSpotify: false }, true)
+	await T.apply()
+	await sleep(100)
+	check('with "Hide while Spotify is playing" off, it still shows', lastFor('EskimoSoundCloudPresence').activity !== null)
+	await scStore.set({ ...scStore.cache, hideWithSpotify: true }, true)
+	stores.LocalActivityStore = { getActivities: () => [{ type: 2, name: 'SoundCloud', application_id: '0' }] }
+	await T.apply()
+	await sleep(100)
+	check('its own activity does not hide itself', lastFor('EskimoSoundCloudPresence').activity !== null)
+	stores.LocalActivityStore = { getActivities: () => [] }
+	await T.apply()
+	await sleep(100)
+	check('with Spotify gone it shows again', lastFor('EskimoSoundCloudPresence').activity !== null)
+
+	// -- Updates are spaced out and repeats are dropped (Discord allows 5 updates per 20 seconds)
+	const countSc = () => dispatched.filter((d) => d.socketId === 'EskimoSoundCloudPresence').length
+	T.setGap(400)
+	await sleep(450)
+	let before = countSc()
+	await T.apply(); await T.apply(); await T.apply()
+	check('identical updates are not sent again', countSc() === before, [before, countSc()])
+	net.info = { track: { duration: '180000' } }
+	net.recent = nowPlaying('Burst Artist', 'Song A')
+	await T.poll()
+	net.recent = nowPlaying('Burst Artist', 'Song B')
+	await T.poll()
+	net.recent = nowPlaying('Burst Artist', 'Song C')
+	await T.poll()
+	const sentDuringBurst = countSc() - before
+	check('a burst of three changes sends at most two updates at first', sentDuringBurst <= 1, sentDuringBurst)
+	await sleep(700)
+	const burstTotal = countSc() - before
+	check('the burst becomes two updates in all, not three', burstTotal === 2, burstTotal)
+	check('and the last one sent is the newest song', lastFor('EskimoSoundCloudPresence').activity.details === 'Song C', lastFor('EskimoSoundCloudPresence').activity)
+	T.setGap(0)
+
+	// -- Discord reconnecting drops local activities, so the last one is sent again
+	before = countSc()
+	handlers.CONNECTION_OPEN.forEach((fn) => fn({}))
+	await sleep(3300)
+	check('after Discord reconnects the status is sent again', countSc() === before + 1, [before, countSc()])
 
 	// -- Settings screen
 	const tree = T.SettingsComponent({ api: { jsonStorage: scStore } })
