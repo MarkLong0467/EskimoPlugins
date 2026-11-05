@@ -631,12 +631,19 @@ function mergeInto(target, source) {
 /**
  * Loads a built plugin bundle. Build it first with `bun run build:dev <name>` (the test runner does this).
  *
+ * Setting `BUNDLE_DIR` loads `<BUNDLE_DIR>/<name>/build/js/index.js` (or `<BUNDLE_DIR>/<name>/index.js` for a plugin
+ * that was shipped as a ready-made bundle) instead of the one in this repository. Running the same test file against
+ * two builds of one plugin shows whether a rewrite behaves the same as the version it replaced.
+ *
  * @param {string} name The plugin's folder name, for example `split-large-messages`.
  * @returns {{ definition: object, exports: object, source: string }}
  */
 function loadPlugin(name) {
-	const file = path.join(ROOT, 'plugins', name, 'build', 'js', 'index.js')
-	if (!fs.existsSync(file)) throw new Error(`No build for "${name}". Run: bun run build:dev ${name}`)
+	const base = process.env.BUNDLE_DIR ? path.resolve(process.env.BUNDLE_DIR) : path.join(ROOT, 'plugins')
+	const candidates = [path.join(base, name, 'build', 'js', 'index.js')]
+	if (process.env.BUNDLE_DIR) candidates.push(path.join(base, name, 'index.js'))
+	const file = candidates.find(candidate => fs.existsSync(candidate))
+	if (!file) throw new Error(`No build for "${name}". Run: bun run build:dev ${name}`)
 	const source = fs.readFileSync(file, 'utf8')
 	const exports = vm.runInThisContext(source, { filename: file })
 	if (!exports || !exports.default) throw new Error(`"${name}" did not export a plugin definition`)
