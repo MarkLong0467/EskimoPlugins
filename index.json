@@ -1287,7 +1287,7 @@
         "fshin (https://github.com/kmmiio99o/revenge-plugins \"Original Server Info plugin for Revenge, CC0\")"
       ],
       "channels": {
-        "latest": "1.0.4"
+        "latest": "1.0.5"
       },
       "versions": {
         "1.0.0": {
@@ -1346,6 +1346,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.server-info@1.0.4.zip",
           "sha256": "89d3cf78dbf29b3294cf766025907ea94d5f8ca091dfabecbd2fea8abf694bc7",
           "size": 5228,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.0.5": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.server-info@1.0.5.zip",
+          "sha256": "b9bb728afef04f4bbb589a4ece76ee034b2b5a13a40f1c941dfd749a34d6a4b6",
+          "size": 5395,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -1441,7 +1454,7 @@
         "DEVILS1NGH (https://github.com/DEVILS1NGH \"Native Listen Along sync and song-change following\")"
       ],
       "channels": {
-        "latest": "2.3.2"
+        "latest": "2.3.3"
       },
       "versions": {
         "2.2.0": {
@@ -1487,6 +1500,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.spotify-tools@2.3.2.zip",
           "sha256": "e76d09bbd0a90225c46b92663e3c02fbf134310eff3a6ec818e99038033be83b",
           "size": 5904,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "2.3.3": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.spotify-tools@2.3.3.zip",
+          "sha256": "0459cfe5499bd0fa481fa442ecbabce9a8c52ca2ab4ec1cfb02fd79f7ce585b9",
+          "size": 5905,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
