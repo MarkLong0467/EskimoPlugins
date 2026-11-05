@@ -11,7 +11,7 @@
         "nexpid (https://github.com/nexpid/RevengePlugins \"Original Colorful Channels from NexxUtils for Revenge, CC BY 4.0\")"
       ],
       "channels": {
-        "latest": "1.0.5"
+        "latest": "1.0.6"
       },
       "versions": {
         "1.0.0": {
@@ -83,6 +83,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.colorful-channels@1.0.5.zip",
           "sha256": "71c28f94506f5be6fd61eb98d95443104f61f69faf14375992b420edef0452d9",
           "size": 17451,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.0.6": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.colorful-channels@1.0.6.zip",
+          "sha256": "3c2eeb123494f12ab27b0ea89ea5c7f0ea58510415299564983aa395222d69a5",
+          "size": 16455,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -275,6 +288,19 @@
               "version": "*"
             }
           }
+        },
+        "0.1.3": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.haptics@0.1.3.zip",
+          "sha256": "faf5d3dbe59d21b1caa3ef3c07f2c62d130b5043acc15a26411e0587aa167e11",
+          "size": 3155,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
         }
       },
       "name": "Haptics",
@@ -282,7 +308,7 @@
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "contributors": [],
       "channels": {
-        "latest": "0.1.1"
+        "latest": "0.1.3"
       }
     },
     "marklong.hypesquad": {
