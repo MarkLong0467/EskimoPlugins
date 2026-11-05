@@ -26,6 +26,7 @@ globalThis.fetch = async (url) => {
 		if (u.searchParams.get('method') === 'user.getrecenttracks') return reply(net.recent)
 		if (u.searchParams.get('method') === 'track.getinfo') return reply(net.info)
 	}
+	if (u.host === 'itunes.apple.com') return reply({ results: net.itunes || [] })
 	if (u.host === 'soundcloud.com' && u.pathname === '/oembed')
 		return reply({ title: 'Flickermood by Forss', author_name: 'Forss', author_url: 'https://soundcloud.com/forss', thumbnail_url: 'https://i1.sndcdn.com/artworks-1-t500x500.jpg' })
 	if (u.host === 'soundcloud.com' && u.pathname === '/forss/flickermood')
@@ -140,7 +141,10 @@ const stopped = () => ({ recenttracks: { track: [{ artist: { '#text': 'Forss' },
 	await sleep(500)
 	check('a new song replaces the old one', T.getAuto().title === 'Another Song')
 	const act2 = lastFor('EskimoRichPresence').activity
-	check('Last.fm\'s blank star image is not used as artwork', act2 && !act2.assets, act2 && act2.assets)
+	check('Last.fm\'s blank star image is not used as artwork', T.getAuto().artwork === '', T.getAuto())
+	check('with no cover anywhere the SoundCloud default cover is shown, not an empty box', act2 && act2.assets && /raw\.githubusercontent\.com\/MarkLong0467\/EskimoPlugins\/main\/plugins\/soundcloud-presence\/cover\.png/.test(act2.assets.large_image), act2 && act2.assets)
+	check('the default cover is also handed to Rich Presence as {sc_art}', /cover\.png$/.test(globalThis.eskimoVars.sc_art), globalThis.eskimoVars)
+	check('the default cover file ships with the plugin', fs.existsSync(path.join(root, 'soundcloud-presence', 'cover.png')))
 	check('with no known length it counts time elapsed', act2 && act2.timestamps && act2.timestamps.start && !act2.timestamps.end, act2 && act2.timestamps)
 
 	// A single empty report between songs must not clear the status: it looks again first.
@@ -203,6 +207,33 @@ const stopped = () => ({ recenttracks: { track: [{ artist: { '#text': 'Forss' },
 	check('the hover text on the cover is the album', withAlbum && withAlbum.assets && withAlbum.assets.large_text === 'Album X', withAlbum && withAlbum.assets)
 	check('the optional small icon is sent in the corner', withAlbum && withAlbum.assets && /^mp:/.test(withAlbum.assets.small_image) && withAlbum.assets.small_text === 'SoundCloud', withAlbum && withAlbum.assets)
 	check('track info is asked with autocorrect on', net.calls.some((u) => /method=track\.getinfo/.test(u) && /autocorrect=1/.test(u)))
+
+	// -- Covers Last.fm does not have
+	const appleCalls = () => net.calls.filter((u) => /itunes\.apple\.com/.test(u)).length
+	net.info = { track: { duration: '180000' } }
+	net.itunes = [{ trackName: 'Song Z', artistName: 'Artist Z', artworkUrl100: 'https://is1.example/art/100x100bb.jpg' }]
+	net.recent = nowPlaying('Artist Z', 'Song Z (Radio Edit)', [])
+	await T.poll()
+	check('Apple Music supplies the cover when Last.fm has none', T.getAuto().artwork === 'https://is1.example/art/600x600bb.jpg', T.getAuto())
+
+	net.itunes = [{ trackName: 'Song Y', artistName: 'Somebody Different', artworkUrl100: 'https://is1.example/wrong/100x100bb.jpg' }]
+	net.recent = nowPlaying('Artist Y', 'Song Y', [])
+	await T.poll()
+	check('a result by a different artist is never used', T.getAuto().artwork === '', T.getAuto())
+
+	net.itunes = [{ trackName: 'Song X', artistName: 'Artist X', artworkUrl100: 'https://is1.example/x/100x100bb.jpg' }]
+	await scStore.set({ ...scStore.cache, coverLookup: false }, true)
+	const appleBefore = appleCalls()
+	net.recent = nowPlaying('Artist X', 'Song X', [])
+	await T.poll()
+	check('with "Find missing covers" off, Apple is not asked', appleCalls() === appleBefore && T.getAuto().artwork === '', [appleBefore, appleCalls()])
+
+	await scStore.set({ ...scStore.cache, fallbackCover: false }, true)
+	await T.apply()
+	await sleep(100)
+	const bare = lastFor('EskimoSoundCloudPresence').activity
+	check('with the default cover off and none found, no image is sent', bare && !bare.assets, bare)
+	await scStore.set({ ...scStore.cache, coverLookup: true, fallbackCover: true }, true)
 
 	// -- Hiding while Spotify is playing
 	const stores = globalThis.valenced.discord.flux.Stores

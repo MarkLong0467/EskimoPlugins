@@ -26,6 +26,8 @@
 	var MIN_GAP_MS = 4500
 	// Between two songs Last.fm can briefly report nothing. One quick second look stops the status flickering off.
 	var MISS_RECHECK_MS = 8000
+	// Shown as the cover when no real one can be found. It lives in the plugin's own repository.
+	var FALLBACK_COVER = 'https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/main/plugins/soundcloud-presence/cover.png'
 
 	var TIMER_MODES = [
 		{ v: 'progress', l: 'Progress bar', s: 'Counts up to the length of the track, then the status clears.' },
@@ -56,6 +58,8 @@
 		showArtist: true,
 		showButton: true,
 		hideWithSpotify: true,
+		coverLookup: true,
+		fallbackCover: true,
 		smallIcon: '',
 		buttonLabel: 'Listen on SoundCloud',
 		timerMode: 'progress',
@@ -214,6 +218,43 @@
 		return data
 	}
 
+	function normalize(s) {
+		return String(s == null ? '' : s)
+			.toLowerCase()
+			.replace(/\([^)]*\)|\[[^\]]*\]/g, ' ')
+			.replace(/[\s\-_.,:;!?'"|\/\\&+]+/g, ' ')
+			.trim()
+	}
+
+	/**
+	 * Looks a song up in Apple Music's public search for its cover. A result only counts when both the title and the
+	 * artist match, so a wrong cover is never shown. Songs that exist only on SoundCloud are usually not there.
+	 */
+	async function findCover(artist, title) {
+		try {
+			var res = await fetch('https://itunes.apple.com/search?media=music&entity=song&limit=5&term=' + encodeURIComponent(artist + ' ' + title))
+			if (!res.ok) return ''
+			var data = await res.json()
+			var wantTitle = normalize(title)
+			var wantArtist = normalize(artist)
+			if (!wantTitle || !wantArtist) return ''
+			var list = (data && data.results) || []
+			for (var i = 0; i < list.length; i++) {
+				var t = normalize(list[i].trackName)
+				var a = normalize(list[i].artistName)
+				var titleOk = t && (t === wantTitle || t.indexOf(wantTitle) === 0 || wantTitle.indexOf(t) === 0)
+				var artistOk = a && (a.indexOf(wantArtist) >= 0 || wantArtist.indexOf(a) >= 0)
+				if (titleOk && artistOk && list[i].artworkUrl100) return String(list[i].artworkUrl100).replace('100x100bb', '600x600bb')
+			}
+		} catch (e) {}
+		return ''
+	}
+
+	/** The cover to show: the real one, else the plugin's default cover, else none. */
+	function coverOf(settings, track) {
+		return track.artwork || (settings.fallbackCover ? FALLBACK_COVER : '')
+	}
+
 	function pickImage(images) {
 		if (!Array.isArray(images)) return ''
 		for (var i = images.length - 1; i >= 0; i--) {
@@ -273,6 +314,7 @@
 				if (!artwork && found && found.album) artwork = pickImage(found.album.image)
 				if (!album && found && found.album) album = found.album.title || ''
 			} catch (e) {}
+			if (!artwork && s.coverLookup) artwork = await findCover(np.artist, np.title)
 			auto = {
 				key: key,
 				url: '',
@@ -389,8 +431,9 @@
 			activity.timestamps = { start: track.startedAt }
 		}
 
-		if (settings.showArtwork && track.artwork) {
-			var image = await artworkAsset(track.artwork)
+		var cover = settings.showArtwork ? coverOf(settings, track) : ''
+		if (cover) {
+			var image = await artworkAsset(cover)
 			if (image) {
 				// The hover text is the album when Last.fm knows it, else the title.
 				activity.assets = { large_image: image, large_text: (track.album || track.title).slice(0, 128) }
@@ -488,7 +531,7 @@
 			sc_title: track.title,
 			sc_artist: settings.showArtist ? track.artist : '',
 			sc_url: button.url,
-			sc_art: settings.showArtwork ? track.artwork || '' : '',
+			sc_art: settings.showArtwork ? coverOf(settings, track) : '',
 			sc_button: button.label,
 		})
 		globalThis.eskimoTimestamps = settings.timerMode === 'none' ? undefined : end ? { start: track.startedAt, end: end } : { start: track.startedAt }
@@ -677,7 +720,7 @@
 				{ style: st.row },
 				h(RN.View, { style: st.accent }),
 				s.showArtwork
-					? h(RN.View, { style: st.art }, t.artwork ? h(RN.Image, { source: { uri: t.artwork }, style: st.artImage }) : null)
+					? h(RN.View, { style: st.art }, coverOf(s, t) ? h(RN.Image, { source: { uri: coverOf(s, t) }, style: st.artImage }) : null)
 					: null,
 				h(
 					RN.View,
@@ -825,6 +868,8 @@
 			section(
 				'Appearance',
 				toggle('Artwork', 'Show the track cover as the large image', 'showArtwork'),
+				toggle('Find missing covers', "When Last.fm has no cover, look the song up in Apple Music's public search. Only an exact title and artist match is used. This sends the artist and title to Apple.", 'coverLookup'),
+				toggle('Use a SoundCloud cover when none is found', 'Shows an orange SoundCloud cover instead of an empty box', 'fallbackCover'),
 				toggle('Artist', 'Show the artist under the title', 'showArtist'),
 				toggle('Listen button', 'A button on your profile. Automatic tracks open a SoundCloud search for the song.', 'showButton'),
 			),
