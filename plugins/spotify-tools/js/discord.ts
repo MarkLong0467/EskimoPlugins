@@ -30,11 +30,11 @@ export function toast(text: string): void {
 	}
 }
 
-/** Discord's connection to its web API: the module with `get`, `post` and `patch`, or else the one with `HTTPResponseError`. */
+/** Discord's connection to its web API: the module with `HTTPResponseError`, or else any with `get`, `post` and `patch`. */
 export function rest(): Rest | undefined {
 	return (
-		findByProps<Rest>('get', 'post', 'patch') ||
-		findByProps<Rest>('HTTPResponseError', 'get')
+		findByProps<Rest>('HTTPResponseError', 'get') ||
+		findByProps<Rest>('get', 'post', 'patch')
 	)
 }
 

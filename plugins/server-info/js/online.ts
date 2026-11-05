@@ -1,4 +1,4 @@
-import { rest } from './discord'
+import { apiGet } from './discord'
 
 /** What Discord's web API answers when it is asked about a server with its counts. */
 interface Counts {
@@ -25,8 +25,6 @@ function why(error: unknown): string {
  * @throws An error that says what each try answered, so the sheet can show why there is no number.
  */
 export async function fetchOnline(guildId: string): Promise<number> {
-	const http = rest()
-	if (!http?.get) throw new Error('no way to reach Discord')
 	const tries: Array<
 		[string, { url: string; query?: Record<string, unknown> }]
 	> = [
@@ -36,8 +34,8 @@ export async function fetchOnline(guildId: string): Promise<number> {
 	const failures: string[] = []
 	for (const [name, options] of tries) {
 		try {
-			const res = await http.get(options)
-			const n = (res?.body as Counts | undefined)?.approximate_presence_count
+			const body = await apiGet(options.url, options.query)
+			const n = (body as Counts | undefined)?.approximate_presence_count
 			if (typeof n === 'number') return n
 			failures.push(`${name}: no count`)
 		} catch (error) {

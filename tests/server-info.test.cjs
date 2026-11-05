@@ -20,7 +20,7 @@ const FRIENDS_KEY = 'marklong-server-info-friends'
  * Builds a fake Discord with one server and the stores the sheet reads. Every part can be changed per scenario.
  * Returns the running plugin and helpers to open the menu item and the sheets it leads to.
  */
-async function setup({ guild, counts = { members: 1234567, online: 4321 }, roles = 7, channels = 12, users = {}, friends = [], members = {}, rest = null, profileModule = null, extraStores = {}, gorhom = true } = {}) {
+async function setup({ guild, counts = { members: 1234567, online: 4321 }, roles = 7, channels = 12, users = {}, friends = [], members = {}, rest = null, profileModule = null, extraStores = {}, gorhom = true, token = null } = {}) {
 	const g = guild === undefined ? { id: GUILD, name: 'Test Server', description: 'About us', icon: 'icon1', banner: 'a_banner1', ownerId: OWNER, vanityURLCode: 'test', premiumTier: 2, premiumSubscriberCount: 15 } : guild
 	const copied = []
 	const requested = []
@@ -40,7 +40,11 @@ async function setup({ guild, counts = { members: 1234567, online: 4321 }, roles
 	}).install()
 	runtime.valenced.react.ReactNative.useWindowDimensions = () => ({ height: 800 })
 	if (friends.length) runtime.finders.loadModule({ requestMembersById: (guildId, ids) => requested.push({ guildId, ids }) })
-	if (rest) runtime.finders.loadModule(rest)
+	// Discord's own connection is the module with HTTPResponseError. A look-alike with get and post that rejects calls (a
+	// native module) is loaded too, to show it is not used.
+	runtime.finders.loadModule({ get() { throw new Error('Exception in HostFunction: Expected argument 1 of method') }, post() {}, patch() {} })
+	if (rest) runtime.finders.loadModule({ HTTPResponseError: class {}, ...rest })
+	if (token) runtime.finders.loadModule({ getToken: () => token })
 	if (profileModule) runtime.finders.loadModule(profileModule)
 
 	const { definition } = loadPlugin('server-info')
@@ -182,6 +186,19 @@ const dateOf = id => new Date(Number(BigInt(id) >> 22n) + 1420070400000).toLocal
 		await sleep(20)
 		await view.settle()
 		check('the preview is the second try', rowOf(view, 'Online')?.props.subLabel === '77', rowOf(view, 'Online')?.props)
+	}
+	{
+		// Discord's own connection is not there: a plain request with the account token is sent.
+		const urls = []
+		const realFetch = globalThis.fetch
+		globalThis.fetch = async (url, init) => (urls.push({ url: String(url), auth: init?.headers?.Authorization }), { ok: true, status: 200, json: async () => ({ approximate_presence_count: 55 }) })
+		const s = await setup({ counts: { members: 1000, online: undefined }, token: 'TOKEN' })
+		s.menu.default(GUILD)[1].action()
+		const view = await s.mountSheet(SHEET_KEY)
+		await sleep(20)
+		await view.settle()
+		globalThis.fetch = realFetch
+		check('without the Discord connection the account token is used for a plain request', rowOf(view, 'Online')?.props.subLabel === '55' && urls.some(u => u.url === 'https://discord.com/api/v9/guilds/' + GUILD + '?with_counts=true' && u.auth === 'TOKEN'), urls)
 	}
 	{
 		// Without the sheet library, the design components' own scroll view is used, then the plain one.

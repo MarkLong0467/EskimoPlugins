@@ -6,7 +6,14 @@ import { Image, View } from 'react-native'
 import ActionSheetBody from './ActionSheetBody'
 import { chevron } from './Chevron'
 import { FRIENDS_KEY, SHEET_KEY } from './constants'
-import { findByProps, openProfile, rest, sheets, store, toast } from './discord'
+import {
+	apiGet,
+	findByProps,
+	openProfile,
+	sheets,
+	store,
+	toast,
+} from './discord'
 import FriendsSheet from './FriendsSheet'
 import { assetUrl, avatarUrl, createdOn, formatNumber } from './format'
 import { getGuildFriends } from './friends'
@@ -133,12 +140,11 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 
 	// The owner, when the guild does not say.
 	useEffect(() => {
-		const http = rest()
-		if (ownerId || !http || !http.get) return
+		if (ownerId) return
 		let cancelled = false
-		Promise.resolve(http.get({ url: `/guilds/${guildId}` })).then(
-			res => {
-				const owner = res?.body?.owner_id
+		apiGet(`/guilds/${guildId}`).then(
+			body => {
+				const owner = (body as { owner_id?: unknown } | undefined)?.owner_id
 				if (!cancelled && owner) setOwnerId(String(owner))
 			},
 			() => {},
@@ -163,12 +169,10 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 			})
 			return
 		}
-		const http = rest()
-		if (!http?.get) return
 		let cancelled = false
-		Promise.resolve(http.get({ url: `/users/${ownerId}` })).then(
-			res => {
-				const user = res?.body as
+		apiGet(`/users/${ownerId}`).then(
+			body => {
+				const user = body as
 					| {
 							global_name?: string
 							globalName?: string

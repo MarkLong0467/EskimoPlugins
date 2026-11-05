@@ -7,7 +7,7 @@
 	"contributors": [
 		"fshin (https://github.com/kmmiio99o/revenge-plugins \"Original Server Info plugin for Revenge, CC0\")"
 	],
-	"version": "1.0.4",
+	"version": "1.0.5",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"
