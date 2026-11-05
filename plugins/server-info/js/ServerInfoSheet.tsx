@@ -123,6 +123,8 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 	const [ownerNameState, setOwnerName] = useState<string | null>(
 		cached?.name || null,
 	)
+	// How many are online, when the stores do not know: asked from Discord's web API (with_counts gives a rounded count).
+	const [askedOnline, setAskedOnline] = useState<number | null>(null)
 	const [ownerAvatar, setOwnerAvatar] = useState<string | null>(
 		cached?.avatar || null,
 	)
@@ -196,6 +198,30 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 		}
 	}, [ownerId, guildId])
 
+	// The number online, when neither store has it.
+	const storeKnowsOnline =
+		(headerCounts?.getOnlineCount?.(guildId) ??
+			counts?.getOnlineCount?.(guildId)) != null
+	useEffect(() => {
+		const http = rest()
+		if (storeKnowsOnline || !http?.get) return
+		let cancelled = false
+		Promise.resolve(
+			http.get({ url: `/guilds/${guildId}?with_counts=true` }),
+		).then(
+			res => {
+				const n = (
+					res?.body as { approximate_presence_count?: unknown } | undefined
+				)?.approximate_presence_count
+				if (!cancelled && typeof n === 'number') setAskedOnline(n)
+			},
+			() => {},
+		)
+		return () => {
+			cancelled = true
+		}
+	}, [guildId, storeKnowsOnline])
+
 	if (!guild) return null
 
 	const bannerUrl = guild.banner
@@ -214,6 +240,7 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 		rawMembers = (GuildMemberStore.getMemberIds(guildId) || []).length
 	let rawOnline = headerCounts?.getOnlineCount?.(guildId)
 	if (rawOnline == null) rawOnline = counts?.getOnlineCount?.(guildId)
+	if (rawOnline == null) rawOnline = askedOnline
 
 	const roles = GuildRoleStore?.getSortedRoles
 		? (GuildRoleStore.getSortedRoles(guildId) || []).length

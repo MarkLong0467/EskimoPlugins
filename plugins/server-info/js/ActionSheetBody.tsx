@@ -1,4 +1,5 @@
 import { Design } from '@valenced/discord/design'
+import { BottomSheet } from '@valenced/externals/gorhom'
 import { Component, createElement } from 'react'
 import { ScrollView, useWindowDimensions } from 'react-native'
 import { findByProps } from './discord'
@@ -7,6 +8,19 @@ import type { ComponentType, ReactNode } from 'react'
 /** What a scroll view is given. */
 type ScrollProps = Record<string, unknown>
 
+/** The sheet library's scroll view, or nothing if the library is not there. */
+function gorhomScroll(): ComponentType<ScrollProps> | undefined {
+	try {
+		return (
+			BottomSheet as unknown as
+				| { BottomSheetScrollView?: ComponentType<ScrollProps> }
+				| undefined
+		)?.BottomSheetScrollView
+	} catch {
+		return undefined
+	}
+}
+
 /** The scroll view chosen for the sheets, once found. */
 let scrollPick: ComponentType<ScrollProps> | undefined
 
@@ -14,8 +28,8 @@ let scrollPick: ComponentType<ScrollProps> | undefined
  * The scrolling part of a sheet.
  *
  * Inside a bottom sheet a plain scroll view can lose its touches to the sheet, so the sheet can neither be scrolled nor
- * pulled open. The sheet library has its own scroll view for that: it is used when it can be found (on the design
- * components, or in a module of its own), and the plain one otherwise.
+ * pulled open. The sheet library (gorhom's bottom sheet) has its own scroll view for that: it is used when it can be found
+ * (in the library itself, on the design components, or in a module of its own), and the plain one otherwise.
  */
 function sheetScrollComponent(): ComponentType<ScrollProps> {
 	if (scrollPick) return scrollPick
@@ -26,6 +40,7 @@ function sheetScrollComponent(): ComponentType<ScrollProps> {
 			ComponentType<ScrollProps> | undefined
 		>
 		const found =
+			gorhomScroll() ||
 			components.BottomSheetScrollView ||
 			components.ActionSheetScrollView ||
 			findByProps<{ BottomSheetScrollView?: ComponentType<ScrollProps> }>(

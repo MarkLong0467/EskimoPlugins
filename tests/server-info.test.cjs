@@ -20,7 +20,7 @@ const FRIENDS_KEY = 'marklong-server-info-friends'
  * Builds a fake Discord with one server and the stores the sheet reads. Every part can be changed per scenario.
  * Returns the running plugin and helpers to open the menu item and the sheets it leads to.
  */
-async function setup({ guild, counts = { members: 1234567, online: 4321 }, roles = 7, channels = 12, users = {}, friends = [], members = {}, rest = null, profileModule = null, extraStores = {} } = {}) {
+async function setup({ guild, counts = { members: 1234567, online: 4321 }, roles = 7, channels = 12, users = {}, friends = [], members = {}, rest = null, profileModule = null, extraStores = {}, gorhom = true } = {}) {
 	const g = guild === undefined ? { id: GUILD, name: 'Test Server', description: 'About us', icon: 'icon1', banner: 'a_banner1', ownerId: OWNER, vanityURLCode: 'test', premiumTier: 2, premiumSubscriberCount: 15 } : guild
 	const copied = []
 	const requested = []
@@ -36,7 +36,7 @@ async function setup({ guild, counts = { members: 1234567, online: 4321 }, roles
 			RelationshipStore: { getFriendIDs: () => friends },
 			...extraStores,
 		},
-		overrides: { externals: { ReactNativeClipboard: { Clipboard: { setString: text => copied.push(text) } } } },
+		overrides: { externals: { ReactNativeClipboard: { Clipboard: { setString: text => copied.push(text) } }, Gorhom: gorhom ? { BottomSheet: { BottomSheetScrollView: 'Gorhom.ScrollView' } } : undefined } },
 	}).install()
 	runtime.valenced.react.ReactNative.useWindowDimensions = () => ({ height: 800 })
 	if (friends.length) runtime.finders.loadModule({ requestMembersById: (guildId, ids) => requested.push({ guildId, ids }) })
@@ -105,7 +105,7 @@ const dateOf = id => new Date(Number(BigInt(id) >> 22n) + 1420070400000).toLocal
 		const s = await setup({ guild: undefined })
 		s.menu.default(GUILD)[1].action()
 		const view = await s.mountSheet(SHEET_KEY)
-		const scroller = findNode(view.tree, n => n.type === 'Design.BottomSheetScrollView')
+		const scroller = findNode(view.tree, n => n.type === 'Gorhom.ScrollView')
 		check('the sheet scrolls with the own scroll view of the sheet, so it can be scrolled and pulled open', !!scroller && scroller.props.nestedScrollEnabled === true && scroller.props.maxHeight === undefined && scroller.props.style.maxHeight === 600, scroller && scroller.props)
 		check('the sheet has the server name', !!findNode(view.tree, n => n.type === 'Design.Text' && n.props.children === 'Test Server'))
 		check('the sheet has the description', !!findNode(view.tree, n => n.type === 'Design.Text' && n.props.children === 'About us'))
@@ -152,6 +152,24 @@ const dateOf = id => new Date(Number(BigInt(id) >> 22n) + 1420070400000).toLocal
 		check('a server Discord does not know draws nothing', !findNode(view.tree, n => n.type === 'Design.ActionSheet'))
 	}
 
+	{
+		// The stores do not know how many are online: Discord's web API is asked.
+		const asked = []
+		const rest = { get: async ({ url }) => (asked.push(url), url.includes('with_counts') ? { body: { approximate_presence_count: 321 } } : undefined), post() {}, patch() {} }
+		const s = await setup({ counts: { members: 1000, online: undefined }, rest })
+		s.menu.default(GUILD)[1].action()
+		const view = await s.mountSheet(SHEET_KEY)
+		await sleep(20)
+		await view.settle()
+		check('the online count is asked from Discord when the stores lack it', rowOf(view, 'Online')?.props.subLabel === '321' && asked.includes('/guilds/' + GUILD + '?with_counts=true'), asked)
+	}
+	{
+		// Without the sheet library, the design components' own scroll view is used, then the plain one.
+		const s = await setup({ gorhom: false })
+		s.menu.default(GUILD)[1].action()
+		const view = await s.mountSheet(SHEET_KEY)
+		check('without the sheet library the sheet still scrolls', !!findNode(view.tree, n => n.type === 'Design.BottomSheetScrollView' || n.type === 'ScrollView'))
+	}
 	// --- The owner
 	{
 		const users = { [OWNER]: { id: OWNER, username: 'ownerguy', globalName: 'The Owner', avatar: 'av1' } }
