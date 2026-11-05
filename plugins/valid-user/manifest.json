@@ -4,7 +4,7 @@
 	"name": "Valid User",
 	"description": "Resolves @unknown-user mentions in messages and embeds automatically, no tap needed.",
 	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"
