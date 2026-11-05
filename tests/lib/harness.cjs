@@ -99,6 +99,13 @@ function createReact() {
 			const kids = children.length === 1 ? children[0] : children.length ? children : rest.children
 			return { type, props: { ...rest, ...(kids !== undefined ? { children: kids } : {}) }, key }
 		},
+		cloneElement(element, props, ...children) {
+			const { key, ...rest } = props ?? {}
+			const next = { ...element, props: { ...element.props, ...rest } }
+			if (children.length) next.props.children = children.length === 1 ? children[0] : children
+			if (key !== undefined) next.key = key
+			return next
+		},
 		createContext(defaultValue) {
 			const context = { _value: defaultValue, Provider: null }
 			context.Provider = { $$context: context }
