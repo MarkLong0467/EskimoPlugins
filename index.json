@@ -1130,7 +1130,7 @@
       "description": "Fully customizable rich presence: profiles, every activity field, images, timer, party size, buttons and live text variables. Can show the track from SoundCloud Presence. Shows nothing until you set it up.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.3.0"
+        "latest": "1.3.1"
       },
       "versions": {
         "1.2.1": {
@@ -1189,6 +1189,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.rich-presence@1.3.0.zip",
           "sha256": "ba21b9ae3b65544be85f8cb4fa8a1e537dd9d274fad558903506a72db4f122ff",
           "size": 12042,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.3.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.rich-presence@1.3.1.zip",
+          "sha256": "da1d7c85256c7174d9d0d2297f1682cd293814e6139914b71b4bd6531991712e",
+          "size": 9227,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -1992,6 +2005,19 @@
               "version": "*"
             }
           }
+        },
+        "0.4.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.soundcloud-presence@0.4.1.zip",
+          "sha256": "e8cca97de80863f680ce1f3339c510bb68e3f1104ea6bd63bfb0698ec0647db6",
+          "size": 10019,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
         }
       },
       "name": "SoundCloud Presence",
@@ -1999,7 +2025,7 @@
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "contributors": [],
       "channels": {
-        "latest": "0.4.0"
+        "latest": "0.4.1"
       }
     }
   }
