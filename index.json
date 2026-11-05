@@ -1797,6 +1797,19 @@
               "version": "*"
             }
           }
+        },
+        "0.4.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.soundcloud-presence@0.4.0.zip",
+          "sha256": "028d0592e7cab1a0a75e8e5a774a8ab2cb8328e793d40dd349db1da66de5aefc",
+          "size": 14067,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
         }
       },
       "name": "SoundCloud Presence",
@@ -1804,7 +1817,7 @@
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "contributors": [],
       "channels": {
-        "latest": "0.3.1"
+        "latest": "0.4.0"
       }
     }
   }
