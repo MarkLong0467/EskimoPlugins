@@ -1287,7 +1287,7 @@
         "fshin (https://github.com/kmmiio99o/revenge-plugins \"Original Server Info plugin for Revenge, CC0\")"
       ],
       "channels": {
-        "latest": "1.0.2"
+        "latest": "1.0.3"
       },
       "versions": {
         "1.0.0": {
@@ -1320,6 +1320,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.server-info@1.0.2.zip",
           "sha256": "4aa3671b021bd255e85533ef9c74877b6d6cfa8f23aa145abee85624bfbe50bd",
           "size": 4898,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.0.3": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.server-info@1.0.3.zip",
+          "sha256": "8c5183df3da7ac22addf308e7e650f7124c9128bf9f0e8b9eee3da803c403d17",
+          "size": 5005,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
