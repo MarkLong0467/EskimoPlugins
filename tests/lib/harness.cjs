@@ -551,21 +551,27 @@ function createRuntime(options = {}) {
 				AlertActionCreators: recorder(log.actions, 'alert'),
 				ModalActionCreators: recorder(log.actions, 'modal'),
 			},
-			design: new Proxy(
-				{ createStyles: styles => () => styles },
-				{ get: (target, name) => (name in target ? target[name] : `Design.${String(name)}`) },
-			),
+			// `import { Design } from '@valenced/discord/design'` becomes `valenced.discord.design.Design`.
+			// Every component on it is a marker string ("Design.TableRow") that a rendered tree can be searched for.
+			design: {
+				Design: new Proxy(
+					{ createStyles: styles => () => styles },
+					{ get: (target, name) => (name in target ? target[name] : `Design.${String(name)}`) },
+				),
+			},
 			native: {},
 			modules: { settings: {} },
 		},
 		externals: {
 			ReactNativeClipboard: { Clipboard: { getString: async () => '', setString() {} } },
-			ReactNavigation: {},
+			ReactNavigation: { ReactNavigationNative: { useNavigation: () => ({ navigate() {}, setOptions() {}, goBack() {} }) } },
 		},
 		plugins: { constants: { pluginStorageDirFor: id => `/storage/${id}`, pluginDistDirFor: id => `/dist/${id}` } },
 		utils: {},
-		assets: {},
-		components: {},
+		// Asset lookups answer with the asset's name, so a test can see which icon was asked for.
+		assets: { getAssetIdByName: name => name },
+		// Components imported as defaults (`import Page from '@valenced/components/Page'`) are marker strings too.
+		components: { Page: 'Page', FormSwitch: 'FormSwitch', SearchInput: 'SearchInput', TableRowAssetIcon: 'TableRowAssetIcon' },
 	}
 
 	if (options.overrides) mergeInto(valenced, options.overrides)
