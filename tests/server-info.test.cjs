@@ -140,7 +140,7 @@ const dateOf = id => new Date(Number(BigInt(id) >> 22n) + 1420070400000).toLocal
 		s.menu.default(GUILD)[1].action()
 		const view = await s.mountSheet(SHEET_KEY)
 		check('without counts the member count is the number of known members', rowOf(view, 'Members')?.props.subLabel === '0', rowOf(view, 'Members')?.props)
-		check('without an online count no Online row is shown', !rowOf(view, 'Online'))
+		check('without an online count the Online row says it is looking, then why there is none', /^(Loading...|Not available)/.test(rowOf(view, 'Online')?.props.subLabel), rowOf(view, 'Online')?.props)
 		check('without a vanity link no row is shown', !rowOf(view, 'Vanity URL'))
 		check('a server without an icon shows its first letters', !!findNode(view.tree, n => n.type === 'Design.Text' && n.props.children === 'Pl'))
 		check('boosts default to level 0', rowOf(view, 'Boost status')?.props.subLabel === 'Level 0 (0 boosts)')
@@ -155,13 +155,33 @@ const dateOf = id => new Date(Number(BigInt(id) >> 22n) + 1420070400000).toLocal
 	{
 		// The stores do not know how many are online: Discord's web API is asked.
 		const asked = []
-		const rest = { get: async ({ url }) => (asked.push(url), url.includes('with_counts') ? { body: { approximate_presence_count: 321 } } : undefined), post() {}, patch() {} }
+		const rest = { get: async ({ url, query }) => (asked.push(url + (query ? JSON.stringify(query) : '')), query?.with_counts ? { body: { approximate_presence_count: 321 } } : undefined), post() {}, patch() {} }
 		const s = await setup({ counts: { members: 1000, online: undefined }, rest })
 		s.menu.default(GUILD)[1].action()
 		const view = await s.mountSheet(SHEET_KEY)
 		await sleep(20)
 		await view.settle()
-		check('the online count is asked from Discord when the stores lack it', rowOf(view, 'Online')?.props.subLabel === '321' && asked.includes('/guilds/' + GUILD + '?with_counts=true'), asked)
+		check('the online count is asked from Discord when the stores lack it', rowOf(view, 'Online')?.props.subLabel === '321' && asked.includes('/guilds/' + GUILD + '{"with_counts":true}'), asked)
+	}
+	{
+		// Discord refuses both questions: the row says so, with the reasons.
+		const rest = { get: async () => { throw Object.assign(new Error('x'), { status: 403, body: { message: 'Missing Access' } }) }, post() {}, patch() {} }
+		const s = await setup({ counts: { members: 1000, online: undefined }, rest })
+		s.menu.default(GUILD)[1].action()
+		const view = await s.mountSheet(SHEET_KEY)
+		await sleep(20)
+		await view.settle()
+		check('when Discord refuses, the Online row says why', /Not available.*server: 403 Missing Access.*preview: 403/.test(rowOf(view, 'Online')?.props.subLabel), rowOf(view, 'Online')?.props)
+	}
+	{
+		// The preview answers when the server question does not.
+		const rest = { get: async ({ url }) => (url.endsWith('/preview') ? { body: { approximate_presence_count: 77 } } : { body: {} }), post() {}, patch() {} }
+		const s = await setup({ counts: { members: 1000, online: undefined }, rest })
+		s.menu.default(GUILD)[1].action()
+		const view = await s.mountSheet(SHEET_KEY)
+		await sleep(20)
+		await view.settle()
+		check('the preview is the second try', rowOf(view, 'Online')?.props.subLabel === '77', rowOf(view, 'Online')?.props)
 	}
 	{
 		// Without the sheet library, the design components' own scroll view is used, then the plain one.

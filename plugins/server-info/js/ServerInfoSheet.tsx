@@ -10,6 +10,7 @@ import { findByProps, openProfile, rest, sheets, store, toast } from './discord'
 import FriendsSheet from './FriendsSheet'
 import { assetUrl, avatarUrl, createdOn, formatNumber } from './format'
 import { getGuildFriends } from './friends'
+import { fetchOnline } from './online'
 import { ownerCache } from './state'
 import type { ReactNode } from 'react'
 import type {
@@ -25,6 +26,7 @@ import type {
 
 /** Texts as constants because React Native text must be passed as an expression. */
 const NO_FRIENDS_LOADING = 'Loading...'
+const NO_ONLINE_YET = 'Loading...'
 const CLOSE = 'Close'
 const OVERVIEW = 'Overview'
 const DETAILS = 'Server details'
@@ -124,7 +126,7 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 		cached?.name || null,
 	)
 	// How many are online, when the stores do not know: asked from Discord's web API (with_counts gives a rounded count).
-	const [askedOnline, setAskedOnline] = useState<number | null>(null)
+	const [askedOnline, setAskedOnline] = useState<number | string | null>(null)
 	const [ownerAvatar, setOwnerAvatar] = useState<string | null>(
 		cached?.avatar || null,
 	)
@@ -203,19 +205,16 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 		(headerCounts?.getOnlineCount?.(guildId) ??
 			counts?.getOnlineCount?.(guildId)) != null
 	useEffect(() => {
-		const http = rest()
-		if (storeKnowsOnline || !http?.get) return
+		if (storeKnowsOnline) return
 		let cancelled = false
-		Promise.resolve(
-			http.get({ url: `/guilds/${guildId}?with_counts=true` }),
-		).then(
-			res => {
-				const n = (
-					res?.body as { approximate_presence_count?: unknown } | undefined
-				)?.approximate_presence_count
-				if (!cancelled && typeof n === 'number') setAskedOnline(n)
+		fetchOnline(guildId).then(
+			n => {
+				if (!cancelled) setAskedOnline(n)
 			},
-			() => {},
+			e => {
+				if (!cancelled)
+					setAskedOnline(`Not available (${String(e?.message || e)})`)
+			},
 		)
 		return () => {
 			cancelled = true
@@ -238,7 +237,8 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 	if (rawMembers == null) rawMembers = guild.approximateMemberCount
 	if (rawMembers == null && GuildMemberStore?.getMemberIds)
 		rawMembers = (GuildMemberStore.getMemberIds(guildId) || []).length
-	let rawOnline = headerCounts?.getOnlineCount?.(guildId)
+	let rawOnline: number | string | null | undefined =
+		headerCounts?.getOnlineCount?.(guildId)
 	if (rawOnline == null) rawOnline = counts?.getOnlineCount?.(guildId)
 	if (rawOnline == null) rawOnline = askedOnline
 
@@ -307,13 +307,13 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 					label="Members"
 					subLabel={String(formatNumber(rawMembers == null ? '—' : rawMembers))}
 				/>
-				{rawOnline != null ? (
-					<Row
-						key="Online"
-						label="Online"
-						subLabel={String(formatNumber(rawOnline))}
-					/>
-				) : null}
+				<Row
+					key="Online"
+					label="Online"
+					subLabel={
+						rawOnline == null ? NO_ONLINE_YET : String(formatNumber(rawOnline))
+					}
+				/>
 				{friendsLoading ? (
 					<Row
 						key="Friends"

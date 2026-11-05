@@ -78,6 +78,7 @@ export interface RelationshipStore {
 export interface Rest {
 	get?(options: {
 		url: string
+		query?: Record<string, unknown>
 	}): Promise<{ body?: Record<string, unknown> } | undefined>
 }
 
