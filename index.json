@@ -1730,6 +1730,30 @@
       "channels": {
         "latest": "1.3.0"
       }
+    },
+    "marklong.soundcloud-presence": {
+      "versions": {
+        "0.1.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.soundcloud-presence@0.1.0.zip",
+          "sha256": "c3bf7953209fb0cb94b96e43ac6ee81c45041ced3015094f252ef1c430ad24a7",
+          "size": 8155,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "name": "SoundCloud Presence",
+      "description": "Show the SoundCloud track you are listening to on your Discord profile, with artwork, a progress bar and a Listen on SoundCloud button. Paste or share a link and it fills in the rest.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "contributors": [],
+      "channels": {
+        "latest": "0.1.0"
+      }
     }
   }
 }
