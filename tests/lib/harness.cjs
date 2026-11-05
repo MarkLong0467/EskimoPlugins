@@ -400,11 +400,21 @@ function createFinders() {
 		/** Calls back for modules already loaded (after an event loop) and for modules loaded later. */
 		getModules(filter, callback) {
 			let active = true
-			const subscriber = { filter, callback, active: () => active }
+			// Each module is reported to a subscriber once, whether it was loaded before or after subscribing.
+			const delivered = new Set()
+			const subscriber = {
+				filter,
+				active: () => active,
+				callback: (exports, id) => {
+					if (delivered.has(exports)) return
+					delivered.add(exports)
+					callback(exports, id)
+				},
+			}
 			subscribers.push(subscriber)
 			setImmediate(() => {
 				if (!active) return
-				for (const entry of [...loaded]) if (matches(filter, entry.exports)) callback(entry.exports, entry.id)
+				for (const entry of [...loaded]) if (matches(filter, entry.exports)) subscriber.callback(entry.exports, entry.id)
 			})
 			return () => {
 				active = false
@@ -445,6 +455,12 @@ function deepMerge(base, patch) {
 // ---------------------------------------------------------------------------------------------------------------
 // The runtime
 // ---------------------------------------------------------------------------------------------------------------
+
+/** Like React Native's `StyleSheet.flatten`: merges a style, or a nested array of styles, into one object. */
+function flatten(style) {
+	if (Array.isArray(style)) return style.reduce((merged, item) => ({ ...merged, ...(flatten(item) ?? {}) }), {})
+	return style || undefined
+}
 
 /** Returns a Proxy that answers any property with a recording function. Used for Discord action creators. */
 function recorder(log, label) {
@@ -503,7 +519,7 @@ function createRuntime(options = {}) {
 			React: react.React,
 			ReactNative: new Proxy(
 				{
-					StyleSheet: { create: styles => styles, flatten: style => style, hairlineWidth: 1 },
+					StyleSheet: { create: styles => styles, flatten, hairlineWidth: 1 },
 					Platform: { OS: 'android', select: choices => choices.android ?? choices.default },
 					AppState: { addEventListener: () => ({ remove() {} }), currentState: 'active' },
 					Alert: { alert: () => {} },
