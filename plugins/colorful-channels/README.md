@@ -4,14 +4,15 @@ Gives channel icons that have a symbol colors, and adds a red **NSFW** tag next 
 
 Based on the Colorful Channels module of **NexxUtils for Revenge** by nexpid
 ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), <https://github.com/nexpid/RevengePlugins>). The channel icon
-pictures are from that plugin. Rewritten for Valenced.
+pictures are from that plugin. Rewritten for Valenced. Version 1.1 added following icon packs, made with **Duckie**.
 
 ## What you get
 
 - **Colored icon symbols.** A locked channel gets a yellow lock, an NSFW channel a red warning, and a channel that has a
   game gets a green controller. Text, voice, announcement, forum, stage and image channels are covered.
 - **NSFW tag.** A small red `NSFW` label in front of the channel name.
-- Three switches in the plugin's settings. A changed setting applies the next time the chat list is drawn, so open the
+- **Follow icon packs.** The channel symbol is drawn from the icon pack in use, with the lock, warning or controller from the pack's own icons. It falls back to the built-in pictures when the pack has no match.
+- Four switches in the plugin's settings. A changed setting applies the next time the chat list is drawn, so open the
   chat list again to see it.
 
 | Setting | Default | What it does |
@@ -19,6 +20,7 @@ pictures are from that plugin. Rewritten for Valenced.
 | NSFW tag | on | The red tag next to NSFW channel names |
 | Colored icon symbols | on | Colors the lock, warning and controller marks |
 | Fallback colors for icon symbols | off | Uses fixed yellow, red and green instead of the colors of Discord's current theme |
+| Follow icon packs | on | Draws the icon and its symbol from the icon pack in use |
 
 ## How it works
 

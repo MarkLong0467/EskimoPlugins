@@ -678,7 +678,8 @@ function mergeInto(target, source) {
 function readBundleSource(name) {
 	const base = process.env.BUNDLE_DIR ? path.resolve(process.env.BUNDLE_DIR) : path.join(ROOT, 'plugins')
 	const candidates = [path.join(base, name, 'build', 'js', 'index.js')]
-	if (process.env.BUNDLE_DIR) candidates.push(path.join(base, name, 'index.js'))
+	// A plugin that ships a ready-made bundle (not yet converted to TypeScript) has `index.js` in its folder.
+	candidates.push(path.join(base, name, 'index.js'))
 	const file = candidates.find(candidate => fs.existsSync(candidate))
 	if (!file) throw new Error(`No build for "${name}". Run: bun run build:dev ${name}`)
 	return { file, source: fs.readFileSync(file, 'utf8') }

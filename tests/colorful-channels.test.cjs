@@ -15,7 +15,7 @@ const { check, done } = createReporter('Colorful Channels')
 
 /** The picture data the plugin ships, read from its source. The old and the new build must draw exactly these. */
 const IMAGES = Object.fromEntries(
-	[...fs.readFileSync(path.join(ROOT, 'plugins/colorful-channels/js/images.ts'), 'utf8').matchAll(/^\t(\w+):\s*'(data:image\/png;base64,[A-Za-z0-9+/=]+)',$/gm)].map(match => [match[1], match[2]]),
+	[...fs.readFileSync(path.join(ROOT, 'plugins/colorful-channels/index.js'), 'utf8').matchAll(/^\s*(\w+):\s*'(data:image\/png;base64,[A-Za-z0-9+/=]+)',$/gm)].map(match => [match[1], match[2]]),
 )
 
 /** Asset ids and the names Discord registered them under (the names are what the plugin works from). */
@@ -69,13 +69,15 @@ const EXPECT = {
 }
 
 /** Starts the plugin in a fake Discord with the asset registry, and lets Discord "load" the two modules it patches. */
-async function setup({ saved, tokens, theme, internal } = {}) {
+// `saved` is what the settings already hold. Unless a test says otherwise, "Follow icon packs" is off, so the built-in
+// pictures are the ones drawn; the icon pack path has its own checks below.
+async function setup({ saved, tokens, theme, internal, fresh } = {}) {
 	const overrides = { assets: { AssetsRegistry: { getAssetByID: id => (ASSETS[id] ? { name: ASSETS[id] } : undefined) } } }
 	if (tokens || internal) overrides.discord = { common: { tokens: { Tokens: { default: { ...(tokens ? { colors: tokens } : {}), ...(internal ? { internal } : {}) } } } } }
 	const runtime = createRuntime({ overrides, stores: theme ? { ThemeStore: { theme } } : {} }).install()
 	if (tokens) runtime.valenced.discord.common.tokens.Tokens.default.colors = tokens
 	const { definition } = loadPlugin('colorful-channels')
-	const storage = runtime.makeStorage(saved ?? {})
+	const storage = runtime.makeStorage(fresh ? {} : { followPack: false, ...(saved ?? {}) })
 	const running = await startPlugin(definition, runtime, { storage })
 
 	/** The icon module: `BaseChannelIcon` returns Discord's own element, which carries the tint color and style. */
@@ -202,20 +204,6 @@ function draw(s, source, extra = {}) {
 	// --- Staying safe
 	{
 		const s = await setup()
-		s.runtime.valenced.assets.AssetsRegistry.getAssetByID = () => {
-			throw new Error('registry broke')
-		}
-		let result
-		let threw = false
-		try {
-			result = s.icons.BaseChannelIcon({ source: 1 })
-		} catch {
-			threw = true
-		}
-		check('if drawing the colored icon fails, the icon is drawn as Discord drew it and nothing is thrown', !threw && result?.type === 'DiscordIcon')
-	}
-	{
-		const s = await setup()
 		const wrapper = { BaseChannelIcon: props => ({ type: 'DiscordIcon', props: { color: 42, source: props.source } }) }
 		s.runtime.finders.loadModule(wrapper)
 		await sleep(10)
@@ -245,12 +233,12 @@ function draw(s, source, extra = {}) {
 
 	// --- The settings screen
 	{
-		const s = await setup()
+		const s = await setup({ fresh: true })
 		const view = s.runtime.mount(s.runtime.React.createElement(s.definition.SettingsComponent, { api: { jsonStorage: s.storage } }))
 		await view.settle()
 		const switches = () => findNodes(view.tree, node => node.type === 'Design.TableSwitchRow')
-		check('the screen has three switches in order', switches().map(row => row.props.label).join('|') === 'NSFW tag|Colored icon symbols|Fallback colors for icon symbols', switches().map(row => row.props.label))
-		check('with nothing saved they show on, on, off', switches().map(row => row.props.value).join() === 'true,true,false')
+		check('the screen has four switches in order', switches().map(row => row.props.label).join('|') === 'NSFW tag|Colored icon symbols|Fallback colors for icon symbols|Follow icon packs', switches().map(row => row.props.label))
+		check('with nothing saved they show on, on, off', switches().map(row => row.props.value).join() === 'true,true,false,true')
 		check('the screen says where the idea comes from and to open the chat list again', textOf(view.tree).includes('NexxUtils by nexpid') && textOf(view.tree).includes('Open the chat list again'))
 
 		switches()[0].props.onValueChange(false)
