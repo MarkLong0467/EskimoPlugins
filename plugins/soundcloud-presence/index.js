@@ -5,9 +5,13 @@
 	 * and sets your status the same way the Rich Presence plugin does (LOCAL_ACTIVITY_UPDATE).
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 *
-	 * Discord cannot see what another app is playing, so the track comes from a SoundCloud link:
-	 * paste it, pick it from Recent, or copy it in SoundCloud (Share > Copy link) and let the plugin
-	 * pick it up from the clipboard.
+	 * Discord cannot see what another app is playing, so the track comes from one of two places:
+	 *  - a SoundCloud link you paste, pick from Recent, or copy in SoundCloud (Share > Copy link), or
+	 *  - Last.fm "now playing", filled in by a scrobbler app such as Pano Scrobbler, which can read the
+	 *    SoundCloud app's media notification. That is the automatic mode.
+	 *
+	 * The status can be shown by this plugin itself, or handed to the Rich Presence plugin as the variables
+	 * {sc_title} {sc_artist} {sc_url} {sc_art} {sc_button} so your own presence profile can display it.
 	 */
 	var TAG = '[soundcloud-presence]'
 	var SOCKET = 'EskimoSoundCloudPresence'
@@ -16,16 +20,27 @@
 	var ORANGE = '#FF5500'
 	var MAX_RECENTS = 8
 	var LINK_RE = /https?:\/\/(?:www\.|m\.|on\.)?soundcloud\.com\/[^\s<>"')]+/i
+	var LASTFM_BLANK = '2a96cbd8b46e442fc41c2b86b821562f'
+	var RICH_VARS = ['sc_title', 'sc_artist', 'sc_url', 'sc_art', 'sc_button']
 
 	var TIMER_MODES = [
 		{ v: 'progress', l: 'Progress bar', s: 'Counts up to the length of the track, then the status clears.' },
-		{ v: 'elapsed', l: 'Time elapsed', s: 'Counts up from when you showed the track.' },
+		{ v: 'elapsed', l: 'Time elapsed', s: 'Counts up from when the track started.' },
 		{ v: 'none', l: 'No timer', s: 'Shows only the title and artist.' },
 	]
 	var STATUS_TEXTS = [
 		{ v: 0, l: 'SoundCloud', s: 'Listening to SoundCloud' },
 		{ v: 1, l: 'Artist name', s: 'Listening to the artist' },
 		{ v: 2, l: 'Track title', s: 'Listening to the song' },
+	]
+	var POLLS = [
+		{ v: '15', l: 'Every 15 seconds', s: 'Quickest to notice a new song. Uses the most battery.' },
+		{ v: '30', l: 'Every 30 seconds', s: 'A good balance.' },
+		{ v: '60', l: 'Every minute', s: 'Lightest on battery.' },
+	]
+	var OUTPUTS = [
+		{ v: 'own', l: 'This plugin', s: 'SoundCloud Presence sets your status itself.' },
+		{ v: 'rich', l: 'My Rich Presence plugin', s: 'Hands the track to Rich Presence 1.3 or newer. In its settings tap "Use for SoundCloud".' },
 	]
 
 	var defaults = {
@@ -39,6 +54,11 @@
 		buttonLabel: 'Listen on SoundCloud',
 		timerMode: 'progress',
 		statusText: 0,
+		output: 'own',
+		autoEnabled: false,
+		lfmUser: '',
+		lfmKey: '',
+		pollSeconds: '30',
 		current: null,
 		recents: [],
 	}
@@ -48,7 +68,11 @@
 	var storage
 	var applySeq = 0
 	var endTimer
+	var pollTimer
+	var polling = false
 	var lastClip = ''
+	var auto = null
+	var richWarned = false
 	var status = { state: 'idle', text: '' }
 	var statusListeners = []
 	var assetCache = new Map()
@@ -112,7 +136,11 @@
 		return m ? decode(m[1]) : ''
 	}
 
-	// ---- SoundCloud lookup -------------------------------------------------------------------
+	function searchLink(artist, title) {
+		return 'https://soundcloud.com/search/sounds?q=' + encodeURIComponent((artist ? artist + ' ' : '') + title)
+	}
+
+	// ---- SoundCloud lookup (pasted links) ----------------------------------------------------
 	/**
 	 * Reads a track or playlist link. The page gives the real link (short links redirect) and the length,
 	 * SoundCloud's public oEmbed gives title, artist and artwork. Either one alone is enough to show it.
@@ -156,6 +184,98 @@
 			artwork: (data && data.thumbnail_url) || meta(html, 'og:image'),
 			duration: duration,
 		}
+	}
+
+	// ---- Last.fm (automatic mode) ------------------------------------------------------------
+	async function lastfm(method, params) {
+		var s = read()
+		var user = String(s.lfmUser || '').trim()
+		var key = String(s.lfmKey || '').trim()
+		if (!user || !key) throw new Error('Enter your Last.fm name and API key first')
+		var qs = Object.keys(params).map(function (k) { return k + '=' + encodeURIComponent(params[k]) }).join('&')
+		var res = await fetch('https://ws.audioscrobbler.com/2.0/?method=' + method + '&api_key=' + encodeURIComponent(key) + '&format=json&' + qs)
+		var data
+		try { data = await res.json() } catch (e) {}
+		if (!res.ok || (data && data.error)) throw new Error(data && data.message ? 'Last.fm: ' + data.message : 'Last.fm said no (' + res.status + ')')
+		return data
+	}
+
+	function pickImage(images) {
+		if (!Array.isArray(images)) return ''
+		for (var i = images.length - 1; i >= 0; i--) {
+			var url = images[i] && images[i]['#text']
+			if (url && url.indexOf(LASTFM_BLANK) < 0) return url
+		}
+		return ''
+	}
+
+	/** The song Last.fm says you are playing right now, or null. */
+	async function fetchNowPlaying() {
+		var data = await lastfm('user.getrecenttracks', { user: String(read().lfmUser).trim(), limit: '1' })
+		var list = data && data.recenttracks && data.recenttracks.track
+		var t = Array.isArray(list) ? list[0] : list
+		if (!t || !t['@attr'] || String(t['@attr'].nowplaying) !== 'true') return null
+		var artist = (t.artist && (t.artist['#text'] || t.artist.name)) || ''
+		var title = t.name || ''
+		if (!title) return null
+		return { artist: artist, title: title, artwork: pickImage(t.image) }
+	}
+
+	/** Checks Last.fm once and keeps `auto` in step with what is playing. */
+	async function poll() {
+		var s = read()
+		if (polling || !active || !s.autoEnabled || !String(s.lfmUser).trim() || !String(s.lfmKey).trim()) return
+		polling = true
+		try {
+			var np = await fetchNowPlaying()
+			if (!active) return
+			if (!np) {
+				if (auto) {
+					auto = null
+					await apply()
+				}
+				return
+			}
+			var key = np.artist + '\u0001' + np.title
+			if (auto && auto.key === key) return
+			var duration = 0
+			try {
+				var info = await lastfm('track.getinfo', { artist: np.artist, track: np.title })
+				duration = Number(info && info.track && info.track.duration) || 0
+			} catch (e) {}
+			auto = {
+				key: key,
+				url: '',
+				searchUrl: searchLink(np.artist, np.title),
+				title: np.title,
+				artist: np.artist,
+				artistUrl: '',
+				artwork: np.artwork,
+				duration: duration,
+				startedAt: Date.now(),
+			}
+			await apply()
+		} catch (error) {
+			setStatus({ state: 'error', text: String((error && error.message) || error) })
+		} finally {
+			polling = false
+		}
+	}
+
+	function restartPolling() {
+		clearInterval(pollTimer)
+		pollTimer = undefined
+		var s = read()
+		if (!active || !s.autoEnabled) {
+			if (auto) {
+				auto = null
+				if (active) apply()
+			}
+			return
+		}
+		var seconds = Math.max(15, parseInt(String(s.pollSeconds), 10) || 30)
+		pollTimer = setInterval(poll, seconds * 1000)
+		poll()
 	}
 
 	// ---- Images ------------------------------------------------------------------------------
@@ -206,8 +326,18 @@
 	}
 
 	// ---- The presence ------------------------------------------------------------------------
+	/** The track to show: what Last.fm says is playing, else the link you chose. */
+	function effective(settings) {
+		return settings.autoEnabled && auto ? auto : settings.current
+	}
+
 	function progressEnd(settings, track) {
 		return settings.timerMode === 'progress' && track.duration > 0 ? track.startedAt + track.duration : 0
+	}
+
+	function buttonOf(settings, track) {
+		var label = track.url ? String(settings.buttonLabel || '').trim() || 'Listen on SoundCloud' : 'Find on SoundCloud'
+		return { label: label.slice(0, 32), url: track.url || track.searchUrl }
 	}
 
 	async function buildActivity(settings, track) {
@@ -235,10 +365,12 @@
 				if (/^https?:\/\//i.test(track.url)) activity.assets.large_url = track.url
 			}
 		}
-		if (settings.showButton && /^https?:\/\//i.test(track.url)) {
-			var label = String(settings.buttonLabel || '').trim() || 'Listen on SoundCloud'
-			activity.buttons = [label.slice(0, 32)]
-			activity.metadata = { button_urls: [track.url] }
+		if (settings.showButton) {
+			var button = buttonOf(settings, track)
+			if (/^https?:\/\//i.test(button.url)) {
+				activity.buttons = [button.label]
+				activity.metadata = { button_urls: [button.url] }
+			}
 		}
 		return activity
 	}
@@ -252,22 +384,67 @@
 		})
 	}
 
+	// ---- Handing the track to the Rich Presence plugin ---------------------------------------
+	function nudgeRich() {
+		var rp = globalThis.eskimoRichPresence
+		if (rp && typeof rp.apply === 'function') {
+			rp.apply()
+			return true
+		}
+		return false
+	}
+
+	function pushRich(settings, track) {
+		var end = progressEnd(settings, track)
+		var button = buttonOf(settings, track)
+		globalThis.eskimoVars = Object.assign(globalThis.eskimoVars || {}, {
+			sc_title: track.title,
+			sc_artist: settings.showArtist ? track.artist : '',
+			sc_url: button.url,
+			sc_art: settings.showArtwork ? track.artwork || '' : '',
+			sc_button: button.label,
+		})
+		globalThis.eskimoTimestamps = settings.timerMode === 'none' ? undefined : end ? { start: track.startedAt, end: end } : { start: track.startedAt }
+		if (!nudgeRich() && !richWarned) {
+			richWarned = true
+			toast('Rich Presence 1.3 or newer is not running, so nothing is shown')
+		}
+	}
+
+	function clearRich() {
+		var vars = globalThis.eskimoVars
+		if (!vars || !vars.sc_title) return
+		RICH_VARS.forEach(function (k) { vars[k] = '' })
+		globalThis.eskimoTimestamps = undefined
+		nudgeRich()
+	}
+
 	async function apply() {
 		clearTimeout(endTimer)
 		if (!active) return
 		var seq = ++applySeq
 		var settings = read()
-		var track = settings.current
+		var track = effective(settings)
 		try {
-			if (!settings.enabled || !track) return dispatchActivity(null)
+			if (!settings.enabled || !track) {
+				clearRich()
+				return dispatchActivity(null)
+			}
 			var end = progressEnd(settings, track)
 			if (settings.clearAtEnd && end && Date.now() >= end) {
 				setStatus({ state: 'ended', text: 'That track has finished.' })
+				clearRich()
 				return dispatchActivity(null)
 			}
-			var activity = await buildActivity(settings, track)
-			if (seq !== applySeq || !active) return
-			dispatchActivity(activity)
+			if (settings.output === 'rich') {
+				dispatchActivity(null)
+				pushRich(settings, track)
+			} else {
+				clearRich()
+				var activity = await buildActivity(settings, track)
+				if (seq !== applySeq || !active) return
+				dispatchActivity(activity)
+			}
 			setStatus({ state: 'ok', text: '' })
 			if (settings.clearAtEnd && end) endTimer = setTimeout(function () { apply() }, Math.max(1000, end - Date.now() + 1500))
 		} catch (error) {
@@ -287,6 +464,7 @@
 			await save({ current: track, recents: recents })
 			await apply()
 			if (!settings.enabled) toast('Saved. Turn on Show status to put it on your profile.')
+			else if (settings.autoEnabled && auto) toast('Saved. Automatic mode is showing what Last.fm reports while a song plays.')
 			else toast('Now showing ' + track.title)
 			return true
 		} catch (error) {
@@ -299,8 +477,10 @@
 
 	async function stopShowing() {
 		clearTimeout(endTimer)
+		auto = null
 		await save({ current: null })
 		setStatus({ state: 'idle', text: '' })
+		clearRich()
 		dispatchActivity(null)
 	}
 
@@ -384,13 +564,20 @@
 			return function () { statusListeners = statusListeners.filter(function (l) { return l !== listener }) }
 		}, [])
 		var s = props.settings
-		var t = s.current
+		var t = effective(s)
+		var fromAuto = !!(s.autoEnabled && auto)
 		function line(content, variant, color) {
 			return content ? h(Design.Text, { variant: variant, color: color }, content) : null
 		}
 		var body
 		if (!t) {
-			body = h(Design.Text, { variant: 'text-sm/medium', color: 'text-muted', style: { marginTop: 8 } }, 'Nothing is shown yet. Paste a SoundCloud link below to put a track on your profile.')
+			body = h(
+				Design.Text,
+				{ variant: 'text-sm/medium', color: 'text-muted', style: { marginTop: 8 } },
+				s.autoEnabled
+					? 'Nothing is playing. Last.fm is checked ' + (s.pollSeconds || 30) + ' seconds apart.'
+					: 'Nothing is shown yet. Paste a SoundCloud link below to put a track on your profile.',
+			)
 		} else {
 			var side = s.statusText === 1 && s.showArtist && t.artist ? t.artist : s.statusText === 2 ? t.title : 'SoundCloud'
 			body = h(
@@ -403,7 +590,7 @@
 				h(
 					RN.View,
 					{ style: st.text },
-					line('Listening to ' + side, 'text-xs/semibold', 'text-muted'),
+					line('Listening to ' + side + (fromAuto ? ' · automatic' : ''), 'text-xs/semibold', 'text-muted'),
 					line(t.title, 'text-md/semibold'),
 					s.showArtist ? line(t.artist, 'text-sm/medium') : null,
 					s.timerMode === 'progress' && t.duration > 0
@@ -415,10 +602,10 @@
 		return h(
 			RN.View,
 			{ style: st.band },
-			h(Design.Text, { variant: 'text-xs/semibold', color: 'text-muted' }, 'LIVE PREVIEW'),
+			h(Design.Text, { variant: 'text-xs/semibold', color: 'text-muted' }, 'LIVE PREVIEW' + (s.output === 'rich' ? ' · SHOWN BY RICH PRESENCE' : '')),
 			body,
-			t && s.showButton
-				? h(RN.View, { style: st.button }, h(Design.Text, { variant: 'text-sm/semibold' }, String(s.buttonLabel || '').trim() || 'Listen on SoundCloud'))
+			t && s.showButton && s.output !== 'rich'
+				? h(RN.View, { style: st.button }, h(Design.Text, { variant: 'text-sm/semibold' }, buttonOf(s, t).label))
 				: null,
 			status.state === 'loading' ? h(Design.Text, { variant: 'text-xs/medium', color: 'text-muted', style: { marginTop: 8 } }, status.text) : null,
 			status.state === 'error' || status.state === 'ended'
@@ -441,7 +628,10 @@
 		function set(key, value) {
 			var o = {}
 			o[key] = value
-			return save(o).then(function () { return apply() })
+			return save(o).then(function () {
+				restartPolling()
+				return apply()
+			})
 		}
 		function row(label, subLabel, onPress) {
 			return h(Design.TableRow, { label: label, subLabel: subLabel, onPress: onPress })
@@ -472,13 +662,43 @@
 			if (!found) return toast('That does not look like a SoundCloud link')
 			showTrack(found).then(function (ok) { if (ok) linkState[1]('') })
 		}
+		function testLastfm() {
+			fetchNowPlaying().then(
+				function (np) { toast(np ? 'Connected. Now playing: ' + np.title + (np.artist ? ' by ' + np.artist : '') : 'Connected. Nothing is playing right now.') },
+				function (e) { toast(String((e && e.message) || e)) },
+			)
+		}
 
 		var children = [
 			section(
-				'Show a track',
+				'Automatic (Last.fm)',
+				toggle('Detect what I am playing', 'Follows your Last.fm now playing, so the status changes by itself with each song', 'autoEnabled'),
+				row('How to set it up', '1. Install Pano Scrobbler and let it scrobble the SoundCloud app. 2. Make a free key at last.fm/api/account/create. 3. Enter your Last.fm name and the key below.'),
+			),
+			h(Field, {
+				key: 'lfmUser',
+				label: 'Last.fm username',
+				placeholder: 'your-name',
+				maxLength: 40,
+				value: settings.lfmUser,
+				onCommit: function (value) { set('lfmUser', value) },
+			}),
+			h(Field, {
+				key: 'lfmKey',
+				label: 'Last.fm API key',
+				description: 'The API key, not the shared secret. It only reads your public scrobbles.',
+				placeholder: '32 letters and numbers',
+				maxLength: 64,
+				value: settings.lfmKey,
+				onCommit: function (value) { set('lfmKey', value) },
+			}),
+			section('Check', row('Test Last.fm', 'Check the name and key, and what is playing now', testLastfm)),
+			settings.autoEnabled ? radio('Check how often', 'pollSeconds', POLLS) : null,
+			section(
+				'Or show a track by link',
 				h(Design.TextInput, {
 					label: 'SoundCloud link',
-					description: 'A track or playlist link. The text SoundCloud copies when you share also works.',
+					description: 'A track or playlist link. The text SoundCloud copies when you share also works. Automatic mode wins while a song is playing.',
 					placeholder: 'https://soundcloud.com/artist/track',
 					size: 'md',
 					value: link,
@@ -508,17 +728,18 @@
 				toggle('Clear when the track ends', 'Removes your status after the last second (progress bar only)', 'clearAtEnd'),
 				toggle('Check the clipboard when Discord opens', 'In SoundCloud tap Share, then Copy link. Opening Discord shows it. Android may notify you that Discord read the clipboard.', 'clipboardOnOpen'),
 			),
+			radio('Show it with', 'output', OUTPUTS),
 			section(
 				'Appearance',
 				toggle('Artwork', 'Show the track cover as the large image', 'showArtwork'),
 				toggle('Artist', 'Show the artist under the title', 'showArtist'),
-				toggle('Listen button', 'A button on your profile that opens the track', 'showButton'),
+				toggle('Listen button', 'A button on your profile. Automatic tracks open a SoundCloud search for the song.', 'showButton'),
 			),
 			settings.showButton
 				? h(Field, {
 						key: 'buttonLabel',
 						label: 'Button text',
-						description: 'Up to 32 characters.',
+						description: 'Up to 32 characters. Used for tracks with a link.',
 						placeholder: 'Listen on SoundCloud',
 						maxLength: 32,
 						value: settings.buttonLabel,
@@ -530,9 +751,11 @@
 			section(
 				'Actions',
 				row('Restart the timer', 'Start counting from now', function () {
-					var t = read().current
+					var t = effective(read())
 					if (!t) return toast('Show a track first')
-					save({ current: Object.assign({}, t, { startedAt: Date.now() }) }).then(function () { apply() })
+					if (auto && read().autoEnabled) auto.startedAt = Date.now()
+					else save({ current: Object.assign({}, t, { startedAt: Date.now() }) })
+					apply()
 				}),
 				row('Stop showing', 'Remove SoundCloud from your profile', function () {
 					stopShowing()
@@ -541,8 +764,9 @@
 			),
 			section(
 				'How it works',
-				row('Why a link?', 'Discord cannot see what other apps are playing, so this plugin reads a SoundCloud link instead. It looks up the title, artist, artwork and length for you.'),
-				row('Private tracks', 'Only public tracks can be read.'),
+				row('Why Last.fm?', 'Discord cannot see what other apps are playing. A scrobbler app can, because it reads the media notification. It reports to Last.fm, and this plugin reads Last.fm.'),
+				row('What shows', 'Title, artist and cover come from Last.fm. The button opens a SoundCloud search, because Last.fm does not know the SoundCloud link. Paste a link to get the exact one.'),
+				row('Pausing', 'Last.fm does not always notice a pause. With a known length the status ends on its own when the song does.'),
 			),
 		]
 		return h(
@@ -566,21 +790,27 @@
 			var cleanup = api.cleanup
 			storage = api.jsonStorage
 			active = true
+			auto = null
 			cleanup(function () {
 				active = false
 				clearTimeout(endTimer)
+				clearInterval(pollTimer)
+				try { clearRich() } catch (e) {}
 				try { dispatchActivity(null) } catch (e) {}
 			})
 			Promise.resolve(storage.cache || storage.get()).then(function () {
 				if (!active) return
 				if (read().applyOnStart) apply()
+				restartPolling()
 				if (read().clipboardOnOpen) setTimeout(function () { checkClipboard(true) }, 2000)
 			})
-			// Opening Discord again checks the clipboard, if you asked for that.
+			// Opening Discord again checks the clipboard (if you asked for that) and Last.fm.
 			try {
 				var AppState = valenced.react.ReactNative.AppState
 				var sub = AppState.addEventListener('change', function (state) {
-					if (state === 'active' && read().clipboardOnOpen) setTimeout(function () { checkClipboard(true) }, 800)
+					if (state !== 'active') return
+					if (read().clipboardOnOpen) setTimeout(function () { checkClipboard(true) }, 800)
+					if (read().autoEnabled) poll()
 				})
 				cleanup(function () { try { sub.remove() } catch (e) {} })
 			} catch (e) {}

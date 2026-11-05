@@ -25,13 +25,14 @@
 		{ v: 'clock', l: 'Same as your current time' },
 		{ v: 'countdown', l: 'Countdown from applied' },
 		{ v: 'custom', l: 'Custom (loops when start and end are set)' },
+		{ v: 'external', l: 'From another plugin (SoundCloud Presence)' },
 	]
 	var PROFILE_KEYS = [
 		'label', 'name', 'type', 'details', 'detailsUrl', 'state', 'stateUrl', 'applicationId', 'streamUrl',
 		'largeImage', 'largeUrl', 'largeText', 'smallImage', 'smallUrl', 'smallText',
 		'timestampMode', 'customStart', 'customEnd', 'countdownMinutes',
 		'partyCurrent', 'partyMax',
-		'button1Label', 'button1Url', 'button2Label', 'button2Url',
+		'button1Label', 'button1Url', 'button2Label', 'button2Url', 'showOnlyWhen',
 	]
 
 	function newProfile(id, label) {
@@ -41,7 +42,7 @@
 			largeImage: '', largeUrl: '', largeText: '', smallImage: '', smallUrl: '', smallText: '',
 			timestampMode: 'none', customStart: '', customEnd: '', countdownMinutes: '30',
 			partyCurrent: '', partyMax: '',
-			button1Label: '', button1Url: '', button2Label: '', button2Url: '',
+			button1Label: '', button1Url: '', button2Label: '', button2Url: '', showOnlyWhen: '',
 		}
 	}
 
@@ -55,6 +56,8 @@
 
 	// ---- State -------------------------------------------------------------------------------
 	var active = false
+	// Other plugins can ask for a refresh through globalThis.eskimoRichPresence.apply().
+	var richApi = { apply: function () { scheduleApply(false) } }
 	var storage
 	var appliedAt = Date.now()
 	var refreshTimer
@@ -123,7 +126,12 @@
 			uptime: uptime(),
 		}
 		return text.replace(/\{(\w+)\}/g, function (all, name) {
-			return Object.prototype.hasOwnProperty.call(vars, name) ? vars[name] : all
+			if (Object.prototype.hasOwnProperty.call(vars, name)) return vars[name]
+			// Variables other plugins provide, such as {sc_title} from SoundCloud Presence.
+			var ext = globalThis.eskimoVars
+			if (ext && Object.prototype.hasOwnProperty.call(ext, name)) return ext[name] == null ? '' : String(ext[name])
+			// With SoundCloud Presence off or missing these are empty, not left as typed, so "show only when" can hide the presence.
+			return /^sc_(title|artist|url|art|button)$/.test(name) ? '' : all
 		})
 	}
 
@@ -326,6 +334,9 @@
 	async function buildActivity(p) {
 		var name = text(p.name)
 		if (!name) return null
+		// "Show only when" hides the presence while that text comes out empty, for example {sc_title} with nothing playing.
+		var gate = String(p.showOnlyWhen || '').trim()
+		if (gate && !text(gate)) return null
 		var appId = String(p.applicationId || '').trim() || '0'
 		var activity = { application_id: appId, name: name, type: Number(p.type) || 0, flags: 1 }
 		var details = text(p.details)
@@ -351,6 +362,10 @@
 		else if (p.timestampMode === 'countdown') {
 			var minutes = num(p.countdownMinutes) || 0
 			activity.timestamps = { end: appliedAt + minutes * 60000 }
+		} else if (p.timestampMode === 'external') {
+			// Start and end times another plugin put in globalThis.eskimoTimestamps.
+			var shared = globalThis.eskimoTimestamps
+			if (shared && shared.start) activity.timestamps = shared.end ? { start: shared.start, end: shared.end } : { start: shared.start }
 		} else if (p.timestampMode === 'custom') {
 			var start = parseTime(p.customStart)
 			var end = parseTime(p.customEnd)
@@ -733,6 +748,17 @@
 						activeProfile: id,
 					}, true)
 				}),
+				row('Use for SoundCloud', 'New profile that shows the track from the SoundCloud Presence plugin (set its Show it with to My Rich Presence plugin)', function () {
+					var id = Date.now().toString(36)
+					var latest = read()
+					var preset = Object.assign(newProfile(id, 'SoundCloud'), {
+						name: 'SoundCloud', type: 2, details: '{sc_title}', state: '{sc_artist}',
+						largeImage: '{sc_art}', largeText: '{sc_title}', timestampMode: 'external',
+						button1Label: '{sc_button}', button1Url: '{sc_url}', showOnlyWhen: '{sc_title}',
+					})
+					save({ profiles: latest.profiles.concat(preset), activeProfile: id }, true)
+					toast('SoundCloud profile added')
+				}),
 				row('Duplicate profile', 'Copy the selected profile', function () {
 					var latest = read()
 					var source = currentProfile(latest)
@@ -777,6 +803,7 @@
 			field('label', 'Profile name', 'Default', 'Only shown in this list.', 40),
 			field('applicationId', 'Application ID', '', 'Create an application at discord.com/developers and paste its ID. Needed for images and asset keys. Leave empty to use none.', 24),
 			field('name', 'Activity name', 'e.g. My game', 'Required. Nothing is shown until you set it. Supports variables.', 128),
+			field('showOnlyWhen', 'Show only when this has text', '{sc_title}', 'Optional. Hides your presence while this comes out empty. Example: {sc_title} hides it when no SoundCloud track is playing.', 128),
 			radio('Activity type', profile.type, TYPES, function (type) { update({ type: type }) }),
 			profile.type === 1
 				? field('streamUrl', 'Stream URL', 'https://twitch.tv/name', 'A Twitch or YouTube link.', 300)
@@ -819,7 +846,7 @@
 			section(
 				'Variables',
 				row(
-					'{time} {time12} {seconds} {date} {day} {month} {year} {user} {username} {uptime}',
+					'{time} {time12} {seconds} {date} {day} {month} {year} {user} {username} {uptime} {sc_title} {sc_artist} {sc_url} {sc_art} {sc_button}',
 					'Use these in any text field. They update on the refresh interval.',
 				),
 			),
@@ -855,6 +882,7 @@
 		start: function (api) {
 			var cleanup = api.cleanup
 			storage = api.jsonStorage
+			globalThis.eskimoRichPresence = richApi
 			active = true
 			appliedAt = Date.now()
 			cleanup(function () {
@@ -863,6 +891,7 @@
 				clearInterval(refreshTimer)
 				clearInterval(loopTimer)
 				try { dispatchActivity(null) } catch (e) {}
+					if (globalThis.eskimoRichPresence === richApi) delete globalThis.eskimoRichPresence
 			})
 			Promise.resolve(storage.cache || storage.get()).then(function () {
 				if (!active) return
