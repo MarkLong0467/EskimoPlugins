@@ -65,13 +65,39 @@ bun run build nef-viewer     # plugins/nef-viewer/build/js/index.js
 
 Source lives in `plugins/nef-viewer/js/`:
 
-| File         | Role                                                  |
-| ------------ | ----------------------------------------------------- |
-| `index.ts`   | Flux patches, conversion queue, message refresh       |
-| `nef.ts`     | TIFF/NEF parser, JPEG size reader, orientation insert |
-| `http.ts`    | Range request reader                                  |
-| `convert.ts` | Conversion and on-disk cache                          |
-| `base64.ts`  | Base64 encoder for writing binary files               |
+| File            | Role                                                                        |
+| --------------- | --------------------------------------------------------------------------- |
+| `index.ts`      | Entry point: listens to Flux events and starts the queue                    |
+| `patch.ts`      | Spots NEF attachments in messages and swaps them for the cached JPEG       |
+| `queue.ts`      | The conversion queue and the message refresh                                |
+| `attachments.ts`| Finds NEF attachments in messages, embeds and forwarded messages            |
+| `nef.ts`        | TIFF/NEF parser, JPEG size reader, orientation insert                       |
+| `http.ts`       | Range request reader                                                        |
+| `convert.ts`    | Conversion and on-disk cache                                                |
+| `base64.ts`     | Base64 encoder for writing binary files                                     |
+| `constants.ts`, `types.ts` | Fixed values and types                                           |
+
+## Developing the plugins
+
+Every plugin lives in `plugins/<name>/` with the same layout: `manifest.json`, `tsconfig.json`, a `README.md` and the
+TypeScript and React source in `js/` (`js/index.ts` is the entry point). Each plugin's README says what it does and how its
+files fit together.
+
+```sh
+bun install
+bun run build                # every plugin -> plugins/<name>/build/js/index.js
+bun run lint                 # Biome
+bun run lint:types           # TypeScript, every plugin
+bun run test                 # builds, then runs every test in tests/
+bun run test role-options    # one plugin's test
+```
+
+The tests run a plugin against a small fake of Discord (`tests/lib/harness.cjs`), so what can be checked without a phone is
+checked. Setting `BUNDLE_DIR` to another build runs the same checks against that build, which is how a rewrite is shown to
+behave like the version it replaced.
+
+Not yet converted to the layout above (they still ship a handwritten `index.js`): Always Animate, Custom Sounds,
+Minecraft Servers, Pin DMs and Show Hidden Channels. `bun run build` reports them as having no default export until they are.
 
 ## License
 
