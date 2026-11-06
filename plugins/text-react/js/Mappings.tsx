@@ -1,7 +1,7 @@
 import { Design } from '@valenced/discord/design'
 import { Clipboard } from '@valenced/externals/react-native-clipboard'
 import { useState } from 'react'
-import { Share } from 'react-native'
+import { TextInput as NativeTextInput, Share } from 'react-native'
 import { EDIT_SHEET_KEY } from './constants'
 import {
 	formatList,
@@ -30,6 +30,49 @@ const SHARE_TITLE = 'Share and back up'
 const SHARE_HELP =
 	'Export copies your settings as JSON and opens the share sheet, so you can save or send them. To use someone’s settings, paste their JSON below and tap Import. Importing replaces your mappings.'
 const FILE_NAME = 'text-react-settings.json'
+
+/**
+ * A field that takes several lines: Enter starts a new line and pasted text keeps its line breaks. It is React Native's own text
+ * input (Discord's one-line field drops line breaks), dressed to look like Discord's.
+ */
+function MultilineInput({
+	label,
+	placeholder,
+	value,
+	onChange,
+}: {
+	label: string
+	placeholder: string
+	value: string
+	onChange(value: string): void
+}) {
+	return (
+		<>
+			<Design.Text variant="text-sm/medium" color="text-muted">
+				{label}
+			</Design.Text>
+			<NativeTextInput
+				multiline
+				value={value}
+				onChangeText={onChange}
+				placeholder={placeholder}
+				placeholderTextColor="#80848e"
+				autoCapitalize="none"
+				autoCorrect={false}
+				textAlignVertical="top"
+				style={{
+					minHeight: 120,
+					maxHeight: 260,
+					padding: 12,
+					borderRadius: 8,
+					color: '#f2f3f5',
+					backgroundColor: '#1e1f22',
+					fontSize: 16,
+				}}
+			/>
+		</>
+	)
+}
 
 /**
  * The parts of the settings screen for mappings: the person's own mappings with a form to add one, the built-in ones that
@@ -224,10 +267,9 @@ export default function Mappings({
 					variant="secondary"
 					onPress={copyLists}
 				/>
-				<Design.TextArea
+				<MultilineInput
 					label="Paste lists (one per line, like  a: 🅰 🇦 )"
 					placeholder={'a: 🅰 🇦\nfuck: 🍆 🍑'}
-					size="md"
 					value={listText}
 					onChange={setListText}
 				/>
@@ -270,10 +312,9 @@ export default function Mappings({
 					variant="primary"
 					onPress={exportNow}
 				/>
-				<Design.TextArea
+				<MultilineInput
 					label="Paste settings JSON"
 					placeholder="{ ... }"
-					size="md"
 					value={importText}
 					onChange={setImportText}
 				/>
