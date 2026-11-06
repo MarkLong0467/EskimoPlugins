@@ -2899,6 +2899,29 @@
       "contributors": [
         "kmmiio99o <879393496627306587> (https://kmmiio99o.dev \"Original author\") (https://github.com/kmmiio99o \"GitHub\")"
       ]
+    },
+    "marklong.message-reminders": {
+      "name": "Message Reminders",
+      "description": "Hold a message, tap Remind Me and pick a time. When it comes, a sheet shows the message with Jump, Snooze and Done. Missed reminders show up when you next open Discord.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.message-reminders@1.0.0.zip",
+          "sha256": "28fce8219b70f82eae6152aea9244c4ad929503dae5e3222187d85263ed918ac",
+          "size": 9637,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
     }
   }
 }
