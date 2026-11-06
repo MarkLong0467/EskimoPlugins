@@ -1206,10 +1206,10 @@
     },
     "marklong.rich-presence": {
       "name": "Rich Presence",
-      "description": "Fully customizable rich presence: profiles, every activity field, images, timer, party size, buttons and live text variables. Can show the track from SoundCloud Presence. Shows nothing until you set it up.",
+      "description": "Show up to three presences at once, with an easy grouped editor, many timers (dates, countdowns, daily ranges), schedules and SoundCloud built in.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.3.1"
+        "latest": "2.0.0"
       },
       "versions": {
         "1.2.1": {
@@ -1281,6 +1281,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.rich-presence@1.3.1.zip",
           "sha256": "da1d7c85256c7174d9d0d2297f1682cd293814e6139914b71b4bd6531991712e",
           "size": 9227,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "2.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.rich-presence@2.0.0.zip",
+          "sha256": "791e95187da54518c912eabf17e1a6abb2d391f0bc9b7eec1e6303847ca2aee8",
+          "size": 25630,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"

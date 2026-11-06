@@ -189,8 +189,8 @@
     {
       "id": "marklong.rich-presence",
       "name": "Rich Presence",
-      "version": "1.3.1",
-      "short": "fully custom rich presence with profiles, images, timers and buttons",
+      "version": "2.0.0",
+      "short": "up to 3 presences at once, many timers and schedules, SoundCloud built in",
       "suffix": ""
     },
     {
