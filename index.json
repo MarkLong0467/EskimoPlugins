@@ -3179,6 +3179,29 @@
       "contributors": [
         "Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
       ]
+    },
+    "marklong.custom-rpc-test": {
+      "name": "CustomRPC Test",
+      "description": "A test version of Rich Presence that can show several presences at once. Each profile you switch on is its own activity on your profile. Shows nothing until you set it up. Runs next to Rich Presence.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "0.1.0"
+      },
+      "versions": {
+        "0.1.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.custom-rpc-test@0.1.0.zip",
+          "sha256": "97513727632feaf5e4aad224f524cb7ddba2de0272fe7b48d2a1ded96dd30d22",
+          "size": 10505,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
     }
   }
 }
