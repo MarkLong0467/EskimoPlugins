@@ -224,13 +224,12 @@ export default function Mappings({
 					variant="secondary"
 					onPress={copyLists}
 				/>
-				<Design.TextInput
+				<Design.TextArea
 					label="Paste lists (one per line, like  a: 🅰 🇦 )"
 					placeholder={'a: 🅰 🇦\nfuck: 🍆 🍑'}
 					size="md"
 					value={listText}
 					onChange={setListText}
-					multiline
 				/>
 				<Design.Button
 					text="Apply lists"
@@ -271,13 +270,12 @@ export default function Mappings({
 					variant="primary"
 					onPress={exportNow}
 				/>
-				<Design.TextInput
+				<Design.TextArea
 					label="Paste settings JSON"
 					placeholder="{ ... }"
 					size="md"
 					value={importText}
 					onChange={setImportText}
-					multiline
 				/>
 				<Design.Button
 					text="Import settings"

@@ -526,7 +526,7 @@ async function setup({ saved = {}, answer = () => undefined, token = null, withH
 		await view.settle()
 		check('the built-in lists can be copied', JSON.stringify(view.tree).includes('Copied the built-in lists'))
 		void copied
-		const paste = findNodes(view.tree, n => n.type === 'Design.TextInput').find(n => String(n.props.label).startsWith('Paste lists'))
+		const paste = findNodes(view.tree, n => n.type === 'Design.TextArea').find(n => String(n.props.label).startsWith('Paste lists'))
 		paste.props.onChange(['a: 🍎 🍐', 'SPACE: 🟦', 'fuck: 🍆 🍑', 'nonsense', 'z: abc'].join(String.fromCharCode(10)))
 		await view.settle()
 		findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === 'Apply lists').props.onPress()
@@ -537,14 +537,14 @@ async function setup({ saved = {}, answer = () => undefined, token = null, withH
 		s.storage.cache.overrides = {}
 
 		const shared = JSON.stringify({ format: 'text-react-settings', version: 1, menu: false, delaySeconds: '2', customWords: [{ word: 'Hi', emoji: '👋' }, { word: 'bad', emoji: 'nope' }], hiddenDefaults: ['ok'] })
-		findNodes(view.tree, n => n.type === 'Design.TextInput').find(n => n.props.label === 'Paste settings JSON').props.onChange(shared)
+		findNodes(view.tree, n => n.type === 'Design.TextArea').find(n => n.props.label === 'Paste settings JSON').props.onChange(shared)
 		await view.settle()
 		findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === 'Import settings').props.onPress()
 		await view.settle()
 		const c = s.storage.cache
 		check('importing takes the valid parts', c.menu === false && c.delaySeconds === '2' && JSON.stringify(c.customWords) === JSON.stringify([{ word: 'hi', emoji: '👋' }]) && JSON.stringify(c.hiddenDefaults) === JSON.stringify(['ok']), c)
 		check('and says what was skipped', JSON.stringify(view.tree).includes('skipped 1'))
-		findNodes(view.tree, n => n.type === 'Design.TextInput').find(n => n.props.label === 'Paste settings JSON').props.onChange('{"a":1}')
+		findNodes(view.tree, n => n.type === 'Design.TextArea').find(n => n.props.label === 'Paste settings JSON').props.onChange('{"a":1}')
 		await view.settle()
 		findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === 'Import settings').props.onPress()
 		await view.settle()
