@@ -59,6 +59,7 @@ export interface DiagnosticsOptions {
 
 /** The shape of the library that most of these plugins depend on, as far as the report needs it. */
 interface LibraryLike {
+	registerPlugin?: unknown
 	isPluginRunning?: (id: string) => boolean
 	getLogsForPlugin?: (id: string) => {
 		module: string
@@ -259,9 +260,11 @@ export function createDiagnostics(
 				plugin.manifest.dependencies?.['marklong.kmmiio-lib'],
 			)
 			if (needsLibrary) {
+				// The library does not register itself with itself, so asking it whether it is running always says no.
+				// Its API being on the plugin API is what shows it is running.
 				let running = false
 				try {
-					running = library()?.isPluginRunning?.('marklong.kmmiio-lib') === true
+					running = typeof library()?.registerPlugin === 'function'
 				} catch {
 					running = false
 				}

@@ -11,7 +11,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { createReporter, createRuntime, loadPlugin, findNode, textOf, ROOT } = require('./lib/harness.cjs')
+const { createReporter, createRuntime, loadPlugin, findNode, findNodes, textOf, ROOT } = require('./lib/harness.cjs')
 
 const { check, done } = createReporter('kmmiio99o ports')
 
@@ -171,6 +171,7 @@ const buttonOf = (view, text) => findNode(view.tree, n => n.type === 'Design.But
 		await view.settle()
 		check(`${name}: the self-check lists results`, !!findNode(view.tree, n => n.type === 'Design.TableRowGroup' && n.props.title === 'Self-check'))
 		check(`${name}: the self-check says the plugin started`, !!findNode(view.tree, n => n.type === 'Design.TableRow' && /Plugin started/.test(String(n.props.label))))
+		if (entry.needsLib) check(`${name}: the self-check finds the running kmmiio Library`, !!findNode(view.tree, n => n.type === 'Design.TableRow' && /✓ kmmiio Library is running/.test(String(n.props.label))), findNodes(view.tree, n => n.type === 'Design.TableRow').map(n => n.props.label))
 		const clear = findNode(view.tree, n => n.type === 'Design.TableRow' && n.props.label === 'Clear events')
 		check(`${name}: events can be cleared`, !!clear)
 		if (clear) {
