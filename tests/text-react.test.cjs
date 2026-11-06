@@ -431,6 +431,24 @@ async function setup({ saved = {}, answer = () => undefined, token = null, withH
 		await s.running.stop()
 	}
 
+
+	// --- Preview of what will be added
+	{
+		const s = await setup()
+		const { view } = await s.openSheet()
+		check('with no text there is no preview', !JSON.stringify(view.tree).includes('Preview of what will be added'))
+		await s.type(view, 'Hi')
+		const lines = () => JSON.stringify(view.tree)
+		check('typing shows the emoji that will be added', lines().includes('Preview of what will be added') && lines().includes('🇭  🇮') && lines().includes('2 reactions'), lines().slice(0, 300))
+		await s.type(view, 'ok')
+		check('and it follows the text', lines().includes('🆗') && lines().includes('1 reaction') && !lines().includes('1 reactions'))
+		await s.type(view, 'é$?')
+		check('it says when characters are left out', lines().includes('left out'))
+		await s.type(view, '')
+		check('and when nothing can be turned into emoji', lines().includes('None of that text can be turned into reactions'))
+		await s.running.stop()
+	}
+
 	// --- Opening animation
 	{
 		const s = await setup({ saved: { animate: false } })

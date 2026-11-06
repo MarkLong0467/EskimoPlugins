@@ -21,6 +21,7 @@ const HELP =
 const WARNING =
 	'Part of the text has no emoji, so it would be left out. React anyway?'
 const REACT = 'React'
+const PREVIEW = 'Preview of what will be added'
 const BACK = 'Go back'
 const CANCEL = 'Cancel'
 const ANYWAY = 'React anyway'
@@ -60,12 +61,23 @@ export default function TextReactSheet({ target }: { target: Target }) {
 		addReactions(target, emoji)
 	}
 
-	const react = () => {
-		const { emoji, incomplete } = generateEmojiArray(text.trim(), {
+	/** What the text turns into with the current settings. */
+	const convert = () =>
+		generateEmojiArray(text.trim(), {
 			custom: setting('customWords'),
 			hidden: setting('hiddenDefaults'),
 			overrides: setting('overrides'),
 		})
+	const preview = text.trim() ? convert() : null
+	const previewLine = preview?.emoji.join('  ') ?? ''
+	const previewNote = !preview
+		? ''
+		: !preview.emoji.length
+			? 'None of that text can be turned into reactions'
+			: `${preview.emoji.length} reaction${preview.emoji.length === 1 ? '' : 's'}${preview.incomplete ? ', some characters have no emoji and are left out' : ''}`
+
+	const react = () => {
+		const { emoji, incomplete } = convert()
 		if (!emoji.length)
 			return toast('None of that text can be turned into reactions')
 		const fresh = room ? newReactions(emoji, room) : emoji.length
@@ -120,6 +132,21 @@ export default function TextReactSheet({ target }: { target: Target }) {
 							onChange={setText}
 							autoFocus
 						/>
+						{preview ? (
+							<>
+								<Design.Text variant="text-sm/medium" color="text-muted">
+									{PREVIEW}
+								</Design.Text>
+								{previewLine ? (
+									<Design.Text variant="heading-lg/semibold">
+										{previewLine}
+									</Design.Text>
+								) : null}
+								<Design.Text variant="text-sm/medium" color="text-muted">
+									{previewNote}
+								</Design.Text>
+							</>
+						) : null}
 						<Design.Button
 							text={REACT}
 							variant="primary"
