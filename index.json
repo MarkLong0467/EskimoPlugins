@@ -3146,7 +3146,7 @@
       "description": "Turns on \"Show All Channels\" by itself in every server you join, so community servers never hide channels from you. Has a button to do the same for the servers you are already in.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.0.1"
+        "latest": "1.0.2"
       },
       "versions": {
         "1.0.0": {
@@ -3166,6 +3166,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.auto-show-all-channels@1.0.1.zip",
           "sha256": "7c16c4ddfbc0edaf2f9d1e8098ce30945d2acaa96e0c7b928311e9f56b36a9c7",
           "size": 7220,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.0.2": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.auto-show-all-channels@1.0.2.zip",
+          "sha256": "ae457d1ab5d532f7447c875bbcb4f99a49edb35062320d75da08466e08287c24",
+          "size": 7564,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
