@@ -142,9 +142,10 @@ function header(
 ): ReactElement | null {
 	const channelId = props?.channelId
 	// Hooks must run on every draw, so this comes before anything that might return early.
-	const [choice, setChoice] = useState<Choice>(() =>
-		channelId ? silentFor(channelId) : undefined,
-	)
+	const [, redraw] = useState(0)
+	// The choice is read from what is saved for this DM on every draw. React keeps one header for every DM you open, so a
+	// choice kept in this component's own state would still be the previous DM's.
+	const choice: Choice = channelId ? silentFor(channelId) : undefined
 	const drawn = own(props)
 	if (!drawn || !channelId) return drawn
 	const children = (drawn.props as { children?: unknown }).children
@@ -156,7 +157,7 @@ function header(
 				key="better-calls:silent-call-toggle"
 				channelId={channelId}
 				choice={choice}
-				onChoose={setChoice}
+				onChoose={() => redraw(n => n + 1)}
 			/>,
 			...children,
 		],

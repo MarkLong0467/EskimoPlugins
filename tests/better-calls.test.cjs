@@ -146,6 +146,43 @@ const rowOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Table
 		s.stop()
 	}
 
+	// --- React keeps one header for every DM: the button must follow the DM, not the component
+	{
+		const f = fake()
+		const s = await start(f)
+		let goTo
+		const view = s.runtime.mount(
+			s.runtime.React.createElement(function Host() {
+				const [id, setId] = s.runtime.React.useState('dm1')
+				goTo = setId
+				return renderElement(jsx(s, f.header, { channelId: id }))
+			}, {}),
+		)
+		await view.settle()
+		check('a DM with no choice shows the plain bell', toggleOf(view).props.variant === 'tertiary')
+		toggleOf(view).props.onPress()
+		await view.settle()
+		check('after one tap this DM is silent', toggleOf(view).props.variant === 'primary' && s.storage.cache.silentCall.users.dm1 === true)
+		goTo('dm2')
+		await view.settle()
+		check('opening another DM in the same header shows that DM’s own choice, not the last one’s', toggleOf(view).props.variant === 'tertiary', toggleOf(view).props)
+		await f.ring('dm2')
+		check('and calling it rings, as its bell says', f.rings.join() === 'dm2', f.rings)
+		goTo('dm1')
+		await view.settle()
+		check('going back shows the silent choice again', toggleOf(view).props.variant === 'primary')
+		f.rings.length = 0
+		await f.ring('dm1')
+		check('and calling that DM does not ring', f.rings.length === 0, f.rings)
+		goTo('dm2')
+		await view.settle()
+		toggleOf(view).props.onPress()
+		await view.settle()
+		check('a tap in the second DM changes only that DM', s.storage.cache.silentCall.users.dm2 === true && s.storage.cache.silentCall.users.dm1 === true && toggleOf(view).props.variant === 'primary')
+		view.unmount()
+		s.stop()
+	}
+
 	// --- The choice is remembered
 	{
 		const f = fake()

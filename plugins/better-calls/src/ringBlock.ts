@@ -1,6 +1,6 @@
 import { getModules } from '@valenced/modules/finders'
 import { withProps } from '@valenced/modules/finders/filters'
-import { shouldBeSilent } from './config'
+import { shouldBeSilent, silentFor, store } from './config'
 import { diag } from './diag'
 import { state } from './state'
 
@@ -94,7 +94,11 @@ export function installRingBlock(): () => void {
 							return NOTHING_SENT()
 						}
 						state.rang++
-						diag.log('ring', 'a ring request was sent')
+						const choice = silentFor(match[1] as string)
+						diag.log(
+							'ring',
+							`a ring request was sent (this DM's choice: ${choice === undefined ? 'none' : choice ? 'silent' : 'ring'}, default: ${store.get('silentCall').default ? 'silent' : 'ring'}, ${Object.keys(store.get('silentCall').users ?? {}).length} choice(s) saved)`,
+						)
 						return original(...args)
 					}) as never)
 					state.ring = true
