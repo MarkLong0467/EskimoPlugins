@@ -1,11 +1,13 @@
 import { AssetsRegistry } from '@valenced/assets'
 import { ActionSheetActionCreators } from '@valenced/discord/actions'
+import { Design } from '@valenced/discord/design'
 import { lookupModule } from '@valenced/modules/finders'
 import { withProps } from '@valenced/modules/finders/filters'
 import { after } from '@valenced/patcher'
-import { cloneElement } from 'react'
+import { cloneElement, createElement } from 'react'
 import { setting } from './config'
 import {
+	COPY_LABELS,
 	IDENTITY_PROPS,
 	MENU_ICONS,
 	MENU_LABEL,
@@ -36,6 +38,17 @@ export function forgetTarget(): void {
  * the message itself, or as `channel` / `channelId` next to it).
  */
 function noteTarget(props: Record<string, unknown>): void {
+	if (
+		typeof props.messageId === 'string' &&
+		typeof props.channelId === 'string'
+	) {
+		target = {
+			channelId: props.channelId,
+			messageId: props.messageId,
+			at: Date.now(),
+		}
+		return
+	}
 	const message = props.message as
 		| { id?: unknown; channel_id?: unknown; channelId?: unknown }
 		| undefined
@@ -102,19 +115,28 @@ function isMessageMenu(items: MenuItem[]): boolean {
 }
 
 /** Opens the sheet that asks for the text, for the message the menu was about. */
-function openTextReact(): void {
-	if (!target || Date.now() - target.at > TARGET_MAX_AGE_MS) {
+function openTextReact(message: Target | null): void {
+	if (!message) {
 		toast(
 			'Could not tell which message that was. Hold the message and try again',
 		)
 		return
 	}
-	const message = target
 	ActionSheetActionCreators.openLazy(
 		Promise.resolve({ default: () => <TextReactSheet target={message} /> }),
 		SHEET_KEY,
 		{},
 	)
+}
+
+/**
+ * The message the menu that was just drawn is for. It is taken when the menu is drawn, not when a row is tapped, so tapping
+ * a while later still reacts to the right message.
+ */
+function messageForMenu(): Target | null {
+	return target && Date.now() - target.at <= TARGET_MAX_AGE_MS
+		? { ...target }
+		: null
 }
 
 /**
@@ -136,6 +158,7 @@ function decorateItems(result: ReactElement, items: MenuItem[]): ReactElement {
 
 	const item: MenuItem = { ...template, label: MENU_LABEL }
 	for (const name of IDENTITY_PROPS) delete item[name]
+	const message = messageForMenu()
 	let lastPress = 0
 	const press = () => {
 		// One tap can reach more than one handler, so only the first one counts.
@@ -146,7 +169,7 @@ function decorateItems(result: ReactElement, items: MenuItem[]): ReactElement {
 		} catch {
 			// No sheet was open.
 		}
-		setTimeout(openTextReact, 0)
+		setTimeout(() => openTextReact(message), 0)
 	}
 	for (const name of PRESS_PROPS) {
 		if (name in template || name === 'action') item[name] = press
@@ -157,6 +180,110 @@ function decorateItems(result: ReactElement, items: MenuItem[]): ReactElement {
 	delete item.IconComponent
 
 	return cloneElement(result, { items: items.concat(item) } as never)
+}
+
+/** The name of a React component, from the element that was just made. */
+function componentName(element: unknown): string {
+	const type = (element as { type?: unknown } | null | undefined)?.type as
+		| Record<string, unknown>
+		| string
+		| undefined
+	if (!type || typeof type === 'string') return ''
+	const inner = (type.type || type.render || type) as
+		| { displayName?: string; name?: string }
+		| undefined
+	return (
+		(type.displayName as string) ||
+		(type.name as string) ||
+		inner?.displayName ||
+		inner?.name ||
+		''
+	)
+}
+
+/** A row of the menu: an element that has a text label. */
+type Row = ReactElement<Record<string, unknown>>
+
+/** Whether something is a row of the menu (an element with a text `label`). */
+function isRow(value: unknown): value is Row {
+	const props = (
+		value as { props?: Record<string, unknown> } | null | undefined
+	)?.props
+	return !!props && typeof props.label === 'string'
+}
+
+/** Whether a row is one of the copy rows. It is found by its label or, in other languages, by the name of its icon. */
+function isCopyRow(row: Row): boolean {
+	if (COPY_LABELS.includes(row.props.label as string)) return true
+	const icon = row.props.icon
+	return (
+		!!icon &&
+		typeof icon === 'object' &&
+		/copy|clipboard/i.test(componentName(icon))
+	)
+}
+
+/** What is done when the new row is tapped: close the menu, then ask for the text. */
+function makePress(message: Target | null): () => void {
+	let lastPress = 0
+	return () => {
+		// One tap can reach more than one handler, so only the first one counts.
+		if (Date.now() - lastPress < 1500) return
+		lastPress = Date.now()
+		try {
+			ActionSheetActionCreators.hideAllActionSheets()
+		} catch {
+			// No sheet was open.
+		}
+		setTimeout(() => openTextReact(message), 0)
+	}
+}
+
+/**
+ * Adds "Text React" to the menu of a message when it is drawn as groups of rows.
+ *
+ * The menu has boxes of rows (Reply and Forward; Copy Text, Message, Mention and Copy Message Link; ...). The new row goes
+ * at the end of the box that holds the copy rows. It is a copy of one of that box's rows, so it looks the same, with its
+ * label, icon and tap action replaced. A box that has no copy row, or has the row already, is left as it is.
+ *
+ * @param group The element that holds the rows.
+ * @returns The same element with the row added, or the element unchanged.
+ */
+function decorateRows(
+	group: ReactElement<Record<string, unknown>>,
+): ReactElement {
+	if (!setting('menu')) return group
+	const children = group.props.children
+	const rows = (Array.isArray(children) ? children.flat() : [children]).filter(
+		isRow,
+	)
+	if (
+		rows.length < 2 ||
+		rows.some(row => row.props.label === MENU_LABEL) ||
+		!rows.some(isCopyRow) ||
+		!rows.every(
+			row =>
+				typeof row.props.onPress === 'function' ||
+				row.props.onPress === undefined,
+		)
+	)
+		return group
+
+	const template = rows.find(isCopyRow) as Row
+	const iconId = MENU_ICONS.map(asset).find(id => id != null)
+	const row = createElement(template.type as never, {
+		...template.props,
+		key: 'text-react',
+		label: MENU_LABEL,
+		subLabel: undefined,
+		icon:
+			iconId != null
+				? createElement(Design.TableRow.Icon, { source: iconId })
+				: undefined,
+		onPress: makePress(messageForMenu()),
+	})
+	const kept = Array.isArray(children) ? children.flat() : [children]
+	return cloneElement(group, {} as never, [...kept, row] as never)
 }
 
 /** Looks at every element Discord creates: notes the message it is about and, in the message menu, adds the item. */
@@ -175,6 +302,9 @@ function onNewElement(drawn: unknown): unknown {
 			props.items.length <= 30
 		)
 			return decorateItems(element, props.items as MenuItem[])
+		// The message menu is drawn as boxes of rows: the box that holds the copy rows gets the new row.
+		if (props.children && typeof props.children === 'object')
+			return decorateRows(element as ReactElement<Record<string, unknown>>)
 		return drawn
 	} catch {
 		return drawn

@@ -29,7 +29,7 @@ The code is in `js/`:
 | `reactions.ts` | Adds the reactions one at a time through Discord's web API, slowing down when Discord asks. |
 | `Settings.tsx`, `config.ts`, `discord.ts`, `constants.ts`, `types.ts` | Settings and helpers. |
 
-The menu of a message is a list of items. The plugin finds it by its labels (Reply, Copy Text, Add Reaction...) or, in other
+The menu of a message is drawn as boxes of rows (Reply and Forward; Copy Text, Message, Mention and Copy Message Link; ...), and some versions of Discord draw it as one list of items. The plugin handles both. The plugin finds the box that holds the copy rows by their labels (Reply, Copy Text, Add Reaction...) or, in other
 languages, by the names of its icons, and adds one more item that is a copy of an existing one.
 
 ### Differences from the Aliucord plugin

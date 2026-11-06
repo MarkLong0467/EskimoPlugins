@@ -61,6 +61,9 @@ export const MESSAGE_LABELS: Record<string, 1> = {
 	Report: 1,
 }
 
+/** The labels of the rows that copy something. The new row goes into the box that holds them. */
+export const COPY_LABELS = ['Copy Text', 'Copy Message Link', 'Copy Message ID']
+
 /** What the message menu's icons are called, so it is also found in other languages. */
 export const MESSAGE_ICONS = [
 	/reply/i,

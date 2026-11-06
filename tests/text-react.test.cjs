@@ -118,6 +118,63 @@ async function setup({ saved = {}, answer = () => undefined, token = null, withH
 		await s.running.stop()
 	}
 
+	// --- The menu drawn as boxes of rows, as in the real message menu
+	{
+		const s = await setup()
+		const row = (label, icon) => ({ type: 'MenuRow', props: { label, onPress() {}, icon: { type: { name: icon } } } })
+		jsxNote(s)
+		function jsxNote(setupResult) {
+			setupResult.jsx.jsx('MessageActionsSheet', { message: MESSAGE })
+		}
+		const reply = s.jsx.jsx('Group', { children: [row('Reply', 'ReplyIcon'), row('Forward', 'ForwardIcon')] })
+		const copy = s.jsx.jsx('Group', { children: [row('Copy Text', 'CopyIcon'), row('Message', 'ChatIcon'), row('Mention', 'AtIcon'), row('Copy Message Link', 'LinkIcon')] })
+		const timezone = s.jsx.jsx('Group', { children: [row('Set their timezone...', 'ClockIcon')] })
+		const labels = group => [group.props.children].flat().map(r => r.props.label)
+		check('Text React goes at the end of the box with the copy rows', JSON.stringify(labels(copy)) === JSON.stringify(['Copy Text', 'Message', 'Mention', 'Copy Message Link', 'Text React']), labels(copy))
+		check('the other boxes are left alone', labels(reply).length === 2 && labels(timezone).length === 1)
+		const added = [copy.props.children].flat().at(-1)
+		check('the new row is a copy of a row of its box, with its own icon and no sub label', added.type === 'MenuRow' && added.props.subLabel === undefined && added.props.key === undefined, added)
+		added.props.onPress()
+		added.props.onPress()
+		await sleep(5)
+		check('tapping the row closes the menu and opens the sheet once', s.sheets().filter(a => a.name === 'openLazy').length === 1 && s.sheets().some(a => a.name === 'hideAllActionSheets'), s.sheets().map(a => a.name))
+		check('a box that has the row already is left alone', labels(s.jsx.jsx('Group', { children: [...[copy.props.children].flat()] })).length === 5)
+		await s.running.stop()
+		check('after stopping the rows are no longer changed', labels(s.jsx.jsx('Group', { children: [row('Copy Text', 'CopyIcon'), row('Reply', 'ReplyIcon')] })).length === 2)
+	}
+	{
+		// The copy rows are found by their icon in other languages.
+		const s = await setup()
+		const row = (label, icon) => ({ type: 'MenuRow', props: { label, onPress() {}, icon: { type: { name: icon } } } })
+		s.jsx.jsx('MessageActionsSheet', { message: MESSAGE })
+		const group = s.jsx.jsx('Group', { children: [row('Copier le texte', 'CopyIcon'), row('Mention', 'AtIcon')] })
+		check('the copy rows are found by their icon in any language', [group.props.children].flat().length === 3)
+		const plain = s.jsx.jsx('Group', { children: [row('Block', 'BlockIcon'), row('Mute', 'MuteIcon')] })
+		check('a box without copy rows is left alone', [plain.props.children].flat().length === 2)
+		const text = s.jsx.jsx('Text', { children: 'hello' })
+		check('an element with plain text children is left alone', text.props.children === 'hello')
+		await s.running.stop()
+	}
+	{
+		// The message may be given as plain ids on the sheet.
+		const s = await setup()
+		const row = (label, icon) => ({ type: 'MenuRow', props: { label, onPress() {}, icon: { type: { name: icon } } } })
+		s.jsx.jsx('Sheet', { messageId: 'm9', channelId: 'c9' })
+		const group = s.jsx.jsx('Group', { children: [row('Copy Text', 'CopyIcon'), row('Reply', 'ReplyIcon')] })
+		;[group.props.children].flat().at(-1).props.onPress()
+		await sleep(5)
+		const call = s.sheets().filter(a => a.name === 'openLazy').at(-1)
+		const Component = (await call.args[0]).default
+		const view = s.runtime.mount(s.runtime.React.createElement(Component, {}))
+		await view.settle()
+		findNode(view.tree, n => n.type === 'Design.TextInput').props.onChange('x')
+		await view.settle()
+		findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === 'React').props.onPress()
+		await sleep(80)
+		check('ids given as plain props are used', s.urls[0] === put('c9', 'm9', '🇽'), s.urls)
+		await s.running.stop()
+	}
+
 	// --- The sheet and the reactions
 	{
 		const s = await setup()
