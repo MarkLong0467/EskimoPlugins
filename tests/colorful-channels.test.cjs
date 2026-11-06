@@ -81,7 +81,7 @@ async function setup({ saved, tokens, theme, internal, fresh } = {}) {
 	const running = await startPlugin(definition, runtime, { storage })
 
 	/** The icon module: `BaseChannelIcon` returns Discord's own element, which carries the tint color and style. */
-	const icons = { BaseChannelIcon: props => ({ type: 'DiscordIcon', props: { color: 'interactive-normal', style: { margin: 2 }, source: props?.source } }) }
+	const icons = { BaseChannelIcon: props => ({ type: 'DiscordIcon', props: { color: 'interactive-normal', style: { margin: 2 }, source: props?.source, IconComponent: props?.IconComponent } }) }
 	const originalIcon = icons.BaseChannelIcon
 	/** The module that draws a channel's name row. It is found by its name, `ChannelInfo`. */
 	const channelInfo = { displayName: 'ChannelInfo', default: props => ({ type: 'ChannelRow', props: { channel: props.channel } }) }
@@ -192,6 +192,31 @@ function draw(s, source, extra = {}) {
 		const element = s.icons.BaseChannelIcon({ source: 1, style: { marginLeft: 6, marginRight: 40, width: 18 } })
 		const box = element?.props?.children?.[1]
 		check('with icon packs the symbol is placed from the left of the icon, not from the right of its margin box', box && box.props.style.position === 'absolute' && box.props.style.right === undefined && box.props.style.left === 6 + 18 - 11 + 2 && box.props.style.top === -2, box && box.props.style)
+	}
+
+	{
+		// The icon pack has a plain icon but no symbol the plugin can find: the built-in mark is drawn over the pack's icon.
+		const s = await setup({ saved: { followPack: true } })
+		let last = 0
+		while (ASSETS[last + 1]) last++
+		const registry = s.runtime.valenced.assets.AssetsRegistry
+		const original = registry.getAssetByID
+		registry.getAssetByID = id => (id === last + 1 ? { name: 'HashtagIcon' } : original(id))
+		const element = s.icons.BaseChannelIcon({ source: 1, style: { marginLeft: 4, width: 18 } })
+		const plain = element?.props?.children?.[0]
+		const overlayBox = element?.props?.children?.[1]
+		const mark = overlayBox?.props?.children
+		check('with a pack that has no lock of its own, the pack icon is drawn with the built-in lock over it', plain?.props?.source === last + 1 && mark?.props?.source?.uri === IMAGES.lock, [plain?.props?.source, mark?.props?.source?.uri === IMAGES.lock])
+		check('...covering the icon from its top left, past its left margin', overlayBox.props.style.position === 'absolute' && overlayBox.props.style.left === 4 && overlayBox.props.style.top === 0 && mark.props.style.width === 18, overlayBox.props.style)
+	}
+	{
+		// The pack's plain icon is drawn from a component, so it has no asset name: it is learned from the component's name.
+		const s = await setup({ saved: { followPack: true } })
+		function ChannelTextIcon() {}
+		s.icons.BaseChannelIcon({ IconComponent: ChannelTextIcon })
+		const element = s.icons.BaseChannelIcon({ source: 1 })
+		const plain = element?.props?.children?.[0]
+		check('a plain icon drawn from a component is learned, and used under the lock', plain?.props?.IconComponent === ChannelTextIcon, plain?.props)
 	}
 
 	// --- The NSFW tag

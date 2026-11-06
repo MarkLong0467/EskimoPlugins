@@ -251,6 +251,21 @@
 		// so the icon's right margin does not move it into the channel name.
 		var left = leftMargin(props, ret) + size - side + 2
 		var place = glyph.bottom || glyph.kind === 'Controller' ? { bottom: -2, left: left } : { top: -2, left: left }
+		if (badge === undefined) {
+			// The pack has no symbol this plugin can find, so the built-in mark is drawn over the pack's icon. That picture is
+			// the size of the whole icon with the mark already in its corner, so it covers the icon from its top left.
+			var mark = glyph.kind === 'Controller' ? IMAGES.controller : IMAGES[glyph.kind === 'Lock' ? (glyph.bottom ? 'lockBottom' : 'lock') : glyph.bottom ? 'warningBottom' : 'warning']
+			return h(
+				RN.View,
+				{},
+				ret,
+				h(
+					RN.View,
+					{ pointerEvents: 'none', style: { position: 'absolute', left: leftMargin(props, ret), top: 0 } },
+					h(RN.Image, { style: { width: size, height: size, tintColor: tint }, source: { uri: mark } }),
+				),
+			)
+		}
 		return h(
 			RN.View,
 			{},
@@ -289,7 +304,16 @@
 	function drawIcon(args, original, self) {
 		var props = args[0] || {}
 		var name = setting('colorIcons') ? assetName(props.source) : undefined
-		if (!name) return Reflect.apply(original, self, args)
+		if (!name) {
+			// An icon drawn from a component has no asset name. Its component's name still says which channel type it is,
+			// so the pack's plain icon can be learned from it too.
+			try {
+				var component = setting('colorIcons') && props.IconComponent
+				var componentName = component && (component.displayName || component.name)
+				if (componentName) learnPlain(componentName, props)
+			} catch (e) {}
+			return Reflect.apply(original, self, args)
+		}
 		var glyph = glyphFor(name)
 		if (!glyph) {
 			try { learnPlain(name, props) } catch (e) {}
@@ -305,7 +329,7 @@
 				badge = findAsset(BADGE[glyph.kind])
 			} catch (e) {}
 		}
-		if (plain !== undefined && badge !== undefined) {
+		if (plain !== undefined) {
 			var next = Object.assign({}, props, { source: plain.source })
 			if (plain.component !== undefined) next.IconComponent = plain.component
 			var ret = Reflect.apply(original, self, [next].concat(Array.prototype.slice.call(args, 1)))
