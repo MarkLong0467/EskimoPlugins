@@ -2990,7 +2990,7 @@
       "description": "Adds more options to calling, such as silent calls, remembering your audio output device, and more.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.1.0"
+        "latest": "1.1.1"
       },
       "versions": {
         "1.0.0": {
@@ -3010,6 +3010,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.better-calls@1.1.0.zip",
           "sha256": "31ad1325c02064ab58ef2fee0b2bd694314dbb10961ebb49d6f6ff088152c91e",
           "size": 9008,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.1.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.better-calls@1.1.1.zip",
+          "sha256": "5a8f1b395d01ffd7d8bb7d3a193a0ce5c43d0e75e51fb56766f5caf5c65e08fd",
+          "size": 9157,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
