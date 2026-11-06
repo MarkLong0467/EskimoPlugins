@@ -2599,7 +2599,7 @@
       "description": "Adds customizable chat bubbles to the chat, similar to Flowercord.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.1.4"
+        "latest": "1.1.5"
       },
       "versions": {
         "1.1.1": {
@@ -2654,6 +2654,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.chatbubbles@1.1.4.zip",
           "sha256": "7c59d1ec3e50b5b02d7a898abf76135b860bca33b1f44d4d5c2aeefbe5ea4ed8",
           "size": 9159,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.1.5": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.chatbubbles@1.1.5.zip",
+          "sha256": "893c0a6deaf8af09e25714938dbf15a92f5eb031514ee669f587cb40f99f8273",
+          "size": 21005,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
