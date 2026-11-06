@@ -1,3 +1,4 @@
+import { KmmiioLib } from '../../../shared/kmmiio/lib/api'
 import { DEFAULTS } from './defaults'
 import { diag } from './diag'
 import { patchActionSheet } from './lib/actionSheet'
@@ -21,7 +22,7 @@ export default plugin<{ jsonStorage: MessageTweaksStorage }>({
 	start({ cleanup, jsonStorage, plugin }) {
 		diag.attach(plugin)
 		cleanup(diag.listen())
-		const kmmiio = plugin.api?.unscoped?.kmmiio
+		const kmmiio = KmmiioLib
 		kmmiio?.setActivePlugin?.(plugin.manifest.id)
 		initKmmiioLib(plugin.api)
 		kmmiio?.registerPlugin?.({

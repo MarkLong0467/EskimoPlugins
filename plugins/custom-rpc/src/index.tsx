@@ -1,3 +1,4 @@
+import { KmmiioLib } from '../../../shared/kmmiio/lib/api'
 import { DEFAULTS } from './constants'
 import { diag } from './diag'
 import { applyActivity, clearActivity } from './lib/activity'
@@ -20,7 +21,7 @@ export default plugin<{ jsonStorage: CustomRpcStorage }>({
 
 		cleanup(diag.apply('image pages', registerImagePages))
 
-		const kmmiio = (plugin.api as any)?.unscoped?.kmmiio
+		const kmmiio = KmmiioLib as any
 
 		if (kmmiio?.registerPlugin && kmmiio?.setActivePlugin) {
 			kmmiio.registerPlugin?.({

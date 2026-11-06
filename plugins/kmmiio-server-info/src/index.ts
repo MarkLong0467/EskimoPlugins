@@ -1,3 +1,4 @@
+import { KmmiioLib } from '../../../shared/kmmiio/lib/api'
 import { diag } from './diag'
 import { patchGuildsBarContextMenu } from './lib/contextMenu'
 import { initKmmiioLib } from './lib/modules'
@@ -7,7 +8,7 @@ export default plugin({
 	start({ cleanup, plugin }) {
 		diag.attach(plugin)
 		cleanup(diag.listen())
-		const kmmiio = plugin.api?.unscoped?.kmmiio
+		const kmmiio = KmmiioLib
 		kmmiio?.setActivePlugin?.(plugin.manifest.id)
 		initKmmiioLib(plugin.api)
 		kmmiio?.registerPlugin({

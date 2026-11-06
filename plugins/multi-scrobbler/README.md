@@ -8,11 +8,11 @@ Show off your music status from Last.fm, Libre.fm, or ListenBrainz on your Disco
 
 ## Needs
 
-Install and turn on **kmmiio Library** and **Toast API** first.
+Install and turn on **Toast API** first.
 
 ## Native part
 
-The **Media Session** source needs the native part of **kmmiio Library** and kmmiio99o's MediaSession Bridge companion app. Last.fm, Libre.fm and ListenBrainz work without them.
+The **Media Session** source needs this plugin's own native part (Kotlin, ported but not built yet) and kmmiio99o's MediaSession Bridge companion app. Last.fm, Libre.fm and ListenBrainz work without them.
 
 ## Debugging
 

@@ -1,3 +1,5 @@
+import { shared } from './shared'
+
 export interface LogEntry {
 	id: string
 	module: string
@@ -8,10 +10,10 @@ export interface LogEntry {
 	timestamp: number
 }
 
-const logs: LogEntry[] = []
-const seen = new Set<string>()
+const logs = shared('logs', () => [] as LogEntry[])
+const seen = shared('logSeen', () => new Set<string>())
 const MAX_LOGS = 200
-const listeners = new Set<() => void>()
+const listeners = shared('logListeners', () => new Set<() => void>())
 
 function notify() {
 	for (const fn of listeners) fn()

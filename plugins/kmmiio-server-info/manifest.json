@@ -8,16 +8,13 @@
 		"kmmiio99o <879393496627306587> (https://kmmiio99o.dev \"Original author\") (https://github.com/kmmiio99o \"GitHub\")"
 	],
 	"icon": "CircleInformationIcon",
-	"version": "1.2.4",
+	"version": "1.2.5",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"
 		},
 		"discord": {
 			"version": "*"
-		},
-		"marklong.kmmiio-lib": {
-			"version": ">=1.2.17"
 		}
 	},
 	"dist": {

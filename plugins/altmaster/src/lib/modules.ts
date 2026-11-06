@@ -1,3 +1,5 @@
+import { KmmiioLib } from '../../../../shared/kmmiio/lib/api'
+
 let container: any
 
 export function initKmmiioLib(api: any) {
@@ -7,13 +9,10 @@ export function initKmmiioLib(api: any) {
 /**
  * The library instance, read through the api on every call.
  *
- * The api object is stable but `unscoped.kmmiio` is filled in by the lib
- * plugin's `decorate`, which can land after this plugin's `start` runs. Holding
- * the value instead of the api would freeze `undefined` into the stash and
- * every later call, `forceLoadLazySheets` among them, would stay a no-op.
+ * The library is bundled into this plugin, so it is always there.
  */
 export function kmmiioLib(): any {
-	return container?.unscoped?.kmmiio
+	return KmmiioLib
 }
 
 export function getUserStore(): any {

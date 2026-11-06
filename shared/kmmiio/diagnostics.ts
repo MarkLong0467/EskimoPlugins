@@ -13,6 +13,7 @@ import { Clipboard } from '@valenced/externals/react-native-clipboard'
 import { before } from '@valenced/patcher'
 import { Platform } from 'react-native'
 import { LICENSE, ORIGINAL_AUTHOR, PORTER } from './credits'
+import { getLogsForPlugin } from './lib/log'
 import { redact } from './redact'
 import type { PluginManifest } from '@valenced/plugins/types'
 
@@ -55,18 +56,6 @@ export interface DiagnosticsOptions {
 	checks?: () => DiagCheck[]
 	/** Start of the console messages that belong to the plugin, such as "[kmmiio-lib]". They are copied into the log. */
 	consolePrefixes?: string[]
-}
-
-/** The shape of the library that most of these plugins depend on, as far as the report needs it. */
-interface LibraryLike {
-	registerPlugin?: unknown
-	isPluginRunning?: (id: string) => boolean
-	getLogsForPlugin?: (id: string) => {
-		module: string
-		action: string
-		found: boolean
-		detail?: string
-	}[]
 }
 
 /** What the diagnostics of one plugin offer. */
@@ -209,15 +198,6 @@ export function createDiagnostics(
 		}
 	}
 
-	const library = (): LibraryLike | undefined => {
-		try {
-			return (attached?.api?.unscoped as { kmmiio?: LibraryLike } | undefined)
-				?.kmmiio
-		} catch {
-			return undefined
-		}
-	}
-
 	const log: Diagnostics['log'] = (area, text, level = 'info') => {
 		entries.push({ at: Date.now(), level, area, text })
 		if (entries.length > MAX_ENTRIES)
@@ -256,29 +236,8 @@ export function createDiagnostics(
 					? errors.map(describeError).slice(0, 3).join(' | ')
 					: undefined,
 			})
-			const needsLibrary = Boolean(
-				plugin.manifest.dependencies?.['marklong.kmmiio-lib'],
-			)
-			if (needsLibrary) {
-				// The library does not register itself with itself, so asking it whether it is running always says no.
-				// Its API being on the plugin API is what shows it is running.
-				let running = false
-				try {
-					running = typeof library()?.registerPlugin === 'function'
-				} catch {
-					running = false
-				}
-				out.push({
-					ok: running,
-					label: 'kmmiio Library is running',
-					detail: running
-						? undefined
-						: 'Install and enable "kmmiio Library", then restart Discord',
-				})
-			}
 			try {
-				for (const used of library()?.getLogsForPlugin?.(plugin.manifest.id) ??
-					[]) {
+				for (const used of getLogsForPlugin(plugin.manifest.id)) {
 					out.push({
 						ok: used.found,
 						label: `Library: ${used.module} ${used.action}`,

@@ -6,13 +6,9 @@ Hide profile clutter: avatar decorations, nameplates, profile effects, profile f
 > This is a 1:1 port of their [Revenge Next plugin](https://git.gay/kmmiio99o/revenge-next-plugins) to Valenced, published here by MarkLong0467. The code, the ideas and the behaviour are kmmiio99o's.
 > Licensed GPL-3.0, like the original.
 
-## Needs
-
-Install and turn on **kmmiio Library** first.
-
 ## Native part
 
-The two chat-row toggles (avatar decorations and server tags in chat) need the native part of **kmmiio Library**, which is not built yet. The other toggles work without it.
+The two chat-row toggles (avatar decorations and server tags in chat) need this plugin's own native part (Kotlin), which is ported but not built yet. The other toggles work without it.
 
 ## Debugging
 

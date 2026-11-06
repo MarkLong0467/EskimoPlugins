@@ -1,3 +1,4 @@
+import { KmmiioLib } from '../../../shared/kmmiio/lib/api'
 import { DEFAULTS } from './defaults'
 import { diag } from './diag'
 import { debugInfo } from './lib/debug'
@@ -34,7 +35,7 @@ export default plugin<{ jsonStorage: MultiScrobblerStorage }>({
 				),
 			],
 		})
-		const kmmiio = plugin.api?.unscoped?.kmmiio
+		const kmmiio = KmmiioLib
 		kmmiio?.setActivePlugin?.(plugin.manifest.id)
 		initKmmiioLib(plugin.api)
 		setToastApi(plugin.api)

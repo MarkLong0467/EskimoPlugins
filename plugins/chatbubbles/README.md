@@ -6,13 +6,9 @@ Adds customizable chat bubbles to the chat, similar to Flowercord.
 > This is a 1:1 port of their [Revenge Next plugin](https://git.gay/kmmiio99o/revenge-next-plugins) to Valenced, published here by MarkLong0467. The code, the ideas and the behaviour are kmmiio99o's.
 > Licensed GPL-3.0, like the original.
 
-## Needs
-
-Install and turn on **kmmiio Library** first.
-
 ## Native part
 
-The bubble styling itself is done by the native part of **kmmiio Library**, which is not built yet. Until it is, the settings work but chat looks unchanged.
+The bubble styling is done by this plugin's own native part (Kotlin), which is ported but not built yet. Until it is, the settings work but chat looks unchanged.
 
 ## Debugging
 

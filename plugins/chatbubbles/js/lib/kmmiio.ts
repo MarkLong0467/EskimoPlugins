@@ -1,3 +1,5 @@
+import { KmmiioLib } from '../../../../shared/kmmiio/lib/api'
+
 let container: any
 
 /**
@@ -11,5 +13,5 @@ export function initKmmiioLib(api: any) {
 }
 
 export function kmmiio(): any {
-	return container?.unscoped?.kmmiio
+	return KmmiioLib
 }

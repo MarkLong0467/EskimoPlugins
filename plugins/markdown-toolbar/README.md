@@ -6,10 +6,6 @@ Floating markdown formatting bar under chat input.
 > This is a 1:1 port of their [Revenge Next plugin](https://git.gay/kmmiio99o/revenge-next-plugins) to Valenced, published here by MarkLong0467. The code, the ideas and the behaviour are kmmiio99o's.
 > Licensed GPL-3.0, like the original.
 
-## Needs
-
-Install and turn on **kmmiio Library** first.
-
 ## Debugging
 
 At the bottom of the settings is a debugging section that is not in the original:

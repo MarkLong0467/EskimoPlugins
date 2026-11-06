@@ -11,6 +11,7 @@ bundled into each plugin; nothing here is a plugin of its own.
 | `Debug.tsx` | The debugging section: Copy logs, Run self-check, recent events, Clear events. |
 | `Footer.tsx` | The debugging section; what each plugin puts at the bottom of its settings. |
 | `Intro.tsx` | The short card at the top of settings screens that had none. |
+| `lib/` | kmmiio99o's library of Discord module finders, store getters and sheet helpers. It used to be a plugin of its own; it is now bundled into each plugin that uses it. |
 | `toast.ts` | Opens a toast on any Discord build (see below). |
 
 ## Why `toast.ts`

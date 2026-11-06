@@ -8,7 +8,7 @@ Material theming for Discord, put exactly where themes for Discord belongs.
 
 ## Native part
 
-Reading your wallpaper colours needs the plugin's native part, which is ported but not built yet. Until then the seed colour you pick is used.
+Reading your wallpaper colours needs the plugin's native part (Kotlin, ported but not built yet). Until then the seed colour you pick is used.
 
 ## Debugging
 

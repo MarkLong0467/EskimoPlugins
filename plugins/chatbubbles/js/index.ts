@@ -1,3 +1,4 @@
+import { KmmiioLib } from '../../../shared/kmmiio/lib/api'
 import { DEFAULTS } from './defaults'
 import { diag } from './diag'
 import { initKmmiioLib } from './lib/kmmiio'
@@ -17,7 +18,7 @@ export default plugin<{ jsonStorage: ChatBubblesStorage }>({
 	start({ cleanup, jsonStorage, plugin }) {
 		diag.attach(plugin)
 		cleanup(diag.listen())
-		const kmmiio = plugin.api?.unscoped?.kmmiio
+		const kmmiio = KmmiioLib
 		initKmmiioLib(plugin.api)
 		kmmiio?.setActivePlugin?.(plugin.manifest.id)
 		setStorage(jsonStorage)

@@ -20,21 +20,20 @@ const SECRET = 'SECRET-VALUE-9f3a'
 
 /** The plugins, the secrets to plant in their settings, and what a started plugin is given to work with. */
 const PLUGINS = [
-	{ dir: 'kmmiio-lib', lib: true },
 	{ dir: 'toast-api' },
-	{ dir: 'altmaster', needsLib: true, secrets: { baseUrl: `https://user:${SECRET}@example.test/path?token=${SECRET}` } },
+	{ dir: 'altmaster', secrets: { baseUrl: `https://user:${SECRET}@example.test/path?token=${SECRET}` } },
 	{ dir: 'alwaystrust' },
-	{ dir: 'better-devices', needsLib: true },
-	{ dir: 'chatbox-avatar', needsLib: true },
-	{ dir: 'chatbubbles', needsLib: true },
-	{ dir: 'custom-rpc', needsLib: true, secrets: { clientId: SECRET, applicationName: SECRET, details: SECRET, state: SECRET } },
-	{ dir: 'declutter', needsLib: true },
-	{ dir: 'markdown-toolbar', needsLib: true },
+	{ dir: 'better-devices' },
+	{ dir: 'chatbox-avatar' },
+	{ dir: 'chatbubbles' },
+	{ dir: 'custom-rpc', secrets: { clientId: SECRET, applicationName: SECRET, details: SECRET, state: SECRET } },
+	{ dir: 'declutter' },
+	{ dir: 'markdown-toolbar' },
 	{ dir: 'materialcord' },
-	{ dir: 'message-tweaks', needsLib: true, secrets: { persisted: { hidden: { c1: { m1: SECRET } } } } },
-	{ dir: 'multi-scrobbler', needsLib: true, secrets: { username: SECRET, apiKey: SECRET, librefmApiKey: SECRET, listenbrainzToken: SECRET, listenbrainzUsername: SECRET, librefmUsername: SECRET } },
-	{ dir: 'server-drawer', needsLib: true },
-	{ dir: 'kmmiio-server-info', needsLib: true },
+	{ dir: 'message-tweaks', secrets: { persisted: { hidden: { c1: { m1: SECRET } } } } },
+	{ dir: 'multi-scrobbler', secrets: { username: SECRET, apiKey: SECRET, librefmApiKey: SECRET, listenbrainzToken: SECRET, listenbrainzUsername: SECRET, librefmUsername: SECRET } },
+	{ dir: 'server-drawer' },
+	{ dir: 'kmmiio-server-info' },
 ]
 
 /** Reads a plugin's manifest the way Valenced hands it to a running plugin. */
@@ -74,7 +73,7 @@ function makeRuntime(copied) {
 }
 
 /** Runs a plugin's `start` with a plugin object like the one Valenced makes. Returns what a test needs to look inside. */
-async function start(entry, runtime, libraries) {
+async function start(entry, runtime) {
 	const { definition } = loadPlugin(entry.dir)
 	const manifest = manifestOf(entry.dir)
 	const cleanups = []
@@ -92,8 +91,6 @@ async function start(entry, runtime, libraries) {
 		unscoped,
 	}
 	plugin.api = api
-	// The library decorates every plugin's api, so a dependent sees `api.unscoped.kmmiio`.
-	for (const lib of libraries) for (const fn of lib.decorators) fn(plugin)
 	let threw = null
 	try {
 		await definition.start?.call(plugin, { ...api, plugin })
@@ -114,8 +111,6 @@ async function mountSettings(running, runtime) {
 const buttonOf = (view, text) => findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === text)
 
 ;(async () => {
-	// The library is started first, as Valenced does for a dependency, and decorates the others.
-	const libraries = []
 	const copied = []
 
 	for (const entry of PLUGINS) {
@@ -124,19 +119,18 @@ const buttonOf = (view, text) => findNode(view.tree, n => n.type === 'Design.But
 		copied.length = 0
 		let running
 		try {
-			running = await start(entry, runtime, libraries)
+			running = await start(entry, runtime)
 		} catch (error) {
 			check(`${name}: the bundle can be started`, false, error)
 			continue
 		}
-		if (entry.lib) libraries.push(running)
 
 		// --- The manifest: credit and identity
 		const manifest = running.manifest
 		check(`${name}: MarkLong0467 is the author`, manifest.author.startsWith('MarkLong0467'), manifest.author)
 		check(`${name}: kmmiio99o is credited as the original author with their Discord ID and website`, manifest.contributors.some(c => /^kmmiio99o <879393496627306587>/.test(c) && c.includes('https://kmmiio99o.dev')), manifest.contributors)
 		check(`${name}: the id is in the marklong namespace`, manifest.id.startsWith('marklong.'), manifest.id)
-		check(`${name}: it depends on Valenced and not on Revenge`, !!manifest.dependencies['valenced.api'] && !manifest.dependencies['revenge.api'])
+		check(`${name}: it depends on Valenced and not on Revenge or the removed library`, !!manifest.dependencies['valenced.api'] && !manifest.dependencies['revenge.api'] && !manifest.dependencies['marklong.kmmiio-lib'])
 		check(`${name}: start did not throw`, running.threw === null, running.threw)
 		check(`${name}: it has a settings screen`, typeof running.definition.SettingsComponent === 'function')
 		if (running.threw || typeof running.definition.SettingsComponent !== 'function') continue
@@ -171,7 +165,6 @@ const buttonOf = (view, text) => findNode(view.tree, n => n.type === 'Design.But
 		await view.settle()
 		check(`${name}: the self-check lists results`, !!findNode(view.tree, n => n.type === 'Design.TableRowGroup' && n.props.title === 'Self-check'))
 		check(`${name}: the self-check says the plugin started`, !!findNode(view.tree, n => n.type === 'Design.TableRow' && /Plugin started/.test(String(n.props.label))))
-		if (entry.needsLib) check(`${name}: the self-check finds the running kmmiio Library`, !!findNode(view.tree, n => n.type === 'Design.TableRow' && /✓ kmmiio Library is running/.test(String(n.props.label))), findNodes(view.tree, n => n.type === 'Design.TableRow').map(n => n.props.label))
 		const clear = findNode(view.tree, n => n.type === 'Design.TableRow' && n.props.label === 'Clear events')
 		check(`${name}: events can be cleared`, !!clear)
 		if (clear) {

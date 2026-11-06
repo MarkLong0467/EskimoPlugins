@@ -54,7 +54,7 @@ export function startBubbles(cleanup: PluginCleanupApi) {
 
 		if (!isNativeAvailable()) {
 			diag.check(
-				'Native part of kmmiio Library',
+				'Native part of Chat Bubbles',
 				false,
 				'The native bridge is missing',
 			)
@@ -65,12 +65,12 @@ export function startBubbles(cleanup: PluginCleanupApi) {
 		// The `bubbles.*` bridge methods are provided by the plugin's native side.
 		try {
 			await hookBubbles()
-			diag.check('Native part of kmmiio Library', true, 'bubbles.hook answered')
+			diag.check('Native part of Chat Bubbles', true, 'bubbles.hook answered')
 		} catch (error) {
 			diag.check(
-				'Native part of kmmiio Library',
+				'Native part of Chat Bubbles',
 				false,
-				'bubbles.hook failed. The library needs its native part (plugin.jar) installed and Discord restarted',
+				'bubbles.hook failed. The native part (plugin.jar) is not installed yet',
 			)
 			diag.fail('native', error)
 			return

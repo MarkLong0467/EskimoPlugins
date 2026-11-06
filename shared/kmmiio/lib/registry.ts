@@ -1,5 +1,6 @@
 import { existsSync } from '@valenced/modules/native/fs'
 import { pluginStorageDirFor } from '@valenced/plugins/constants'
+import { shared } from './shared'
 
 export interface RegisteredPlugin {
 	id: string
@@ -29,8 +30,8 @@ export function isPluginInstalled(id: string): boolean {
 	}
 }
 
-const registry = new Map<string, RegisteredPlugin>()
-const listeners = new Set<() => void>()
+const registry = shared('registry', () => new Map<string, RegisteredPlugin>())
+const listeners = shared('registryListeners', () => new Set<() => void>())
 
 function notify() {
 	console.log(

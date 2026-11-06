@@ -1,0 +1,43 @@
+name: kmmiio native build
+on:
+  workflow_dispatch:
+  push:
+    paths: ['native/**', 'plugins/chatbubbles/src/**', 'plugins/declutter/src/**', 'plugins/multi-scrobbler/src/**', 'plugins/materialcord/src/**', '.github/workflows/kmmiio-native.yml']
+concurrency:
+  group: kmmiio-native
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { repository: Valenced/valenced, path: valenced-src }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 25 }
+      - name: Build the Valenced API from its public source
+        working-directory: valenced-src
+        run: ./gradlew :core:publishToMavenLocal :android:api:publishToMavenLocal -x test --no-daemon
+      - name: Build the native parts
+        run: ./valenced-src/gradlew -p native :chatbubbles:dexJar :declutter:dexJar :multi-scrobbler:dexJar :materialcord:dexJar --no-daemon
+      - name: Collect the jars
+        run: |
+          mkdir -p out
+          for p in chatbubbles declutter multi-scrobbler; do cp plugins/$p/build/outputs/plugin/plugin.jar out/$p.jar; done
+          cp plugins/materialcord/build/outputs/plugin/plugin.jar out/materialcord.jar
+          ls -l out
+      - uses: actions/upload-artifact@v4
+        with: { name: kmmiio-native-jars, path: out/*.jar }
+      - name: Publish the jars on the native-builds branch
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout --orphan native-builds
+          git rm -rf -q . || true
+          cp out/*.jar .
+          git add *.jar
+          git commit -qm "native build ${GITHUB_SHA}"
+          for i in 1 2 3 4 5; do git push -f origin native-builds && break; sleep $((i*5)); done
