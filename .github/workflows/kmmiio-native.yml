@@ -2,7 +2,7 @@ name: kmmiio native build
 on:
   workflow_dispatch:
   push:
-    paths: ['native/**', 'plugins/chatbubbles/src/**', 'plugins/declutter/src/**', 'plugins/multi-scrobbler/src/**', 'plugins/materialcord/src/**', '.github/workflows/kmmiio-native.yml']
+    paths: ['native/**', 'plugins/chatbubbles/src/**', '.github/workflows/kmmiio-native.yml']
 concurrency:
   group: kmmiio-native
   cancel-in-progress: false
@@ -22,12 +22,11 @@ jobs:
         working-directory: valenced-src
         run: ./gradlew :core:publishToMavenLocal :android:api:publishToMavenLocal -x test --no-daemon
       - name: Build the native parts
-        run: ./valenced-src/gradlew -p native :chatbubbles:dexJar :declutter:dexJar :multi-scrobbler:dexJar :materialcord:dexJar --no-daemon
+        run: ./valenced-src/gradlew -p native :chatbubbles:dexJar --no-daemon
       - name: Collect the jars
         run: |
           mkdir -p out
-          for p in chatbubbles declutter multi-scrobbler; do cp plugins/$p/build/outputs/plugin/plugin.jar out/$p.jar; done
-          cp plugins/materialcord/build/outputs/plugin/plugin.jar out/materialcord.jar
+          cp plugins/chatbubbles/build/outputs/plugin/plugin.jar out/chatbubbles.jar
           ls -l out
       - uses: actions/upload-artifact@v4
         with: { name: kmmiio-native-jars, path: out/*.jar }
