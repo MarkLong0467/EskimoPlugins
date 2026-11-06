@@ -22,6 +22,9 @@ const WARNING =
 	'Part of the text has no emoji, so it would be left out. React anyway?'
 const REACT = 'React'
 const PREVIEW = 'Preview of what will be added'
+
+/** Room kept for the preview: its title, one row of emoji and its note. */
+const PREVIEW_HEIGHT = 84
 const BACK = 'Go back'
 const CANCEL = 'Cancel'
 const ANYWAY = 'React anyway'
@@ -68,7 +71,13 @@ export default function TextReactSheet({ target }: { target: Target }) {
 			hidden: setting('hiddenDefaults'),
 			overrides: setting('overrides'),
 		})
-	const preview = text.trim() ? convert() : null
+	// The preview must never break drawing the sheet, so a failure shows no preview.
+	let preview: ReturnType<typeof convert> | null = null
+	try {
+		preview = text.trim() ? convert() : null
+	} catch {
+		preview = null
+	}
 	const previewLine = preview?.emoji.join('  ') ?? ''
 	const previewNote = !preview
 		? ''
@@ -132,21 +141,24 @@ export default function TextReactSheet({ target }: { target: Target }) {
 							onChange={setText}
 							autoFocus
 						/>
-						{preview ? (
-							<>
-								<Design.Text variant="text-sm/medium" color="text-muted">
-									{PREVIEW}
-								</Design.Text>
-								{previewLine ? (
-									<Design.Text variant="heading-lg/semibold">
-										{previewLine}
+						{/* The preview has a fixed height, so the sheet does not change size when the first character is typed. */}
+						<View style={{ minHeight: PREVIEW_HEIGHT, gap: 4 }}>
+							{preview ? (
+								<>
+									<Design.Text variant="text-sm/medium" color="text-muted">
+										{PREVIEW}
 									</Design.Text>
-								) : null}
-								<Design.Text variant="text-sm/medium" color="text-muted">
-									{previewNote}
-								</Design.Text>
-							</>
-						) : null}
+									{previewLine ? (
+										<Design.Text variant="heading-lg/bold">
+											{previewLine}
+										</Design.Text>
+									) : null}
+									<Design.Text variant="text-sm/medium" color="text-muted">
+										{previewNote}
+									</Design.Text>
+								</>
+							) : null}
+						</View>
 						<Design.Button
 							text={REACT}
 							variant="primary"
