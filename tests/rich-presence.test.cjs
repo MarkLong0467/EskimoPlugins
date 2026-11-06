@@ -789,7 +789,8 @@ async function type(view, label, value, wait = 1000) {
 		check('it counts the profiles, the ones shown and the ones sent', /Profiles: 3, switched on: 3, shown: 2 \(limit 3\), sent now: 2/.test(report), report.split('\n').slice(6, 18))
 		check('it shows what Discord’s own lists hold, to see where activities are lost', /local store 3, kept by its filter 2, before its filter 3/.test(report), report)
 		check('and says for each profile its kind, timer and why it is or is not shown', /Profile 1: type 0, timer none, application set, shown, sent/.test(report) && /Profile 2: type 0, timer none, application made up, second playing, not sent/.test(report) && /Profile 3: type 2, timer countdown, application made up, shown, sent/.test(report), report.split('\n').slice(6, 18))
-		check('the report holds no names, texts or application ids', !report.includes('Secret game') && !report.includes('Secret details') && !report.includes('"99"'))
+		check('the report holds every setting and what was last sent', report.includes('Secret game') && report.includes('Secret details') && /Application ids sent: A=99, C=\d{18}/.test(report) && /Runtime a: socket EskimoRichPresence:a, pid \d+, live true/.test(report) && report.includes('last sent') && /LocalActivityStore.getActivities:/.test(report), report)
+		check('it warns when two shown presences share an Application ID', /Every profile that is shown has its own Application ID/.test(report) && !/FAIL Every profile that is shown has its own/.test(report))
 		view.unmount()
 		await s.restore()
 	}

@@ -4,7 +4,7 @@
 	"name": "Rich Presence",
 	"description": "Show up to three presences at once, with an easy grouped editor, many timers (dates, countdowns, daily ranges), schedules and SoundCloud built in.",
 	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-	"version": "2.0.0",
+	"version": "2.0.1",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"

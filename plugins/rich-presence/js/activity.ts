@@ -246,11 +246,18 @@ export async function buildActivity(
 	return activity
 }
 
+/** What was last sent for each profile and when, for the report. */
+export const lastSent = new Map<
+	string,
+	{ at: number; activity: Activity | null }
+>()
+
 /**
  * Sends an activity to Discord as if a game had reported it, under the profile's own socket and process. `null` removes the
  * presence of that profile and leaves the others as they are.
  */
 export function dispatchActivity(activity: Activity | null, rt: Runtime): void {
+	lastSent.set(rt.id, { at: Date.now(), activity })
 	Dispatcher.dispatch({
 		type: 'LOCAL_ACTIVITY_UPDATE',
 		activity,
