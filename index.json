@@ -2971,6 +2971,110 @@
       "contributors": [
         "Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
       ]
+    },
+    "marklong.better-calls": {
+      "name": "Better Calls",
+      "description": "Adds more options to calling, such as silent calls, remembering your audio output device, and more.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.better-calls@1.0.0.zip",
+          "sha256": "3f669a2f25c294f449bc79a710928f7d621f703a739656a980b4f55f57859c22",
+          "size": 8297,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "contributors": [
+        "PalmDevs <629368283354628116> (https://github.com/PalmDevs \"Original author\") (https://github.com/PalmDevs/revenge-plugins \"Source\")"
+      ]
+    },
+    "marklong.better-chat-buttons": {
+      "name": "Better Chat Buttons",
+      "description": "Hide the annoying chat buttons, or make them never collapse, all configurable.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.better-chat-buttons@1.0.0.zip",
+          "sha256": "9cb0f4ab8e1ba932ba608e6faec2d84f7b779f790ca8c1c25b46510269c3aa9e",
+          "size": 6167,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "contributors": [
+        "PalmDevs <629368283354628116> (https://github.com/PalmDevs \"Original author\") (https://github.com/PalmDevs/revenge-plugins \"Source\")"
+      ]
+    },
+    "marklong.force-timestamp-locale": {
+      "name": "Force Timestamp Locale",
+      "description": "Forces timestamps to be in a specific language.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.force-timestamp-locale@1.0.0.zip",
+          "sha256": "3fe5177ca98b00cf87f9e344605f603881fb838f189cf888ae172645d95b9f59",
+          "size": 6125,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "contributors": [
+        "PalmDevs <629368283354628116> (https://github.com/PalmDevs \"Original author\") (https://github.com/PalmDevs/revenge-plugins \"Source\")"
+      ]
+    },
+    "marklong.no-suggestions": {
+      "name": "No Suggestions",
+      "description": "Removes annoying channel suggestions that reappear even if you already removed them.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.no-suggestions@1.0.0.zip",
+          "sha256": "bf84816f258e50121ed488681785924399c68170ff3085ec421863fa98d20334",
+          "size": 5116,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "contributors": [
+        "PalmDevs <629368283354628116> (https://github.com/PalmDevs \"Original author\") (https://github.com/PalmDevs/revenge-plugins \"Source\")"
+      ]
     }
   }
 }

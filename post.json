@@ -33,6 +33,20 @@
       "suffix": ""
     },
     {
+      "id": "marklong.better-calls",
+      "name": "Better Calls",
+      "version": "1.0.0",
+      "short": "silent calls with a bell button in DMs, and remembers your audio output device",
+      "suffix": ""
+    },
+    {
+      "id": "marklong.better-chat-buttons",
+      "name": "Better Chat Buttons",
+      "version": "1.0.0",
+      "short": "hide the Apps, Gift, Thread and Voice Message buttons, or stop the chat buttons collapsing",
+      "suffix": ""
+    },
+    {
       "id": "marklong.better-devices",
       "name": "Better Devices",
       "version": "1.0.4",
@@ -82,6 +96,13 @@
       "suffix": "(beta)"
     },
     {
+      "id": "marklong.force-timestamp-locale",
+      "name": "Force Timestamp Locale",
+      "version": "1.0.0",
+      "short": "show every timestamp in one language, such as en-gb 24-hour times",
+      "suffix": ""
+    },
+    {
       "id": "marklong.haptics",
       "name": "Haptics",
       "version": "0.1.3",
@@ -121,6 +142,13 @@
       "name": "Minecraft Servers",
       "version": "1.5.1",
       "short": "see if your servers are online, who is playing, and the ping",
+      "suffix": ""
+    },
+    {
+      "id": "marklong.no-suggestions",
+      "name": "No Suggestions",
+      "version": "1.0.0",
+      "short": "removes the Suggested channels section that keeps coming back",
       "suffix": ""
     },
     {
