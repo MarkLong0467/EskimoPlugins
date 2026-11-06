@@ -13,6 +13,7 @@ import {
 	lastResult,
 	limitNow,
 	loadPost,
+	missingSetup,
 	onResult,
 	renderNow,
 	restorePrevious,
@@ -31,6 +32,10 @@ const INTRO =
 	'Keeps the plugin list in your repository thread post up to date. Publish a plugin and the post gets the new list, with version numbers, the next time Discord is open. Only a post you wrote can be edited. Below is exactly what the post will say.'
 const PREVIEW_TITLE = 'What the post will say'
 const LOADING = 'Loading the list…'
+const SETUP_TITLE = 'Set up'
+const SETUP_HELP =
+	'Nothing is set up yet, so nothing is edited. Enter the address of your list (a post.json that tools/post.cjs writes when you publish), then the thread id and the message id of the post to keep up to date, and turn on automatic updates if you want them. Only a post you wrote can be edited.'
+const NO_ADDRESS = 'Enter the address of your list below to see the preview.'
 
 /** `3 min ago` for a time in milliseconds. */
 function ago(at: number): string {
@@ -41,16 +46,25 @@ function ago(at: number): string {
 }
 
 /** The preview at the top: the text of the post as it will be sent, and how long it is. */
-function Preview({ data, error }: { data: PostData | null; error: string }) {
+function Preview({
+	data,
+	error,
+	noAddress,
+}: {
+	data: PostData | null
+	error: string
+	noAddress: boolean
+}) {
 	if (!data) {
+		const text = noAddress ? NO_ADDRESS : error || LOADING
 		return (
 			<Design.TableRowGroup title={PREVIEW_TITLE}>
 				<Design.Card>
 					<Design.Text
 						variant="text-md/medium"
-						color={error ? 'text-danger' : 'text-muted'}
+						color={error && !noAddress ? 'text-danger' : 'text-muted'}
 					>
-						{error || LOADING}
+						{text}
 					</Design.Text>
 				</Design.Card>
 			</Design.TableRowGroup>
@@ -119,6 +133,35 @@ export default function SettingsScreen({ api }: Props) {
 	const statusColor = result?.status === 'error' ? 'text-danger' : 'text-muted'
 	const limit = setting('limit') as LimitChoice
 
+	const setup = missingSetup() !== null
+	const fields = (
+		<View style={{ paddingHorizontal: 16, gap: 10 }}>
+			<Design.TextInput
+				label="Address of your list (post.json)"
+				placeholder="https://raw.githubusercontent.com/you/repo/gh-pages/post.json"
+				size="md"
+				value={String(setting('postUrl') || '')}
+				onChange={(value: string) => saveSettings({ postUrl: value.trim() })}
+			/>
+			<Design.TextInput
+				label="Thread id"
+				size="md"
+				value={String(setting('channelId') || '')}
+				onChange={(value: string) =>
+					saveSettings({ channelId: value.replace(/[^0-9]/g, '') })
+				}
+			/>
+			<Design.TextInput
+				label="Message id"
+				size="md"
+				value={String(setting('messageId') || '')}
+				onChange={(value: string) =>
+					saveSettings({ messageId: value.replace(/[^0-9]/g, '') })
+				}
+			/>
+		</View>
+	)
+
 	const confirmRestore = () =>
 		Alert.alert(
 			'Put back the previous text?',
@@ -143,7 +186,16 @@ export default function SettingsScreen({ api }: Props) {
 			keyboardShouldPersistTaps="handled"
 		>
 			<Design.Stack style={{ paddingVertical: 20 }} spacing={22}>
-				<Preview data={data} error={error} />
+				<Preview
+					data={data}
+					error={error}
+					noAddress={!String(setting('postUrl') || '').trim()}
+				/>
+				{setup ? (
+					<Design.TableRowGroup title={SETUP_TITLE} description={SETUP_HELP}>
+						{fields}
+					</Design.TableRowGroup>
+				) : null}
 				<Design.TableRowGroup title="Your post">
 					<Design.Card>
 						<Design.Stack spacing={10}>
@@ -231,32 +283,7 @@ export default function SettingsScreen({ api }: Props) {
 						/>
 					</Design.TableRadioGroup>
 				</Design.TableRowGroup>
-				<View style={{ paddingHorizontal: 16, gap: 10 }}>
-					<Design.TextInput
-						label="Thread id"
-						size="md"
-						value={String(setting('channelId') || '')}
-						onChange={(value: string) =>
-							saveSettings({ channelId: value.replace(/[^0-9]/g, '') })
-						}
-					/>
-					<Design.TextInput
-						label="Message id"
-						size="md"
-						value={String(setting('messageId') || '')}
-						onChange={(value: string) =>
-							saveSettings({ messageId: value.replace(/[^0-9]/g, '') })
-						}
-					/>
-					<Design.TextInput
-						label="Address of the list"
-						size="md"
-						value={String(setting('postUrl') || '')}
-						onChange={(value: string) =>
-							saveSettings({ postUrl: value.trim() })
-						}
-					/>
-				</View>
+				{setup ? null : fields}
 				<IntroCard text={INTRO} />
 				<DebugSection diag={diag} />
 			</Design.Stack>

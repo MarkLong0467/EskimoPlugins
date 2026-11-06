@@ -76,6 +76,20 @@ export function limitNow(): number {
 		: LIMIT_NORMAL
 }
 
+/** The part of Discord's ids (a snowflake) this plugin accepts. */
+const SNOWFLAKE = /^\d{15,25}$/
+
+/** What still has to be set before the post can be edited (as a phrase), or nothing if it is all set. */
+export function missingSetup(): string | null {
+	if (!String(setting('postUrl') || '').trim())
+		return 'the address of your list'
+	if (!SNOWFLAKE.test(String(setting('channelId') || '')))
+		return 'the thread id'
+	if (!SNOWFLAKE.test(String(setting('messageId') || '')))
+		return 'the message id'
+	return null
+}
+
 /** Fetches `post.json`. The address gets the minute on it, so a cached copy is not used for long. */
 export async function loadPost(): Promise<PostData> {
 	const base = String(setting('postUrl') || '').trim()
@@ -155,6 +169,13 @@ function finish(result: SyncResult): SyncResult {
 export async function sync(): Promise<SyncResult> {
 	if (busy)
 		return { status: 'error', detail: 'Already updating', at: Date.now() }
+	const missing = missingSetup()
+	if (missing)
+		return finish({
+			status: 'error',
+			detail: `Set ${missing} first`,
+			at: Date.now(),
+		})
 	busy = true
 	changed()
 	try {
@@ -255,7 +276,8 @@ export async function restorePrevious(): Promise<SyncResult> {
  * `RECHECK_MS` in case the post was edited by hand.
  */
 export async function look(): Promise<void> {
-	if (!setting('auto') || busy || Date.now() < nextTryAt) return
+	if (!setting('auto') || missingSetup() || busy || Date.now() < nextTryAt)
+		return
 	try {
 		const data = await loadPost()
 		const rendered = renderNow(data)

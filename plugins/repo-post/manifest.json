@@ -4,7 +4,7 @@
 	"name": "Repo Post",
 	"description": "Keeps the plugin list in your own repository thread post up to date. When you publish a plugin, the post gets the new list with version numbers the next time Discord is open. Includes a preview, Update now and Restore.",
 	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"

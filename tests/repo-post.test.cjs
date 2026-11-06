@@ -17,6 +17,7 @@ const { check, done } = createReporter('Repo Post')
 
 const CHANNEL = '1567899938896220160'
 const MESSAGE = '1567899938896220160'
+const POST_URL = 'https://example.test/gh-pages/post.json'
 
 /** A list made the way `tools/post.cjs` makes it, from the real short descriptions: 31 plugins at version 1.2.3. */
 const config = JSON.parse(fs.readFileSync(path.join(ROOT, 'tools', 'post.config.json'), 'utf8'))
@@ -36,7 +37,7 @@ const listFor = (version = '1.2.3') => {
 }
 
 /** A fake Discord with the plugin running. */
-async function setup({ saved = {}, list = listFor(), author = 'me', me = 'me', content = 'the old post', premium = 0, missingMessage = false, noHttp = false } = {}) {
+async function setup({ blank = false, saved = {}, list = listFor(), author = 'me', me = 'me', content = 'the old post', premium = 0, missingMessage = false, noHttp = false } = {}) {
 	const intervals = []
 	const timeouts = []
 	const real = { setInterval: globalThis.setInterval, setTimeout: globalThis.setTimeout }
@@ -74,7 +75,9 @@ async function setup({ saved = {}, list = listFor(), author = 'me', me = 'me', c
 	}).install()
 	if (!noHttp) runtime.valenced.modules.finders.loadModule(http)
 	const { definition } = loadPlugin('repo-post')
-	const storage = runtime.makeStorage({ ...saved })
+	// Nothing is set up by default, so the tests set it up unless they ask for a blank plugin.
+	const setUp = blank ? {} : { auto: true, postUrl: POST_URL, channelId: CHANNEL, messageId: MESSAGE }
+	const storage = runtime.makeStorage({ ...setUp, ...saved })
 	const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugins', 'repo-post', 'manifest.json'), 'utf8'))
 	const cleanups = []
 	const errors = []
@@ -142,7 +145,7 @@ const lines = text => text.split('\n')
 		check('descriptions are shortened to fit and say so with an ellipsis', bullets.some(b => b.endsWith('…')))
 		check('the previous text is kept for Restore', s.storage.cache.previousText === 'the old post')
 		check('a toast says it was updated', s.toasts().some(t => /Repo post updated \(\d+ plugins\)/.test(t)), s.toasts())
-		check('the list was fetched with a changing address, so a cached copy is not used for long', /post\.json\?t=\d+$/.test(s.state.fetched[0]), s.state.fetched)
+		check('the list was fetched with a changing address, so a cached copy is not used for long', /^https:\/\/example\.test\/gh-pages\/post\.json\?t=\d+$/.test(s.state.fetched[0]), s.state.fetched)
 
 		await s.look()
 		check('a second look changes nothing and does not ask Discord again', s.state.patches.length === 1 && s.state.gets.length === 1, [s.state.patches.length, s.state.gets.length])
@@ -312,6 +315,67 @@ const lines = text => text.split('\n')
 		s.state.list = listFor('3.0.0')
 		await s.look()
 		check('with auto off a new version does not edit the post', s.state.patches.length === 1)
+		view.unmount()
+		s.stop()
+	}
+
+	// --- Nothing is set up by default
+	{
+		const s = await setup({ blank: true })
+		const defaults = s.definition.jsonStorage.default
+		check('by default automatic updates are off', defaults.auto === false)
+		check('by default no post, thread or list is set', defaults.channelId === '' && defaults.messageId === '' && defaults.postUrl === '', defaults)
+		check('no id of anybody’s post is built into the plugin', !JSON.stringify(defaults).includes('1567899938896220160') && !JSON.stringify(defaults).includes('MarkLong0467'))
+		await s.look()
+		check('a fresh install fetches nothing and edits nothing', s.state.fetched.length === 0 && s.state.gets.length === 0 && s.state.patches.length === 0)
+		s.stop()
+	}
+	{
+		const s = await setup({ blank: true, saved: { auto: true } })
+		await s.look()
+		check('automatic updates on without a post set up still does nothing', s.state.fetched.length === 0 && s.state.patches.length === 0)
+		s.stop()
+	}
+	{
+		const s = await setup({ blank: true, saved: { auto: true, postUrl: POST_URL, channelId: CHANNEL } })
+		await s.look()
+		check('a missing message id also stops it', s.state.fetched.length === 0 && s.state.patches.length === 0)
+		s.stop()
+	}
+	{
+		const s = await setup({ blank: true, saved: { auto: true, postUrl: POST_URL, channelId: 'abc', messageId: MESSAGE } })
+		await s.look()
+		check('an id that is not an id also stops it', s.state.patches.length === 0)
+		s.stop()
+	}
+	{
+		const s = await setup({ blank: true })
+		const view = await s.mountSettings()
+		const text = textOf(view.tree)
+		const at = word => text.indexOf(word)
+		check('a blank plugin shows the preview first, with a hint instead of an error', at('What the post will say') === 0 && text.includes('Enter the address of your list below to see the preview.'), text.slice(0, 200))
+		check('then a Set up section, before the rest', at('Set up') > at('What the post will say') && at('Set up') < at('Your post'), [at('Set up'), at('Your post')])
+		check('with the three fields in it', findNodes(view.tree, n => n.type === 'Design.TextInput').length === 3 && text.includes('Nothing is set up yet, so nothing is edited'))
+		btn(view, 'Update the post now').props.onPress()
+		await sleep(40)
+		check("nothing was fetched or sent", s.state.patches.length === 0 && s.state.fetched.length === 0)
+		const again = await s.mountSettings()
+		check('the screen says what to set first', textOf(again.tree).includes('Set the address of your list first'), textOf(again.tree).slice(-500))
+		findNodes(again.tree, n => n.type === 'Design.TextInput')[0].props.onChange(POST_URL)
+		findNodes(again.tree, n => n.type === 'Design.TextInput')[1].props.onChange(CHANNEL)
+		findNodes(again.tree, n => n.type === 'Design.TextInput')[2].props.onChange(MESSAGE)
+		check('typing the address and ids saves them', s.storage.cache.postUrl === POST_URL && s.storage.cache.channelId === CHANNEL && s.storage.cache.messageId === MESSAGE)
+		check('typing does not turn on automatic updates', !s.storage.cache.auto)
+		await s.look()
+		check('and with automatic updates still off nothing is edited', s.state.patches.length === 0)
+		view.unmount()
+		again.unmount()
+		s.stop()
+	}
+	{
+		const s = await setup({ saved: { auto: false } })
+		const view = await s.mountSettings()
+		check('once set up the Set up section is gone and the fields stay at the bottom', !textOf(view.tree).includes('Nothing is set up yet') && findNodes(view.tree, n => n.type === 'Design.TextInput').length === 3)
 		view.unmount()
 		s.stop()
 	}

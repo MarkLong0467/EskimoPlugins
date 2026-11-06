@@ -18,13 +18,15 @@ export const BACKOFF_MS = 30 * 60_000
 /** How long a request may take (milliseconds). */
 export const TIMEOUT_MS = 20_000
 
-/** The settings used until the user changes something. The ids are the "Mark's Repository" thread. */
+/**
+ * The settings used until the user changes something. The plugin is used by more than one person, so nothing is set up for
+ * anyone: no list, no post, and no automatic edits until the user has set them.
+ */
 export const DEFAULT_SETTINGS: PostSettings = {
-	auto: true,
-	postUrl:
-		'https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/post.json',
-	channelId: '1567899938896220160',
-	messageId: '1567899938896220160',
+	auto: false,
+	postUrl: '',
+	channelId: '',
+	messageId: '',
 	versions: true,
 	limit: 'auto',
 	syncedHash: '',

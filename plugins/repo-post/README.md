@@ -2,10 +2,18 @@
 
 Keeps the plugin list in your own repository thread post up to date, with version numbers. Publish a plugin and the post gets the new list the next time Discord is open.
 
+## Set it up first
+
+Nothing is set up by default, so a fresh install does nothing: no list, no post, and automatic updates are off. In the settings, a **Set up** section sits under the preview. Fill in:
+
+1. **Address of your list**: where your `post.json` is, for example `https://raw.githubusercontent.com/you/your-repo/gh-pages/post.json` (`tools/post.cjs` in this repo makes it),
+2. **Thread id** and **Message id** of the post to keep up to date (turn on Developer Mode, then long-press the message and copy its ids; the first message of a forum post has the same id as the thread),
+3. **Update the post by itself**, if you want it. **Update the post now** works without it.
+
 ## What you get
 
 - **A preview at the top of the settings** that shows exactly what the post will say, and how many characters it is.
-- **Automatic updates**: every 10 minutes while Discord is open, and when you open it, the plugin looks at the list. If it changed, it edits your post. When nothing changed it does not ask Discord anything.
+- **Automatic updates** (off until you turn them on): every 10 minutes while Discord is open, and when you open it, the plugin looks at the list. If it changed, it edits your post. When nothing changed it does not ask Discord anything.
 - **Update the post now**, **Copy the text** and **Refresh preview** buttons.
 - **Restore the previous text** puts back what the post said before the last change (and turns automatic updates off, or the next update would undo it).
 - **Version numbers** after each name, which you can turn off.
@@ -28,7 +36,7 @@ Valenced plugins cannot run while Discord is closed. After you publish, the post
 
 ## Which post
 
-The thread and message ids are in the settings (they default to the "Mark's Repository" post). The first message of a forum post has the same id as the thread.
+The thread and message ids are in the settings. They have no default, so nobody's post is edited until its owner sets it up.
 
 ## How it works
 
