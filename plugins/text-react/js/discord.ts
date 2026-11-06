@@ -1,5 +1,8 @@
 import { getAssetIdByName } from '@valenced/assets'
-import { ToastActionCreators } from '@valenced/discord/actions'
+import {
+	ActionSheetActionCreators,
+	ToastActionCreators,
+} from '@valenced/discord/actions'
 import { Stores } from '@valenced/discord/flux'
 import { lookupModule } from '@valenced/modules/finders'
 import { withProps } from '@valenced/modules/finders/filters'
@@ -87,9 +90,12 @@ export async function apiPut(path: string): Promise<void> {
 	}
 }
 
-/** Discord's accessibility context: its  makes sheets open without their slide animation. */
+/** Discord's accessibility context: its `reducedMotion.enabled` makes sheets open without their slide animation. */
 export function motionContext(): Context<MotionValue> | undefined {
 	return findByProps<{
 		AccessibilityPreferencesContext?: Context<MotionValue>
 	}>('AccessibilityPreferencesContext')?.AccessibilityPreferencesContext
 }
+
+/** Discord's action sheet functions (open and close the bottom sheets). */
+export const sheets = () => ActionSheetActionCreators

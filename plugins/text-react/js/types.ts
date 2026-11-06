@@ -8,6 +8,8 @@ export interface TextReactSettings {
 	animate: boolean
 	/** Words that are turned into emoji of your choice. */
 	customWords: CustomWord[]
+	/** The emoji of a character or word, in the order they are tried (the first one not used yet is used). Replaces the built-in list of that key. */
+	overrides: Record<string, string[]>
 	/** Built-in mappings (a character or a word) that are turned off. */
 	hiddenDefaults: string[]
 	/** How many seconds to wait between two reactions, as text. */

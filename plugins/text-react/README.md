@@ -24,7 +24,11 @@ In the settings you can:
 - give **any character or whole word** your own emoji, one or several (`fuck` → 🍆🍑, `a` → 🍎). A mapping of a character
   applies everywhere; a word only applies as a whole word. Yours beat the built-in ones, and an emoji is never used twice on a
   message,
-- **turn off any built-in mapping** (a character or a word) by tapping it, or all of them at once, and turn them back on,
+- **edit the emoji of any built-in character or word**: tap it in the built-in lists to see its emoji in the order they are tried (the
+  first one that is not on the message yet is used), add emoji at the top or the end, remove them, put it back to the built-in list,
+  or turn it off. All of them can be turned off or on at once,
+- **copy all built-in lists** as text (`a: 🇦 🅰`, one key per line), edit them anywhere and **paste lists** back to apply them. Keys
+  that are not built in work too, and show under *Your emoji lists*,
 - **export** your settings as JSON (copied and opened in the share sheet) and **import** someone else's by pasting it. Importing
   replaces your mappings.
 

@@ -69,13 +69,15 @@ function fresh(table: EmojiTable): Record<string, string[]> {
 }
 
 /** The keys of the whole-word table, longest first, so `100` is tried before `10` and `abc` before `ab`. */
-const WORDS = Object.keys(MULTIPLE).sort((a, b) => b.length - a.length)
+const sortedWords = (keys: string[]) => keys.sort((a, b) => b.length - a.length)
 
 /** What the person changed: their own mappings, and the built-in ones they turned off. */
 export interface EmojiOptions {
 	custom?: CustomWord[]
 	/** Keys of built-in mappings (a character or a word) that are not used. */
 	hidden?: string[]
+	/** The emoji of a character or word in the order they are tried, instead of the built-in ones. */
+	overrides?: Record<string, string[]>
 }
 
 /**
@@ -109,6 +111,14 @@ export function generateEmojiArray(
 
 	const words = fresh(MULTIPLE)
 	const singles = fresh(SINGLE)
+	// The person's lists replace the built-in ones: a character has its own list, and so has a longer word.
+	for (const [rawKey, list] of Object.entries(options.overrides ?? {})) {
+		const key = tidy(rawKey)
+		if (!key) continue
+		if (key.length === 1) singles[key] = list.slice()
+		else words[key] = list.slice()
+	}
+	const WORDS = sortedWords(Object.keys(words))
 	const used = new Set<string>()
 	const emoji: string[] = []
 	let incomplete = false

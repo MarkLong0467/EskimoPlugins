@@ -76,3 +76,52 @@ export function makeCustomWord(
 	if (!emoji.every(looksLikeEmoji)) return 'Only emoji can go there'
 	return { word, emoji: emoji.join('') }
 }
+
+/** The most emoji one character or word can have in its list. */
+export const MAX_LIST_EMOJI = 30
+
+/** A key as written in a list: a space is written as `space` so it can be seen. */
+export const keyLabel = (key: string) => (key === ' ' ? 'space' : key)
+
+/** The key a label stands for: `space` is a space. */
+export const keyFromLabel = (label: string) => {
+	const trimmed = label.trim().toLowerCase()
+	return trimmed === 'space' ? ' ' : trimmed
+}
+
+/** Lists of emoji as text, one key per line: `a: 🇦 🅰`. This is what is copied, and what can be pasted back. */
+export function formatList(lists: Record<string, string[]>): string {
+	return Object.keys(lists)
+		.map(key => `${keyLabel(key)}: ${lists[key].join(' ')}`)
+		.join('\n')
+}
+
+/**
+ * Reads lists written as `key: emoji emoji` on each line. A line without a colon, with an empty key or with something that
+ * is not emoji is skipped and counted.
+ */
+export function parseList(text: string): {
+	lists: Record<string, string[]>
+	skipped: number
+} {
+	const lists: Record<string, string[]> = {}
+	let skipped = 0
+	for (const line of text.split(/\r?\n/)) {
+		if (!line.trim()) continue
+		const at = line.indexOf(':', 1)
+		const key = at > 0 ? keyFromLabel(line.slice(0, at)) : ''
+		const emoji = at > 0 ? splitEmoji(line.slice(at + 1)) : []
+		// A key is a character or a word; a space is only the word \`space\`.
+		if (
+			!key ||
+			key.length > 20 ||
+			!emoji.length ||
+			!emoji.every(looksLikeEmoji)
+		) {
+			skipped++
+			continue
+		}
+		lists[key] = emoji.slice(0, MAX_LIST_EMOJI)
+	}
+	return { lists, skipped }
+}

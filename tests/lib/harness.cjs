@@ -539,6 +539,7 @@ function createRuntime(options = {}) {
 					Alert: { alert: () => {} },
 					Linking: { openURL: async url => { (globalThis.__opened ??= []).push(url) } },
 				Share: { share: async () => {} },
+				useWindowDimensions: () => ({ width: 400, height: 800 }),
 				PanResponder: { create: config => ({ config, panHandlers: { onMoveShouldSetResponder: () => true, onResponderRelease: () => {} } }) },
 					Dimensions: { get: () => ({ width: 400, height: 800, scale: 2, fontScale: 1 }) },
 					Keyboard: { dismiss() {} },

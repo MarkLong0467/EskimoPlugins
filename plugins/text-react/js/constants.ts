@@ -6,6 +6,9 @@ export const TOAST_KEY = 'MARKLONG_TEXT_REACT'
 /** The id of the sheet that asks for the text, so it can be closed again. */
 export const SHEET_KEY = 'marklong.text-react'
 
+/** The id of the sheet that edits the emoji of one character or word. */
+export const EDIT_SHEET_KEY = 'marklong.text-react.edit'
+
 /** The label of the item added to the message menu. */
 export const MENU_LABEL = 'Text React'
 
@@ -15,6 +18,7 @@ export const DEFAULT_SETTINGS: TextReactSettings = {
 	warn: true,
 	animate: true,
 	customWords: [],
+	overrides: {},
 	hiddenDefaults: [],
 	delaySeconds: '1',
 }

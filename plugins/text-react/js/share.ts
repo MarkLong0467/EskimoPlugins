@@ -1,4 +1,4 @@
-import { MAX_CUSTOM_WORDS, makeCustomWord } from './custom'
+import { looksLikeEmoji, MAX_CUSTOM_WORDS, makeCustomWord } from './custom'
 import type { CustomWord, TextReactSettings } from './types'
 
 /** Names the exported file so it can be told from other JSON. */
@@ -17,6 +17,7 @@ export function exportSettings(settings: TextReactSettings): string {
 		animate: settings.animate !== false,
 		delaySeconds: String(settings.delaySeconds),
 		customWords: settings.customWords ?? [],
+		overrides: settings.overrides ?? {},
 		hiddenDefaults: settings.hiddenDefaults ?? [],
 	}
 	return JSON.stringify(data, null, 2)
@@ -68,6 +69,27 @@ export function parseSettings(
 			else byWord.set(made.word, made)
 		}
 		settings.customWords = [...byWord.values()]
+	}
+	if (
+		data.overrides &&
+		typeof data.overrides === 'object' &&
+		!Array.isArray(data.overrides)
+	) {
+		const lists: Record<string, string[]> = {}
+		for (const [key, value] of Object.entries(
+			data.overrides as Record<string, unknown>,
+		)) {
+			const emoji = Array.isArray(value)
+				? value.filter(
+						(item): item is string =>
+							typeof item === 'string' && looksLikeEmoji(item),
+					)
+				: []
+			if (key && key.length <= 20 && emoji.length)
+				lists[key.toLowerCase()] = emoji.slice(0, 30)
+			else skipped++
+		}
+		settings.overrides = lists
 	}
 	if (Array.isArray(data.hiddenDefaults))
 		settings.hiddenDefaults = [
