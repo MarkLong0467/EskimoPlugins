@@ -19,7 +19,7 @@ val java = "25"
 subprojects {
     pluginManager.apply("com.android.library")
     extensions.configure<LibraryExtension> {
-        namespace = "marklong.native." + name.replace(Regex("[^A-Za-z0-9]"), "_")
+        namespace = "marklong.kmmiio." + name.replace(Regex("[^A-Za-z0-9]"), "_")
         compileSdk = sdk.toInt()
         defaultConfig { minSdk = minSdkVer.toInt() }
         compileOptions {
