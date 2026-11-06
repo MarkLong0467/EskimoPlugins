@@ -5,7 +5,7 @@
  * (build first: bun run build:dev, or just run `bun run test`).
  */
 
-const { createReporter, createRuntime, loadPlugin, startPlugin, findNode, sleep } = require('./lib/harness.cjs')
+const { createReporter, createRuntime, loadPlugin, startPlugin, findNode, findNodes, sleep } = require('./lib/harness.cjs')
 
 const { check, done } = createReporter('Text React')
 
@@ -347,6 +347,18 @@ async function setup({ saved = {}, answer = () => undefined, token = null, withH
 	}
 
 
+
+	// --- Another language: the box of copy rows is found by the icon inside the row's Icon element
+	{
+		const s = await setup()
+		function CopyIcon() {}
+		const row = (label, inner) => ({ type: 'MenuRow', props: { label, onPress() {}, icon: { type: { name: 'Icon' }, props: { IconComponent: inner } } } })
+		s.jsx.jsx('MessageActionsSheet', { message: MESSAGE })
+		const box = s.jsx.jsx('Group', { children: [row('Copier le texte', CopyIcon), row('Message', function ChatIcon() {})] })
+		check('the row is added in another language', box.props.children.length === 3 && box.props.children.at(-1).props.label === 'Text React', box.props.children.map(r => r.props.label))
+		await s.running.stop()
+	}
+
 	// --- Opening animation
 	{
 		const s = await setup({ saved: { animate: false } })
@@ -367,6 +379,74 @@ async function setup({ saved = {}, answer = () => undefined, token = null, withH
 		const s = await setup({ saved: { animate: false } })
 		const { view } = await s.openSheet()
 		check('without the Discord context the sheet still opens', !!findNode(view.tree, n => n.type === 'Design.ActionSheet'))
+		await s.running.stop()
+	}
+
+
+	// --- Accents, your own mappings, turned off built-ins
+	{
+		const run = async (saved, text, wait = 400) => {
+			const s = await setup({ saved: { delaySeconds: '0.5', ...saved } })
+			const { view } = await s.openSheet()
+			await s.type(view, text)
+			s.button(view, 'React').props.onPress()
+			await sleep(wait)
+			await s.running.stop()
+			return s.urls
+		}
+		const sameAs = (urls, list) => JSON.stringify(urls) === JSON.stringify(list.map(e => put('chan1', 'msg1', e)))
+		check('an accented letter is its plain letter', sameAs(await run({}, 'É'), ['🇪']))
+		check('so are other accents and look-alikes', sameAs(await run({}, 'ñß', 900), ['🇳', '🇸']))
+		check('your own word gives all its emoji', sameAs(await run({ customWords: [{ word: 'fuck', emoji: '🍆🍑' }] }, 'Fuck', 900), ['🍆', '🍑']))
+		const inside = await run({ customWords: [{ word: 'fuck', emoji: '🍆🍑' }] }, 'fucks', 400)
+		check('a word of yours is only used as a whole word', !inside.includes(put('chan1', 'msg1', '🍆')), inside)
+		check('your own mapping of one character beats the built-in one', sameAs(await run({ customWords: [{ word: 'a', emoji: '🍎' }] }, 'a'), ['🍎']))
+		check('your mapping of an accented letter beats its plain letter', sameAs(await run({ customWords: [{ word: 'é', emoji: '☕' }] }, 'é'), ['☕']))
+		check('a turned off built-in word is spelled out', sameAs(await run({ hiddenDefaults: ['ok'] }, 'ok', 900), ['🇴', '🇰']))
+		check('a turned off built-in character is left out', (await run({ hiddenDefaults: ['k'] }, 'k')).length === 0)
+		check('an emoji of yours is not used twice', sameAs(await run({ customWords: [{ word: 'x', emoji: '🍎' }, { word: 'y', emoji: '🍎🍐' }] }, 'xy', 900), ['🍎', '🍐']))
+	}
+
+	// --- Mappings in the settings
+	{
+		const s = await setup({ saved: {} })
+		const view = s.runtime.mount(s.runtime.React.createElement(s.definition.SettingsComponent, { api: { jsonStorage: s.storage } }))
+		await view.settle()
+		const input = label => findNodes(view.tree, n => n.type === 'Design.TextInput').find(n => n.props.label === label)
+		input('Character or word').props.onChange('Fuck')
+		input('Emoji (one or several)').props.onChange('🍆 🍑')
+		await view.settle()
+		findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === 'Add mapping').props.onPress()
+		await view.settle()
+		check('a mapping is added and saved', JSON.stringify(s.storage.cache.customWords) === JSON.stringify([{ word: 'fuck', emoji: '🍆🍑' }]), s.storage.cache)
+		check('it is listed', !!findNode(view.tree, n => n.type === 'Design.TableRow' && String(n.props.label).startsWith('fuck')))
+		input('Character or word').props.onChange('x')
+		input('Emoji (one or several)').props.onChange('abc')
+		await view.settle()
+		findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === 'Add mapping').props.onPress()
+		await view.settle()
+		check('text that is not emoji is refused', s.storage.cache.customWords.length === 1)
+		findNode(view.tree, n => n.type === 'Design.TableRow' && String(n.props.label).startsWith('fuck')).props.onPress()
+		check('tapping a mapping removes it', s.storage.cache.customWords.length === 0)
+		findNode(view.tree, n => n.type === 'Design.TableRow' && n.props.label === 'a').props.onPress()
+		check('tapping a built-in mapping turns it off', JSON.stringify(s.storage.cache.hiddenDefaults) === JSON.stringify(['a']), s.storage.cache)
+		await view.settle()
+		findNode(view.tree, n => n.type === 'Design.TableRow' && n.props.label === 'a').props.onPress()
+		check('and tapping again turns it on', s.storage.cache.hiddenDefaults.length === 0)
+
+		const shared = JSON.stringify({ format: 'text-react-settings', version: 1, menu: false, delaySeconds: '2', customWords: [{ word: 'Hi', emoji: '👋' }, { word: 'bad', emoji: 'nope' }], hiddenDefaults: ['ok'] })
+		findNodes(view.tree, n => n.type === 'Design.TextInput').find(n => n.props.label === 'Paste settings JSON').props.onChange(shared)
+		await view.settle()
+		findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === 'Import settings').props.onPress()
+		await view.settle()
+		const c = s.storage.cache
+		check('importing takes the valid parts', c.menu === false && c.delaySeconds === '2' && JSON.stringify(c.customWords) === JSON.stringify([{ word: 'hi', emoji: '👋' }]) && JSON.stringify(c.hiddenDefaults) === JSON.stringify(['ok']), c)
+		check('and says what was skipped', JSON.stringify(view.tree).includes('skipped 1'))
+		findNodes(view.tree, n => n.type === 'Design.TextInput').find(n => n.props.label === 'Paste settings JSON').props.onChange('{"a":1}')
+		await view.settle()
+		findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === 'Import settings').props.onPress()
+		await view.settle()
+		check('other JSON is refused', JSON.stringify(view.tree).includes('That is not a Text React settings file') && s.storage.cache.menu === false)
 		await s.running.stop()
 	}
 

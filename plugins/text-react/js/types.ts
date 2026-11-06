@@ -6,6 +6,10 @@ export interface TextReactSettings {
 	warn: boolean
 	/** Slide the sheet in. Off: it pops up at once, which is lighter on slow phones. */
 	animate: boolean
+	/** Words that are turned into emoji of your choice. */
+	customWords: CustomWord[]
+	/** Built-in mappings (a character or a word) that are turned off. */
+	hiddenDefaults: string[]
 	/** How many seconds to wait between two reactions, as text. */
 	delaySeconds: string
 }
@@ -42,4 +46,10 @@ export interface Http {
 export interface ApiError extends Error {
 	status?: number
 	body?: { message?: unknown; retry_after?: unknown }
+}
+
+/** A word and the emoji it is turned into. `emoji` is one or more emoji written together. */
+export interface CustomWord {
+	word: string
+	emoji: string
 }

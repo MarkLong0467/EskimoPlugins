@@ -215,12 +215,23 @@ function isRow(value: unknown): value is Row {
 /** Whether a row is one of the copy rows. It is found by its label or, in other languages, by the name of its icon. */
 function isCopyRow(row: Row): boolean {
 	if (COPY_LABELS.includes(row.props.label as string)) return true
-	const icon = row.props.icon
-	return (
-		!!icon &&
-		typeof icon === 'object' &&
-		/copy|clipboard/i.test(componentName(icon))
-	)
+	const icon = row.props.icon as
+		| { props?: Record<string, unknown> }
+		| null
+		| undefined
+	if (!icon || typeof icon !== 'object') return false
+	// The row's icon is usually an Icon element that holds the real icon in a prop, so that one is looked at too.
+	const inner = [icon.props?.IconComponent, icon.props?.icon, icon.props?.Icon]
+	return [icon, ...inner].some(part => {
+		if (!part) return false
+		const name =
+			typeof part === 'function'
+				? (part as { displayName?: string; name?: string }).displayName ||
+					(part as { name?: string }).name ||
+					''
+				: componentName(part)
+		return /copy|clipboard/i.test(name)
+	})
 }
 
 /** What is done when the new row is tapped: close the menu, then ask for the text. */

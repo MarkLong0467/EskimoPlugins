@@ -14,6 +14,8 @@ export const DEFAULT_SETTINGS: TextReactSettings = {
 	menu: true,
 	warn: true,
 	animate: true,
+	customWords: [],
+	hiddenDefaults: [],
 	delaySeconds: '1',
 }
 

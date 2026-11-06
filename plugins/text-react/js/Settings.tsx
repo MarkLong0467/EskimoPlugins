@@ -2,6 +2,7 @@ import { Design } from '@valenced/discord/design'
 import { ScrollView } from 'react-native'
 import { setStorage } from './config'
 import { DEFAULT_SETTINGS, DELAY_CHOICES } from './constants'
+import Mappings from './Mappings'
 import type { PluginSettingsComponent } from '@valenced/plugins/types'
 import type { ComponentProps } from 'react'
 import type { TextReactSettings } from './types'
@@ -74,6 +75,7 @@ export default function Settings({ api }: Props) {
 						/>
 					))}
 				</Design.TableRadioGroup>
+				<Mappings settings={settings} json={json} />
 				<Design.TableRowGroup title={ABOUT}>
 					<Design.TableRow key="how" label="How to use it" subLabel={HOW} />
 					<Design.TableRow key="credit" label="Credit" subLabel={CREDIT} />

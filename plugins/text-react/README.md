@@ -17,6 +17,20 @@ before leaving it out (this can be switched off). Reactions are added one second
 fast they can be added; you can pick a different pause in the settings.
 The sheet slides in when it opens. If that lags on your phone, turn off **Opening animation** in the settings and it pops up at once.
 
+## Your own emoji
+
+In the settings you can:
+
+- give **any character or whole word** your own emoji, one or several (`fuck` → 🍆🍑, `a` → 🍎). A mapping of a character
+  applies everywhere; a word only applies as a whole word. Yours beat the built-in ones, and an emoji is never used twice on a
+  message,
+- **turn off any built-in mapping** (a character or a word) by tapping it, or all of them at once, and turn them back on,
+- **export** your settings as JSON (copied and opened in the share sheet) and **import** someone else's by pasting it. Importing
+  replaces your mappings.
+
+Letters with accents are read as their plain letter (`é` is `e`) unless you map the accented letter itself. Text React is
+also found in the message menu in other languages, by the icons in it.
+
 ## How it works
 
 The code is in `js/`:
@@ -28,7 +42,8 @@ The code is in `js/`:
 | `menu.tsx` | Adds **Text React** to the menu of a message, and notes which message the menu is for. |
 | `TextReactSheet.tsx` | The sheet that asks for the text. |
 | `reactions.ts` | Adds the reactions one at a time through Discord's web API, slowing down when Discord asks. |
-| `Settings.tsx`, `config.ts`, `discord.ts`, `constants.ts`, `types.ts` | Settings and helpers. |
+| `Settings.tsx`, `Mappings.tsx`, `share.ts` | The settings screen, the mappings editor and JSON export/import. |
+| `custom.ts`, `config.ts`, `discord.ts`, `constants.ts`, `types.ts` | Custom mapping helpers and the rest. |
 
 The menu of a message is drawn as boxes of rows (Reply and Forward; Copy Text, Message, Mention and Copy Message Link; ...), and some versions of Discord draw it as one list of items. The plugin handles both. The plugin finds the box that holds the copy rows by their labels (Reply, Copy Text, Add Reaction...) or, in other
 languages, by the names of its icons, and adds one more item that is a copy of an existing one.

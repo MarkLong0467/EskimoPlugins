@@ -53,7 +53,10 @@ export default function TextReactSheet({ target }: { target: Target }) {
 	}
 
 	const react = () => {
-		const { emoji, incomplete } = generateEmojiArray(text.trim())
+		const { emoji, incomplete } = generateEmojiArray(text.trim(), {
+			custom: setting('customWords'),
+			hidden: setting('hiddenDefaults'),
+		})
 		if (!emoji.length)
 			return toast('None of that text can be turned into reactions')
 		if (emoji.length > MAX_REACTIONS)
