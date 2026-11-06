@@ -3088,6 +3088,32 @@
       "contributors": [
         "PalmDevs <629368283354628116> (https://github.com/PalmDevs \"Original author\") (https://github.com/PalmDevs/revenge-plugins \"Source\")"
       ]
+    },
+    "marklong.auto-show-all-channels": {
+      "name": "Auto Show All Channels",
+      "description": "Turns on \"Show All Channels\" by itself in every server you join, so community servers never hide channels from you. Has a button to do the same for the servers you are already in.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.auto-show-all-channels@1.0.0.zip",
+          "sha256": "7843d8a008ef13a3526bd99b96c5237e6787af0f1c50854d2c4a1e35ba626ca1",
+          "size": 7271,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "contributors": [
+        "Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
+      ]
     }
   }
 }

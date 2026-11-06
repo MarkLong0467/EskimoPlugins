@@ -33,6 +33,13 @@
       "suffix": ""
     },
     {
+      "id": "marklong.auto-show-all-channels",
+      "name": "Auto Show All Channels",
+      "version": "1.0.0",
+      "short": "turns on Show All Channels by itself in every server you join",
+      "suffix": ""
+    },
+    {
       "id": "marklong.better-calls",
       "name": "Better Calls",
       "version": "1.0.0",
