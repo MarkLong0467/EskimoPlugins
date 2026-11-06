@@ -1209,7 +1209,7 @@
       "description": "Show up to three presences at once, with an easy grouped editor, many timers (dates, countdowns, daily ranges), schedules and SoundCloud built in.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "2.0.0"
+        "latest": "2.0.1"
       },
       "versions": {
         "1.2.1": {
@@ -1294,6 +1294,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.rich-presence@2.0.0.zip",
           "sha256": "791e95187da54518c912eabf17e1a6abb2d391f0bc9b7eec1e6303847ca2aee8",
           "size": 25630,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "2.0.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.rich-presence@2.0.1.zip",
+          "sha256": "4ab82edea88df896f34177b181d7e1f84a5b00d59f12357a4b812e04c75f3f4e",
+          "size": 26030,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
