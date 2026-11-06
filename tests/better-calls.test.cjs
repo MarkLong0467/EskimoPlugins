@@ -24,18 +24,16 @@ function fake({ withAudio = true } = {}) {
 	const wrongSetDevice = []
 	const devices = makeDevices()
 	// Every way Discord rings ends in this request. `rings` holds the channels whose request got through.
-	const http = {
-		HTTPResponseError: class {},
-		get: async () => ({}),
-		post: request => {
-			const match = /\/channels\/(\w+)\/call\/ring/.exec(String(request.url))
-			if (match) rings.push(match[1])
-			return Promise.resolve({ ok: true, sent: true })
-		},
+	// Discord's HTTP module exports `post` itself and also an object `HTTP` with its own copy, and the call code uses the copy.
+	const sendPost = request => {
+		const match = /\/channels\/(\w+)\/call\/ring/.exec(String(request.url))
+		if (match) rings.push(match[1])
+		return Promise.resolve({ ok: true, sent: true })
 	}
-	const originalPost = http.post
-	/** Discord ringing a call: the request that `CallActionCreators.ring` sends. */
-	const ring = id => http.post({ url: `/channels/${id}/call/ring`, body: { recipients: null } })
+	const http = { HTTPResponseError: class {}, get: async () => ({}), post: sendPost, HTTP: { get: async () => ({}), post: sendPost } }
+	const originalPost = sendPost
+	/** Discord ringing a call: the request that `CallActionCreators.ring` sends, through the `HTTP` object. */
+	const ring = id => http.HTTP.post({ url: `/channels/${id}/call/ring`, body: { recipients: null } })
 
 	function PrivateChannelButtons(props) {
 		// Discord draws a single button, not a row, for the changelog.
@@ -94,6 +92,9 @@ const renderElement = element => (typeof element.type === 'function' ? element.t
 const drawHeader = (s, f, channelId = 'dm1') => s.mountRender(() => renderElement(jsx(s, f.header, { channelId })))
 /** Draws the speaker button the way Discord does, and renders it. */
 const drawSpeaker = (s, f, props) => s.mountRender(() => renderElement(jsx(s, f.speaker, props)))
+/** Whether both copies of `post` (the module's and the `HTTP` object's) are watched. */
+const watched = f => f.http.post !== f.originalPost && f.http.HTTP.post !== f.originalPost
+const unwatched = f => f.http.post === f.originalPost && f.http.HTTP.post === f.originalPost
 const headerPatched = (s, f) => jsx(s, f.header, { channelId: 'dm1' }).type !== f.header
 const speakerPatched = (s, f) => jsx(s, f.speaker, {}).type !== f.speaker
 const toggleOf = view => findNode(view.tree, n => n.type === 'Design.IconButton' && n.props.accessibilityLabel === 'Silent call')
@@ -105,7 +106,7 @@ const rowOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Table
 	{
 		const f = fake()
 		const s = await start(f)
-		check('the ring request and the header are watched', f.http.post !== f.originalPost && headerPatched(s, f))
+		check('the ring request and the header are watched', watched(f) && headerPatched(s, f))
 
 		const view = await drawHeader(s, f)
 		const toggle = toggleOf(view)
@@ -203,16 +204,16 @@ const rowOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Table
 		const s = await start(f)
 		const view = await s.mountSettings()
 		switchOf(view, 'Enable Silent Call').props.onValueChange(false)
-		check('turning silent calls off takes the patches off', f.http.post === f.originalPost && !headerPatched(s, f), [f.http.post === f.originalPost, headerPatched(s, f)])
+		check('turning silent calls off takes the patches off', unwatched(f) && !headerPatched(s, f), [unwatched(f), headerPatched(s, f)])
 		const header = await drawHeader(s, f)
 		check('and the header has no button', !toggleOf(header))
 		header.unmount()
 		switchOf(view, 'Enable Silent Call').props.onValueChange(true)
 		await sleep(10)
-		check('turning them on puts the patches back', f.http.post !== f.originalPost && headerPatched(s, f))
+		check('turning them on puts the patches back', watched(f) && headerPatched(s, f))
 		view.unmount()
 		s.stop()
-		check('after stopping Discord’s own functions are back', f.http.post === f.originalPost && !headerPatched(s, f) && !speakerPatched(s, f))
+		check('after stopping Discord’s own functions are back', unwatched(f) && !headerPatched(s, f) && !speakerPatched(s, f))
 	}
 
 	// --- Remembering the audio output device
@@ -321,6 +322,41 @@ const rowOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Table
 		check('the plugin reported no errors', s.errors.length === 0, s.errors)
 	}
 
+	// --- Discord's calls use the HTTP object inside the module, not the module's own post
+	{
+		const f = fake()
+		const s = await start(f, { saved: { silentCall: { default: true } } })
+		check('both copies of post are watched (the module’s and the one in the HTTP object)', watched(f))
+		const nested = await f.http.HTTP.post({ url: '/channels/dm1/call/ring', body: {} })
+		check('a ring sent through the HTTP object is stopped', f.rings.length === 0 && nested.ok === true && nested.sent !== true, f.rings)
+		const own = await f.http.post({ url: '/channels/dm1/call/ring', body: {} })
+		check('and so is one sent through the module’s own post', f.rings.length === 0 && own.sent !== true)
+		await f.http.HTTP.post({ url: '/channels/dm1/call', body: {} })
+		await f.http.HTTP.post({ url: '/channels/12345678901/call/join', body: {} })
+		const view = await s.mountSettings()
+		button(view, 'Copy logs').props.onPress()
+		await sleep(5)
+		const report = s.copied.at(-1) || ''
+		check('the report says how many HTTP objects are watched and what else was seen about calls', /HTTP objects watched: 2, other call requests seen: 2/.test(report), report.split('\n').slice(6, 18))
+		check('the log shows other call requests with the ids taken out', report.includes('POST /channels/<id>/call/join') && !report.includes('12345678901'), report.split('\n').slice(-8))
+		check('and says when a ring was stopped', report.includes('a ring request was stopped'))
+		view.unmount()
+		s.stop()
+		check('after stopping both copies are Discord’s own again', unwatched(f))
+	}
+	{
+		const f = fake()
+		const s = await start(f)
+		await f.ring('dm9')
+		check('a ring that is let through is written to the log', f.rings.join() === 'dm9')
+		const view = await s.mountSettings()
+		button(view, 'Copy logs').props.onPress()
+		await sleep(5)
+		check('and counted', /calls that rang: 1/.test(s.copied.at(-1) || ''))
+		view.unmount()
+		s.stop()
+	}
+
 	// --- The ring request is found whenever Discord loads its HTTP object
 	{
 		const f = fake()
@@ -332,7 +368,7 @@ const rowOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Table
 		f.rings.length = 0
 		loadHttp(s.runtime)
 		await sleep(10)
-		check('when Discord loads it the ring request is watched', f.http.post !== f.originalPost)
+		check('when Discord loads it the ring request is watched', watched(f))
 		const stopped = await f.ring('late')
 		check('and a silent call is stopped', f.rings.length === 0 && stopped.ok === true, f.rings)
 		const other = await f.http.post({ url: '/channels/late/messages', body: { content: 'hi' } })
@@ -347,13 +383,13 @@ const rowOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Table
 			check(`and ${url} is not mistaken for it`, answer.sent === true, answer)
 		}
 		s.stop()
-		check('after stopping the HTTP object is Discord’s own again', f.http.post === f.originalPost)
+		check('after stopping the HTTP object is Discord’s own again', unwatched(f))
 	}
 	{
 		const f = fake()
 		const wrapped = { default: f.http }
 		const s = await startPort('better-calls', { stores: f.stores, overrides: f.overrides, before: runtime => runtime.valenced.modules.finders.loadModule(wrapped) })
-		const patched = wrapped.default.post !== f.originalPost
+		const patched = wrapped.default.post !== f.originalPost && wrapped.default.HTTP.post !== f.originalPost
 		check('an HTTP object that is a default export is found too', patched)
 		s.stop()
 	}

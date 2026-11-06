@@ -27,7 +27,7 @@ Adds more options to calling: silent calls, and remembering the audio output dev
 
 ## How it works
 
-- **Silent calls.** Every way Discord has of ringing ends in one request, `POST /channels/<id>/call/ring`. The plugin stops that request at Discord's HTTP layer for calls that are silent, and answers Discord as if it went through. Starting the call itself is not touched, so the call connects and the other person is just not rung.
+- **Silent calls.** Every way Discord has of ringing ends in one request, `POST /channels/<id>/call/ring`. The plugin stops that request at Discord's HTTP layer for calls that are silent, and answers Discord as if it went through. Discord's HTTP module has two copies of `post` (its own, and one in an object called `HTTP` that the call code uses), and the plugin watches both. Starting the call itself is not touched, so the call connects and the other person is just not rung.
 - **The button.** The plugin watches for `PrivateChannelButtons`, the buttons in a DM's header, to be drawn, and draws Discord's own header with the silent call button in front.
 - **The device.** The output device is chosen with the `NATIVE_AUDIO_SET_OUTPUT_DEVICE` action each time the voice panel's speaker button is drawn during a call. The plugin watches for `VoicePanelHeaderSpeaker` the same way as the header.
 

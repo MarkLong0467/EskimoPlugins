@@ -18,31 +18,43 @@ import { state } from './state'
 /** The request Discord sends to ring. */
 const RING_URL = /\/channels\/([^/?#]+)\/call\/ring(?:[/?#]|$)/
 
-/** What this plugin reads of the HTTP object and of a request. */
+/** What this plugin reads of an HTTP object and of a request. */
 interface Http {
-	get?: unknown
 	post(request: { url?: unknown; body?: unknown }, ...rest: unknown[]): unknown
 }
 
-/** The HTTP object, from what a finder gave: the object itself or its default export. */
-function httpOf(exports: unknown): Http | undefined {
+/**
+ * Every object in what a finder gave that has a `post` Discord might call.
+ *
+ * Discord's HTTP module (`HTTPUtils`) exports `post` twice: as a function of the module itself, and in an object
+ * `HTTP = { get, post, put, patch, del }` that holds its own copies. The call code uses `HTTPUtils.HTTP.post`, so patching only
+ * the module's own `post` misses it. The finders only look at module roots, so the nested object is reached from there.
+ */
+function httpObjectsOf(exports: unknown): Http[] {
 	const e = exports as
-		| (Partial<Http> & { default?: Partial<Http> })
+		| {
+				post?: unknown
+				HTTP?: { post?: unknown }
+				default?: { post?: unknown; HTTP?: { post?: unknown } }
+		  }
 		| null
 		| undefined
-	if (typeof e?.post === 'function' && typeof e.get === 'function')
-		return e as Http
-	if (
-		typeof e?.default?.post === 'function' &&
-		typeof e.default.get === 'function'
+	const candidates = [e, e?.HTTP, e?.default, e?.default?.HTTP]
+	return candidates.filter(
+		(candidate): candidate is Http =>
+			!!candidate && typeof candidate.post === 'function',
 	)
-		return e.default as Http
-	return undefined
 }
 
 /** What Discord's HTTP returns for a request that went through. A ring is sent and forgotten, so only the shape matters. */
 const NOTHING_SENT = () =>
 	Promise.resolve({ ok: true, status: 204, body: undefined, headers: {} })
+
+/** How many requests about calls are written to the log, so a report shows what Discord sends without filling up. */
+const LOGGED_CALL_REQUESTS = 25
+
+/** A request's address with the ids taken out, so it can be logged. */
+const withoutIds = (url: string) => url.replace(/\d{5,}/g, '<id>')
 
 /**
  * Starts stopping the ring request of silent calls.
@@ -54,29 +66,43 @@ export function installRingBlock(): () => void {
 	const patched = new Set<object>()
 
 	const patch = (exports: unknown) => {
-		const http = httpOf(exports)
-		if (!http || patched.has(http)) return
-		patched.add(http)
-		undo.push(
-			diag.apply('HTTP.post (ring)', () => {
-				const unpatch = valenced.patcher.instead(http, 'post', ((
-					args: [{ url?: unknown }, ...unknown[]],
-					original: (...passed: unknown[]) => unknown,
-				) => {
-					const match = RING_URL.exec(String(args[0]?.url ?? ''))
-					if (!match) return original(...args)
-					if (shouldBeSilent(match[1] as string)) {
-						state.silenced++
-						diag.log('ring', 'a ring request was stopped')
-						return NOTHING_SENT()
-					}
-					state.rang++
-					return original(...args)
-				}) as never)
-				state.ring = true
-				return unpatch
-			}),
-		)
+		for (const http of httpObjectsOf(exports)) {
+			if (patched.has(http)) continue
+			patched.add(http)
+			undo.push(
+				diag.apply('HTTP.post (ring)', () => {
+					const unpatch = valenced.patcher.instead(http, 'post', ((
+						args: [{ url?: unknown }, ...unknown[]],
+						original: (...passed: unknown[]) => unknown,
+					) => {
+						const url = String(args[0]?.url ?? '')
+						const match = RING_URL.exec(url)
+						if (!match) {
+							// What Discord sends about calls is noted, to see what a call does if a ring is not caught.
+							if (
+								url.includes('/call') &&
+								state.callRequests < LOGGED_CALL_REQUESTS
+							) {
+								state.callRequests++
+								diag.log('http', `POST ${withoutIds(url)}`)
+							}
+							return original(...args)
+						}
+						if (shouldBeSilent(match[1] as string)) {
+							state.silenced++
+							diag.log('ring', 'a ring request was stopped')
+							return NOTHING_SENT()
+						}
+						state.rang++
+						diag.log('ring', 'a ring request was sent')
+						return original(...args)
+					}) as never)
+					state.ring = true
+					state.httpPatched++
+					return unpatch
+				}),
+			)
+		}
 	}
 
 	undo.push(getModules(withProps('HTTPResponseError', 'get'), patch))
@@ -92,5 +118,6 @@ export function installRingBlock(): () => void {
 			}
 		}
 		state.ring = false
+		state.httpPatched = 0
 	}
 }

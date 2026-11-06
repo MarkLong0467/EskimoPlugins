@@ -38,6 +38,7 @@ export const diag = createDiagnostics('Better Calls', {
 		})()
 		return [
 			`Calls without ringing: ${state.silenced}, calls that rang: ${state.rang}`,
+			`HTTP objects watched: ${state.httpPatched}, other call requests seen: ${state.callRequests}`,
 			`Silent call button added to a header: ${state.toggles} time(s)`,
 			`Remembered device applied: ${state.deviceApplied} time(s)`,
 			`Devices on the phone now: ${devices.length ? devices.join(', ') : 'none'}`,
