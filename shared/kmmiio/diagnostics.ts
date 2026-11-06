@@ -56,6 +56,8 @@ export interface DiagnosticsOptions {
 	checks?: () => DiagCheck[]
 	/** Start of the console messages that belong to the plugin, such as "[kmmiio-lib]". They are copied into the log. */
 	consolePrefixes?: string[]
+	/** The credit lines at the top of the report. The default credits kmmiio99o and the porter, for the ported plugins. */
+	credit?: string[]
 }
 
 /** What the diagnostics of one plugin offer. */
@@ -266,8 +268,10 @@ export function createDiagnostics(
 		const name = plugin?.manifest.name ?? fallbackName
 		const lines: string[] = [
 			`${name} debug report`,
-			`Original plugin by ${ORIGINAL_AUTHOR.name} (${ORIGINAL_AUTHOR.website}), ${LICENSE}`,
-			`Ported to Valenced by ${PORTER.name}`,
+			...(options.credit ?? [
+				`Original plugin by ${ORIGINAL_AUTHOR.name} (${ORIGINAL_AUTHOR.website}), ${LICENSE}`,
+				`Ported to Valenced by ${PORTER.name}`,
+			]),
 			`Plugin: ${plugin?.manifest.id ?? 'not started'} ${versionText(plugin?.manifest.version)}`,
 			`Created: ${new Date().toISOString()}`,
 			'',
