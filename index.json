@@ -2990,13 +2990,26 @@
       "description": "Adds more options to calling, such as silent calls, remembering your audio output device, and more.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.0.0"
+        "latest": "1.1.0"
       },
       "versions": {
         "1.0.0": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.better-calls@1.0.0.zip",
           "sha256": "3f669a2f25c294f449bc79a710928f7d621f703a739656a980b4f55f57859c22",
           "size": 8297,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.1.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.better-calls@1.1.0.zip",
+          "sha256": "31ad1325c02064ab58ef2fee0b2bd694314dbb10961ebb49d6f6ff088152c91e",
+          "size": 9008,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -3016,13 +3029,26 @@
       "description": "Hide the annoying chat buttons, or make them never collapse, all configurable.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.0.0"
+        "latest": "1.0.1"
       },
       "versions": {
         "1.0.0": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.better-chat-buttons@1.0.0.zip",
           "sha256": "9cb0f4ab8e1ba932ba608e6faec2d84f7b779f790ca8c1c25b46510269c3aa9e",
           "size": 6167,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.0.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.better-chat-buttons@1.0.1.zip",
+          "sha256": "3b2978421270dec830d1e73a54ae0811035cb01a6d4350b7b4b1cf17abd44e41",
+          "size": 6577,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -3042,13 +3068,26 @@
       "description": "Forces timestamps to be in a specific language.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.0.0"
+        "latest": "1.0.1"
       },
       "versions": {
         "1.0.0": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.force-timestamp-locale@1.0.0.zip",
           "sha256": "3fe5177ca98b00cf87f9e344605f603881fb838f189cf888ae172645d95b9f59",
           "size": 6125,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.0.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.force-timestamp-locale@1.0.1.zip",
+          "sha256": "3188260493524cc8a447a0833c6ce5d399e9bbcdc56ccaac9ef6b584ddc442cc",
+          "size": 6086,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -3068,13 +3107,26 @@
       "description": "Removes annoying channel suggestions that reappear even if you already removed them.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.0.0"
+        "latest": "1.1.0"
       },
       "versions": {
         "1.0.0": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.no-suggestions@1.0.0.zip",
           "sha256": "bf84816f258e50121ed488681785924399c68170ff3085ec421863fa98d20334",
           "size": 5116,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.1.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.no-suggestions@1.1.0.zip",
+          "sha256": "fbcbac78bed1ff9885a2f107e35277eb956ac39f74911e7308927fc006568fe1",
+          "size": 5923,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -3094,13 +3146,26 @@
       "description": "Turns on \"Show All Channels\" by itself in every server you join, so community servers never hide channels from you. Has a button to do the same for the servers you are already in.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.0.0"
+        "latest": "1.0.1"
       },
       "versions": {
         "1.0.0": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.auto-show-all-channels@1.0.0.zip",
           "sha256": "7843d8a008ef13a3526bd99b96c5237e6787af0f1c50854d2c4a1e35ba626ca1",
           "size": 7271,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.0.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.auto-show-all-channels@1.0.1.zip",
+          "sha256": "7c16c4ddfbc0edaf2f9d1e8098ce30945d2acaa96e0c7b928311e9f56b36a9c7",
+          "size": 7220,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
