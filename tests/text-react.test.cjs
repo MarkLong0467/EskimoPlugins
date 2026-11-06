@@ -402,6 +402,10 @@ async function setup({ saved = {}, answer = () => undefined, token = null, withH
 		const text = JSON.stringify(view.tree)
 		check('the sheet says how many different reactions fit', text.includes('Up to 15 different reactions fit on this message'), text.slice(0, 200))
 		check('and how full the message is', text.includes('5/20 reactions'))
+		await s.type(view, 'ok')
+		check('typing adds the new reactions to the count', JSON.stringify(view.tree).includes('6/20 reactions'), JSON.stringify(view.tree).slice(0, 300))
+		await s.type(view, 'hello')
+		check('an emoji the message has already is not counted again', JSON.stringify(view.tree).includes('/20 reactions'))
 		await s.running.stop()
 	}
 	{
@@ -436,13 +440,13 @@ async function setup({ saved = {}, answer = () => undefined, token = null, withH
 	{
 		const s = await setup()
 		const { view } = await s.openSheet()
-		check('with no text there is no preview', !JSON.stringify(view.tree).includes('Preview of what will be added'))
+		check('with no text the preview line says what it is for', JSON.stringify(view.tree).includes('The emoji that will be added show here'))
 		await s.type(view, 'Hi')
 		const lines = () => JSON.stringify(view.tree)
-		check('typing shows the emoji that will be added', lines().includes('Preview of what will be added') && lines().includes('🇭  🇮') && lines().includes('2 reactions'), lines().slice(0, 300))
+		check('typing shows the emoji that will be added', lines().includes('🇭  🇮') && lines().includes('2/20 reactions'), lines().slice(0, 300))
 		await s.type(view, 'ok')
-		check('and it follows the text', lines().includes('🆗') && lines().includes('1 reaction') && !lines().includes('1 reactions'))
-		await s.type(view, 'é$?')
+		check('and it follows the text', lines().includes('🆗') && lines().includes('1/20 reactions'))
+		await s.type(view, 'a')
 		check('it says when characters are left out', lines().includes('left out'))
 		await s.type(view, '')
 		check('and when nothing can be turned into emoji', lines().includes('None of that text can be turned into reactions'))

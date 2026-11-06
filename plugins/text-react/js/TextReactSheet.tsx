@@ -21,10 +21,7 @@ const HELP =
 const WARNING =
 	'Part of the text has no emoji, so it would be left out. React anyway?'
 const REACT = 'React'
-const PREVIEW = 'Preview of what will be added'
-
-/** Room kept for the preview: its title, one row of emoji and its note. */
-const PREVIEW_HEIGHT = 84
+const PREVIEW_EMPTY = 'The emoji that will be added show here'
 const BACK = 'Go back'
 const CANCEL = 'Cancel'
 const ANYWAY = 'React anyway'
@@ -56,7 +53,6 @@ export default function TextReactSheet({ target }: { target: Target }) {
 	const fits = room
 		? `Up to ${room.left} different reactions fit on this message`
 		: ''
-	const counted = room ? `${room.used}/${MAX_REACTIONS} reactions` : ''
 
 	/** Closes the sheet and adds the reactions in the background. */
 	const go = (emoji: string[]) => {
@@ -78,12 +74,18 @@ export default function TextReactSheet({ target }: { target: Target }) {
 	} catch {
 		preview = null
 	}
-	const previewLine = preview?.emoji.join('  ') ?? ''
-	const previewNote = !preview
-		? ''
-		: !preview.emoji.length
+	const previewLine = preview?.emoji.length
+		? preview.emoji.join('  ')
+		: preview
 			? 'None of that text can be turned into reactions'
-			: `${preview.emoji.length} reaction${preview.emoji.length === 1 ? '' : 's'}${preview.incomplete ? ', some characters have no emoji and are left out' : ''}`
+			: PREVIEW_EMPTY
+	// How full the message would be once the text is added (the emoji it has already cost nothing).
+	const total = preview
+		? room
+			? room.used + newReactions(preview.emoji, room)
+			: preview.emoji.length
+		: (room?.used ?? 0)
+	const counted = `${total}/${MAX_REACTIONS} reactions${preview?.incomplete && preview.emoji.length ? ', some characters have no emoji and are left out' : ''}`
 
 	const react = () => {
 		const { emoji, incomplete } = convert()
@@ -124,15 +126,13 @@ export default function TextReactSheet({ target }: { target: Target }) {
 							{HELP}
 						</Design.Text>
 						{room ? (
-							<>
-								<Design.Text variant="text-sm/medium" color="text-muted">
-									{fits}
-								</Design.Text>
-								<Design.Text variant="text-sm/medium" color="text-muted">
-									{counted}
-								</Design.Text>
-							</>
+							<Design.Text variant="text-sm/medium" color="text-muted">
+								{fits}
+							</Design.Text>
 						) : null}
+						<Design.Text variant="text-sm/medium" color="text-muted">
+							{counted}
+						</Design.Text>
 						<Design.TextInput
 							label="Text"
 							placeholder="Enter text..."
@@ -141,24 +141,7 @@ export default function TextReactSheet({ target }: { target: Target }) {
 							onChange={setText}
 							autoFocus
 						/>
-						{/* The preview has a fixed height, so the sheet does not change size when the first character is typed. */}
-						<View style={{ minHeight: PREVIEW_HEIGHT, gap: 4 }}>
-							{preview ? (
-								<>
-									<Design.Text variant="text-sm/medium" color="text-muted">
-										{PREVIEW}
-									</Design.Text>
-									{previewLine ? (
-										<Design.Text variant="heading-lg/bold">
-											{previewLine}
-										</Design.Text>
-									) : null}
-									<Design.Text variant="text-sm/medium" color="text-muted">
-										{previewNote}
-									</Design.Text>
-								</>
-							) : null}
-						</View>
+						<Design.Text variant="text-md/medium">{previewLine}</Design.Text>
 						<Design.Button
 							text={REACT}
 							variant="primary"
