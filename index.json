@@ -2871,6 +2871,35 @@
       "contributors": [
         "kmmiio99o <879393496627306587> (https://kmmiio99o.dev \"Original author\") (https://github.com/kmmiio99o \"GitHub\")"
       ]
+    },
+    "marklong.better-devices": {
+      "name": "Better Devices",
+      "description": "Better session control: multi-select logout, new-device alerts, and clearer device details.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.2"
+      },
+      "versions": {
+        "1.0.2": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.better-devices@1.0.2.zip",
+          "sha256": "9d080046789256bf4ba0e6f261b21419b7562156d5d81c59152bae0e06970cd8",
+          "size": 9084,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            },
+            "marklong.kmmiio-lib": {
+              "version": ">=1.2.17"
+            }
+          }
+        }
+      },
+      "contributors": [
+        "kmmiio99o <879393496627306587> (https://kmmiio99o.dev \"Original author\") (https://github.com/kmmiio99o \"GitHub\")"
+      ]
     }
   }
 }
