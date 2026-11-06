@@ -272,3 +272,25 @@ export async function resolveImage(
 	setImageStatus(slot, error || 'Could not load this image')
 	return undefined
 }
+
+/**
+ * Turns the link of a cover into an asset id Discord can show. A SoundCloud cover is asked for in its large size.
+ * The same image is only hosted once.
+ *
+ * @returns The asset id, or nothing if there is no link or Discord would not host it (this is logged).
+ */
+export async function artworkAsset(url: string): Promise<string | undefined> {
+	if (!url) return undefined
+	const big = url.replace('-large.', '-t500x500.')
+	const key = `link|${big}`
+	const cached = assetCache.get(key)
+	if (cached !== undefined) return cached
+	try {
+		const id = await externalAsset(big)
+		assetCache.set(key, id)
+		return id
+	} catch (error) {
+		console.warn(`${TAG} artwork not sent:`, errorText(error))
+		return undefined
+	}
+}

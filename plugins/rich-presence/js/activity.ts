@@ -1,70 +1,183 @@
 import { Dispatcher } from '@valenced/discord/common/flux'
-import { MAX_BUTTON_LABEL, PID, SOCKET } from './constants'
+import { MAX_BUTTON_LABEL } from './constants'
 import { resolveImage } from './images'
-import { state } from './state'
-import { num, parseTime, text } from './variables'
-import type { Activity, Profile } from './types'
+import { effectiveAppId } from './profiles'
+import {
+	appStart,
+	dailyWindow,
+	MINUTE,
+	nextMidnight,
+	nextOccurrence,
+	parseClock,
+	parseDate,
+	startOfDay,
+} from './timers'
+import { text as fillText, num } from './variables'
+import type { Activity, Profile, Runtime } from './types'
 
 /** Whether a text is a web link. */
 const isLink = (value: string | undefined): value is string =>
 	!!value && /^https?:\/\//i.test(value)
 
+/** The start and end the SoundCloud presence shares for "From the SoundCloud track", if it is showing a track. */
+const sharedTimestamps = (): { start?: number; end?: number } | undefined =>
+	(
+		globalThis as unknown as {
+			eskimoTimestamps?: { start?: number; end?: number }
+		}
+	).eskimoTimestamps
+
 /**
- * The timer of the presence for a profile, or nothing if there is none.
+ * How long a looping timer lasts, or nothing if the profile has none.
  *
- * - `elapsed` counts up from when the presence was applied; `clock` from midnight, so it reads like the time of day.
- * - `countdown` ends a number of minutes after it was applied.
- * - `external` uses the start and end another plugin put in `globalThis.eskimoTimestamps`.
- * - `custom` uses the start and end typed in. With both set the timer loops: it restarts from a moving anchor each time it
- *   runs out.
+ * - `custom` with both a start and an end set loops: it counts down the same length again and again.
+ * - `countdown` loops when it is asked to: it starts over each time it runs out.
  */
-function timestampsFor(p: Profile): Activity['timestamps'] {
-	if (p.timestampMode === 'elapsed') return { start: state.appliedAt }
-	if (p.timestampMode === 'clock') {
-		const now = new Date()
-		return {
-			start:
-				Date.now() -
-				(now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()) *
-					1000,
-		}
-	}
-	if (p.timestampMode === 'countdown')
-		return { end: state.appliedAt + (num(p.countdownMinutes) || 0) * 60000 }
-	if (p.timestampMode === 'external') {
-		const shared = (
-			globalThis as unknown as {
-				eskimoTimestamps?: { start?: number; end?: number }
-			}
-		).eskimoTimestamps
-		if (shared?.start)
-			return shared.end
-				? { start: shared.start, end: shared.end }
-				: { start: shared.start }
-		return undefined
-	}
+export function loopLength(p: Profile): number | undefined {
 	if (p.timestampMode === 'custom') {
-		const start = parseTime(p.customStart)
-		const end = parseTime(p.customEnd)
-		if (start !== undefined && end !== undefined && end > start)
-			return { start: state.loopAnchor, end: state.loopAnchor + (end - start) }
-		if (start !== undefined || end !== undefined) {
-			const timestamps: { start?: number; end?: number } = {}
-			if (start !== undefined) timestamps.start = start
-			if (end !== undefined) timestamps.end = end
-			return timestamps
-		}
+		const start = parseDate(p.customStart)
+		const end = parseDate(p.customEnd)
+		return start !== undefined && end !== undefined && end > start
+			? end - start
+			: undefined
+	}
+	if (p.timestampMode === 'countdown' && p.countdownLoop) {
+		const minutes = num(p.countdownMinutes) || 0
+		return minutes > 0 ? minutes * MINUTE : undefined
 	}
 	return undefined
 }
 
 /**
+ * The timer of the presence for a profile, or nothing if there is none (or it has nothing to show right now).
+ *
+ * - `elapsed` counts up from when the presence was applied, `app` from when Discord was opened, `clock` from midnight.
+ * - `since` counts up from a date that has come; `until` counts down to a date, going on to the next one if it repeats.
+ * - `countdown` ends a number of minutes after it was applied, or after its last restart when it loops.
+ * - `midnight` ends at the next midnight.
+ * - `daily` is a progress bar between two times of day, shown while the range is on.
+ * - `custom` uses the start and end typed in. With both set the timer loops from a moving anchor.
+ * - `external` uses the start and end of the SoundCloud track.
+ */
+export function timestampsFor(
+	p: Profile,
+	rt: Runtime,
+	now = Date.now(),
+): Activity['timestamps'] {
+	switch (p.timestampMode) {
+		case 'elapsed':
+			return { start: rt.appliedAt }
+		case 'app':
+			return { start: appStart() }
+		case 'clock':
+			return { start: startOfDay(now) }
+		case 'since': {
+			const date = parseDate(p.timerDate)
+			return date !== undefined && date <= now ? { start: date } : undefined
+		}
+		case 'until': {
+			const date = parseDate(p.timerDate)
+			if (date === undefined) return undefined
+			const next = nextOccurrence(date, p.timerRepeat, now)
+			return next === undefined ? undefined : { end: next }
+		}
+		case 'countdown': {
+			const length = (num(p.countdownMinutes) || 0) * MINUTE
+			if (!length) return undefined
+			const end = (p.countdownLoop ? rt.loopAnchor : rt.appliedAt) + length
+			return end > now ? { end } : undefined
+		}
+		case 'midnight':
+			return { end: nextMidnight(now) }
+		case 'daily': {
+			const from = parseClock(p.dailyFrom)
+			const to = parseClock(p.dailyTo)
+			if (from === undefined || to === undefined) return undefined
+			const window = dailyWindow(from, to, now)
+			return window.inside
+				? { start: window.start, end: window.end }
+				: undefined
+		}
+		case 'external': {
+			const shared = sharedTimestamps()
+			if (!shared?.start) return undefined
+			return shared.end
+				? { start: shared.start, end: shared.end }
+				: { start: shared.start }
+		}
+		case 'custom': {
+			const start = parseDate(p.customStart)
+			const end = parseDate(p.customEnd)
+			if (start !== undefined && end !== undefined && end > start)
+				return { start: rt.loopAnchor, end: rt.loopAnchor + (end - start) }
+			if (start !== undefined || end !== undefined) {
+				const timestamps: { start?: number; end?: number } = {}
+				if (start !== undefined) timestamps.start = start
+				if (end !== undefined) timestamps.end = end
+				return timestamps
+			}
+			return undefined
+		}
+		default:
+			return undefined
+	}
+}
+
+/**
+ * When the timer of a profile changes by itself, so the presence has to be sent again: a loop runs out, a countdown ends, a
+ * date comes, midnight passes, or a daily range starts or ends. Nothing if it never does.
+ */
+export function nextChange(
+	p: Profile,
+	rt: Runtime,
+	now = Date.now(),
+): number | undefined {
+	const length = loopLength(p)
+	if (length !== undefined) return rt.loopAnchor + length
+	switch (p.timestampMode) {
+		case 'countdown': {
+			const end = rt.appliedAt + (num(p.countdownMinutes) || 0) * MINUTE
+			return end > now ? end : undefined
+		}
+		case 'since': {
+			const date = parseDate(p.timerDate)
+			return date !== undefined && date > now ? date : undefined
+		}
+		case 'until': {
+			const date = parseDate(p.timerDate)
+			return date === undefined
+				? undefined
+				: nextOccurrence(date, p.timerRepeat, now)
+		}
+		case 'midnight':
+		case 'clock':
+			return nextMidnight(now)
+		case 'daily': {
+			const from = parseClock(p.dailyFrom)
+			const to = parseClock(p.dailyTo)
+			if (from === undefined || to === undefined) return undefined
+			const window = dailyWindow(from, to, now)
+			return window.inside ? window.end : window.start
+		}
+		default:
+			return undefined
+	}
+}
+
+/**
  * Builds the activity Discord expects from a profile.
  *
+ * @param p The profile.
+ * @param rt What is kept for the profile: its timers.
  * @returns The activity, or nothing if the profile has no name, or "show only when" comes out empty (for example
  *   `{sc_title}` with nothing playing). Either way no presence is shown.
  */
-export async function buildActivity(p: Profile): Promise<Activity | null> {
+export async function buildActivity(
+	p: Profile,
+	rt: Runtime,
+): Promise<Activity | null> {
+	/** A text with its variables filled in; `{uptime}` counts from when this profile was applied. */
+	const text = (value: unknown) => fillText(value, rt.appliedAt)
 	const name = text(p.name)
 	if (!name) return null
 	const gate = String(p.showOnlyWhen || '').trim()
@@ -72,7 +185,7 @@ export async function buildActivity(p: Profile): Promise<Activity | null> {
 
 	const appId = String(p.applicationId || '').trim() || '0'
 	const activity: Activity = {
-		application_id: appId,
+		application_id: effectiveAppId(p),
 		name,
 		type: Number(p.type) || 0,
 		flags: 1,
@@ -90,7 +203,7 @@ export async function buildActivity(p: Profile): Promise<Activity | null> {
 		if (url) activity.url = url
 	}
 
-	const timestamps = timestampsFor(p)
+	const timestamps = timestampsFor(p, rt)
 	if (timestamps) activity.timestamps = timestamps
 
 	const cur = num(p.partyCurrent)
@@ -99,8 +212,8 @@ export async function buildActivity(p: Profile): Promise<Activity | null> {
 		activity.party = { size: [Math.min(cur, max), max] }
 
 	const assets: Record<string, string> = {}
-	const large = await resolveImage(appId, p.largeImage, 'large')
-	const small = await resolveImage(appId, p.smallImage, 'small')
+	const large = await resolveImage(appId, p.largeImage, `${p.id}:large`)
+	const small = await resolveImage(appId, p.smallImage, `${p.id}:small`)
 	if (large) assets.large_image = large
 	if (small) assets.small_image = small
 	const largeText = text(p.largeText)
@@ -133,12 +246,15 @@ export async function buildActivity(p: Profile): Promise<Activity | null> {
 	return activity
 }
 
-/** Sends an activity to Discord as if a game had reported it. `null` removes the presence. */
-export function dispatchActivity(activity: Activity | null): void {
+/**
+ * Sends an activity to Discord as if a game had reported it, under the profile's own socket and process. `null` removes the
+ * presence of that profile and leaves the others as they are.
+ */
+export function dispatchActivity(activity: Activity | null, rt: Runtime): void {
 	Dispatcher.dispatch({
 		type: 'LOCAL_ACTIVITY_UPDATE',
 		activity,
-		pid: PID,
-		socketId: SOCKET,
+		pid: rt.pid,
+		socketId: rt.socket,
 	} as never)
 }

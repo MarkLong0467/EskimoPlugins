@@ -1,50 +1,43 @@
 # Rich Presence
 
-Set your own Discord presence ("Playing ...", "Listening to ...") from profiles you write in the settings.
+Show up to three presences at once on your Discord profile, and the SoundCloud track you are listening to.
 
 ## What you get
 
-- **Profiles.** Keep several; switch with one tap. New, duplicate, delete, and copy or paste one as JSON.
+- **Several at once.** Switch on up to 3 presences. Each is its own card. Discord keeps only one "Playing", so make the others
+  Listening to, Watching, Competing in or Streaming. Each needs its own Application ID (left empty, one is made up).
+- **Easy settings.** A list with a switch for each presence; tap one to open its editor with pages: Basics, Text, Images,
+  Timer, Buttons and When. Add, duplicate, delete, copy and paste presences.
+- **SoundCloud built in.** Add a SoundCloud presence; its editor shows only the SoundCloud settings (Last.fm now playing via
+  Pano Scrobbler, a pasted or copied link, cover lookup, progress bar, Spotify hiding, button).
+- **Many timers.** Since switched on, since Discord opened, since a date, until a date (repeating daily, weekly, monthly or
+  yearly), countdown (can start over), until midnight, time of day, a progress bar between two times each day, your own start
+  and end (loops when both are set), or from the SoundCloud track. Date fields say how they read what you typed.
+- **Schedule.** Show a presence only on chosen days and between two times; it appears and goes by itself.
 - **Text with variables.** `{time}` `{time12}` `{seconds}` `{date}` `{day}` `{month}` `{year}` `{user}` `{username}`
-  `{uptime}`, and `{sc_title}` `{sc_artist}` `{sc_url}` `{sc_art}` `{sc_button}` from the SoundCloud Presence plugin.
-- **Images** from a direct link, an Imgur link, a page with a picture, or an asset key from your own Discord application.
-- **A timer**: elapsed, same as the clock, countdown, custom (loops when both start and end are set), or from another plugin.
-- **A party size** and up to **two buttons**.
-- **Show only when** hides the presence while a text comes out empty, for example `{sc_title}` with nothing playing.
-- **A live preview** at the top that follows what you type, and tells you if an image could not be sent.
-- **Refresh every N seconds** (at least 15) to keep variables fresh.
-- **Use for SoundCloud** adds a ready profile that shows the track from the SoundCloud Presence plugin.
+  `{uptime}` and `{sc_title}` `{sc_artist}` `{sc_url}` `{sc_art}` `{sc_button}`.
+- **Images** from a direct link, an Imgur link, a page with a picture, or an asset key. Party size, two buttons, and
+  **show only when**.
+- **A live preview** that follows what you type.
 
 ## How it works
 
-The presence is sent as a local activity (`LOCAL_ACTIVITY_UPDATE`) under a made-up process, the way a game would report it. It
-is sent again when Discord reconnects, because Discord drops local activities then.
+Each presence is sent as its own local activity (`LOCAL_ACTIVITY_UPDATE`) under its own made-up socket and process, the way a
+game would report it, and sent again when Discord reconnects. A watcher checks the clock once a second for timers that change
+by themselves and for schedules starting or ending.
 
-Other plugins can work with it through three globals:
+Globals: `globalThis.eskimoRichPresence.apply()` (send again), `globalThis.eskimoVars` (variables), `globalThis.eskimoTimestamps`
+(start and end for "From the SoundCloud track").
 
-| Global | Use |
-| --- | --- |
-| `globalThis.eskimoRichPresence.apply()` | Ask for the presence to be sent again. |
-| `globalThis.eskimoVars` | Add variables (a name and a value). |
-| `globalThis.eskimoTimestamps` | Give a `start` and `end` for a profile whose timer is "From another plugin". |
-
-The code is in `js/`:
-
-| File | What it does |
-| --- | --- |
-| `index.ts` | The entry point. Starts, stops, and sends again on reconnect. |
-| `activity.ts` | Builds the activity from a profile and sends it. |
-| `images.ts` | Turns image links and asset keys into asset ids. |
-| `apply.ts` | Sends on a schedule, refreshes, and loops a custom timer. |
-| `variables.ts` | Fills in variables and reads times and numbers. |
-| `profiles.ts` | The shape of a profile, defaults, and filling in older saves. |
-| `Settings.tsx`, `Preview.tsx`, `Field.tsx` | The settings screen, live preview, and a text box that saves when typing pauses. |
-| `state.ts`, `constants.ts`, `types.ts` | Shared state, fixed values, and types. |
+The code is in `js/`: `index.ts` (entry), `apply.ts` (sending, watcher), `activity.ts` (builds an activity and its timer),
+`timers.ts` (time rules), `profiles.ts` (profiles and which are shown), `soundcloud.ts`, `present.ts`, `lastfm.ts`,
+`lookup.ts`, `scstate.ts`, `format.ts` (SoundCloud), `images.ts`, `variables.ts`, `actions.ts`, and the screens `Settings.tsx`,
+`EditProfile.tsx`, `SoundCloudEditor.tsx`, `Preview.tsx`, `Field.tsx`, `ui.tsx`.
 
 ## Developing
 
 ```sh
 bun install
-bun run build         # builds plugins/rich-presence/build/js/index.js
+bun run build
 bun run test rich-presence
 ```

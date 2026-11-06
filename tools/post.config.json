@@ -35,7 +35,7 @@
 		"marklong.pin-dms": "pin DMs and group chats to the top, in sections you can fold",
 		"marklong.quiet-hours": "switches your status to Do Not Disturb on a schedule and puts it back, with one-tap skip tonight",
 		"marklong.repo-post": "keeps your repository thread post up to date with the plugin list and versions",
-		"marklong.rich-presence": "fully custom rich presence with profiles, images, timers and buttons",
+		"marklong.rich-presence": "up to 3 presences at once, many timers and schedules, SoundCloud built in",
 		"marklong.role-options": "copy a role's name, color or icon from the role menu",
 		"marklong.server-drawer": "manage your servers from a drawer above the YouBar",
 		"marklong.server-info": "members, roles, channels, boosts, owner and friends for any server",

@@ -1,26 +1,59 @@
 'use strict'
 
 /**
- * Tests for Rich Presence. Run with: node tests/rich-presence.test.cjs
- * (build first: bun run build:dev, or just run `bun run test`).
- *
- * Set BUNDLE_DIR to run the same checks against another build of the plugin (see tests/lib/harness.cjs).
+ * Tests for Rich Presence 2.0: several presences at once, every kind of timer, schedules, and the settings screens.
+ * (The SoundCloud part has its own file, rich-presence-soundcloud.test.cjs.)
+ * Run with: node tests/rich-presence.test.cjs (build first: bun run build:dev, or just run `bun run test`).
  */
 
-const { createReporter, createRuntime, loadPlugin, startPlugin, findNode, findNodes, sleep } = require('./lib/harness.cjs')
+const fs = require('node:fs')
+const path = require('node:path')
+const { createReporter, createRuntime, loadPlugin, findNode, findNodes, textOf, sleep, ROOT } = require('./lib/harness.cjs')
+
+/** Starts the plugin with a manifest, as Valenced does, and returns what is needed to stop it. */
+async function startPlugin(definition, runtime, { storage }) {
+	const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugins', 'rich-presence', 'manifest.json'), 'utf8'))
+	const cleanups = []
+	const errors = []
+	const plugin = { manifest: { ...manifest, version: { nums: [2, 0, 0] } }, errors, reportError: e => errors.push(e), requireReload() {}, startedLate: false }
+	const api = { cleanup: (...fns) => cleanups.push(...fns), decorate() {}, jsonStorage: storage, logger: { log() {}, warn() {}, error() {}, info() {}, debug() {} }, plugin, unscoped: runtime.valenced }
+	plugin.api = api
+	await definition.start.call(plugin, { ...api, plugin })
+	return {
+		api,
+		storage,
+		errors,
+		async stop() {
+			for (const cleanup of [...cleanups].reverse()) if (typeof cleanup === 'function') cleanup()
+		},
+	}
+}
 
 const { check, done } = createReporter('Rich Presence')
 
-// The plugin waits 3 seconds after Discord reconnects. The tests do not need to wait that long.
+// The plugin waits 3 seconds after Discord reconnects and 0.4 seconds between profiles. The tests do not need to wait that long.
 const realSetTimeout = globalThis.setTimeout
-globalThis.setTimeout = (fn, ms, ...rest) => (ms === 3000 ? setImmediate(fn, ...rest) : realSetTimeout(fn, ms, ...rest))
+globalThis.setTimeout = (fn, ms, ...rest) => (ms === 3000 ? setImmediate(fn, ...rest) : ms === 400 ? realSetTimeout(fn, 5, ...rest) : realSetTimeout(fn, ms, ...rest))
 
-/** A profile with the given fields over a blank one. */
-const profile = (fields = {}) => ({
-	id: 'default',
-	label: 'Default',
-	name: '',
-	type: 0,
+// The clock can be moved forward to reach midnight, the end of a countdown or a schedule without waiting.
+const realNow = Date.now.bind(Date)
+let skew = 0
+Date.now = () => realNow() + skew
+
+const PREFIX = 'EskimoRichPresence:'
+const MINUTE = 60000
+const HOUR = 60 * MINUTE
+const DAY = 24 * HOUR
+
+/** A profile with the given fields over a blank one. It is switched on unless the fields say otherwise. */
+const TYPE_OF = { a: 0, b: 2, c: 3, d: 5, e: 1 }
+const prof = (id, fields = {}) => ({
+	id,
+	kind: 'custom',
+	label: id.toUpperCase(),
+	enabled: true,
+	name: `Game ${id}`,
+	type: TYPE_OF[id] ?? 0,
 	details: '',
 	detailsUrl: '',
 	state: '',
@@ -37,6 +70,11 @@ const profile = (fields = {}) => ({
 	customStart: '',
 	customEnd: '',
 	countdownMinutes: '30',
+	countdownLoop: false,
+	timerDate: '',
+	timerRepeat: 'none',
+	dailyFrom: '09:00',
+	dailyTo: '17:00',
 	partyCurrent: '',
 	partyMax: '',
 	button1Label: '',
@@ -44,343 +82,762 @@ const profile = (fields = {}) => ({
 	button2Label: '',
 	button2Url: '',
 	showOnlyWhen: '',
+	scheduleOn: false,
+	scheduleDays: [true, true, true, true, true, true, true],
+	scheduleFrom: '09:00',
+	scheduleTo: '17:00',
 	...fields,
 })
 
-/**
- * Builds a fake Discord, with the settings `saved`, the plugin running, and (if asked) Discord's asset code or web API.
- * Returns the activities that were sent so far through `activities()`.
- */
-async function setup({ fields = null, settings = {}, assetUtils = null, http = null, token = null, user = { username: 'chase', globalName: 'Chase' }, startApply = true } = {}) {
-	const saved = fields ? { profiles: [profile(fields)], activeProfile: 'default', applyOnStart: startApply, ...settings } : { applyOnStart: startApply, ...settings }
-	const runtime = createRuntime({ stores: { UserStore: { getCurrentUser: () => user } } }).install()
-	const requests = []
-	const realFetch = globalThis.fetch
-	globalThis.fetch = async (url, init = {}) => {
-		requests.push({ url: String(url), init })
-		return globalThis.__fetchAnswer ? globalThis.__fetchAnswer(String(url), init) : { ok: false, status: 404, headers: { get: () => '' } }
-	}
+/** A time of day, `minutes` minutes from now, written as HH:MM. */
+const clockIn = minutes => {
+	const d = new Date(Date.now() + minutes * MINUTE)
+	return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+/** A fake Discord with the plugin running and the given profiles saved. */
+async function setup({ profiles = [prof('a')], settings = {}, user = { username: 'chase', globalName: 'Chase' }, vars = null, timestamps = null } = {}) {
+	const saved = { enabled: true, applyOnStart: true, refreshSeconds: '0', maxActive: '3', profiles, ...settings }
+	const copied = []
+	const runtime = createRuntime({
+		stores: { UserStore: { getCurrentUser: () => user }, LocalActivityStore: { getActivities: () => [1, 2, 3] }, SelfPresenceStore: { getActivities: () => [1, 2], getUnfilteredActivities: () => [1, 2, 3] } },
+		overrides: {
+			externals: { ReactNativeClipboard: { Clipboard: { setString: text => copied.push(text), getString: async () => '' } } },
+			discord: { native: { ClientInfoModule: { getConstants: () => ({ Version: '352.6', Build: '352206', ReleaseChannel: 'canary' }) } } },
+		},
+	}).install()
 	delete globalThis.eskimoVars
 	delete globalThis.eskimoTimestamps
-	if (assetUtils) runtime.finders.loadModule(assetUtils)
-	if (http) runtime.finders.loadModule(http)
-	if (token) runtime.finders.loadModule({ getToken: () => token })
-
+	if (vars) globalThis.eskimoVars = vars
+	if (timestamps) globalThis.eskimoTimestamps = timestamps
 	const { definition } = loadPlugin('rich-presence')
 	const storage = runtime.makeStorage(saved)
 	const running = await startPlugin(definition, runtime, { storage })
-	await sleep(30)
+	await sleep(80)
 	const activities = () => runtime.log.dispatched.filter(a => a.type === 'LOCAL_ACTIVITY_UPDATE')
-	const last = () => activities().at(-1)
+	/** What was sent for one profile, oldest first. */
+	const sent = id => activities().filter(a => a.socketId === `${PREFIX}${id}`)
+	const lastOf = id => sent(id).at(-1)
+	/** The profiles that currently have a presence (their last message is not a removal). */
+	const live = () => [...new Set(activities().map(a => a.socketId))].filter(socket => activities().filter(a => a.socketId === socket).at(-1).activity !== null).map(socket => socket.slice(PREFIX.length))
 	const toasts = () => runtime.log.actions.filter(a => a.label === 'toast').map(a => a.args[1]?.text)
+	const settingsView = async () => {
+		const view = runtime.mount(runtime.React.createElement(definition.SettingsComponent, { api: { jsonStorage: storage } }))
+		await view.settle()
+		return view
+	}
 	const restore = async () => {
 		await running.stop()
-		globalThis.fetch = realFetch
-		delete globalThis.__fetchAnswer
 	}
-	return { runtime, running, definition, storage, activities, last, toasts, requests, restore }
+	return { runtime, running, definition, storage, activities, sent, lastOf, live, toasts, settingsView, restore, copied }
+}
+
+const switchOf = (view, label) => findNode(view.tree, n => n.type === 'Design.TableSwitchRow' && n.props.label === label)
+const rowOf = (view, label) => findNode(view.tree, n => n.type === 'Design.TableRow' && n.props.label === label)
+const inputOf = (view, label) => findNode(view.tree, n => n.type === 'Design.TextInput' && n.props.label === label)
+const groupOf = (view, title) => findNode(view.tree, n => n.type === 'Design.TableRadioGroup' && n.props.title === title)
+const sectionOf = (view, start) => findNode(view.tree, n => n.type === 'Design.TableRowGroup' && String(n.props.title).startsWith(start))
+const buttonOf = (view, text) => findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === text)
+
+/** Opens a presence's editor from the list and picks a page. */
+async function openEditor(view, label, page) {
+	findNode(view.tree, n => n.type === 'Design.TableRow' && n.props.label === label && n.props.arrow).props.onPress()
+	await view.settle()
+	if (page) {
+		buttonOf(view, page).props.onPress()
+		await view.settle()
+	}
+}
+
+/** Types into a text box the way a person does, and waits for it to be saved and sent. */
+async function type(view, label, value, wait = 1000) {
+	inputOf(view, label).props.onChange(value)
+	await view.settle()
+	await sleep(wait)
 }
 
 ;(async () => {
-	// --- Nothing without a name
+	// --- One profile works as in Rich Presence 1
 	{
-		const s = await setup()
-		check('without an activity name the presence is cleared', s.activities().length === 1 && s.last().activity === null, s.activities())
-		check('it is sent as a game would report it', s.last().pid === 1337 && s.last().socketId === 'EskimoRichPresence')
-		await s.restore()
-	}
-	{
-		const s = await setup({ fields: { name: 'My game' }, startApply: false })
-		check('with "apply on start" off nothing is sent at start', s.activities().length === 0, s.activities())
-		await s.restore()
-	}
-
-	// --- The activity
-	{
-		const s = await setup({
-			fields: {
-				name: 'My game',
-				type: 2,
-				details: 'Level {seconds}',
-				state: 'for {user}',
-				detailsUrl: 'https://example.com/d',
-				stateUrl: 'not a link',
-				partyCurrent: '9',
-				partyMax: '4',
-				applicationId: ' 123 ',
-			},
-		})
-		const a = s.last().activity
+		const s = await setup({ profiles: [prof('a', { name: 'My game', type: 2, details: 'Level {seconds}', state: 'for {user}', applicationId: ' 123 ' })] })
+		const a = s.lastOf('a').activity
+		check('a profile is sent as a game would report it, under its own socket', s.sent('a').length === 1 && s.lastOf('a').socketId === 'EskimoRichPresence:a')
+		check('its process number is its own', s.lastOf('a').pid >= 1337)
 		check('the name, type and application are sent', a.name === 'My game' && a.type === 2 && a.application_id === '123' && a.flags === 1, a)
 		check('variables are filled in', /^Level \d\d$/.test(a.details) && a.state === 'for Chase', a)
-		check('a details link is kept and a bad one dropped', a.details_url === 'https://example.com/d' && a.state_url === undefined)
-		check('a party larger than its maximum is clamped', JSON.stringify(a.party) === '{"size":[4,4]}', a.party)
-		check('there is no timer by default', a.timestamps === undefined)
 		await s.restore()
 	}
 	{
-		const s = await setup({ fields: { name: 'Streamer', type: 1, streamUrl: 'https://twitch.tv/x' } })
-		check('a streaming presence carries the stream link', s.last().activity.url === 'https://twitch.tv/x')
+		const s = await setup({ profiles: [prof('a', { name: '' })] })
+		check('a profile with no name sends nothing and nothing shows', s.activities().length === 0 && s.live().length === 0, s.activities())
 		await s.restore()
 	}
 	{
-		const s = await setup({ fields: { name: 'Vars', details: '{nope}|{sc_title}|{custom}|{sc_artist}|{time}', state: '{uptime}' }, startApply: false })
-		globalThis.eskimoVars = { custom: 'ok', sc_artist: 'Band' }
-		globalThis.eskimoRichPresence.apply()
-		await sleep(300)
-		const a = s.last().activity
-		const [nope, title, custom, artist, time] = a.details.split('|')
-		check('unknown variables are left as typed', nope === '{nope}')
-		check('SoundCloud variables are empty when nothing provides them', title === '')
-		check('variables from another plugin are used', custom === 'ok' && artist === 'Band')
-		check('{time} looks like a time', /^\d\d:\d\d$/.test(time), time)
-		check('{uptime} looks like a duration', /^\d+:\d\d$/.test(a.state), a.state)
-		check('another plugin can ask for the presence to be sent again', s.activities().length === 1)
+		const s = await setup({ profiles: [prof('a')], settings: { applyOnStart: false } })
+		check('with "apply on start" off nothing is sent at start', s.activities().length === 0)
 		await s.restore()
-		delete globalThis.eskimoVars
-	}
-	{
-		const s = await setup({ fields: { name: 'Gate', showOnlyWhen: '{sc_title}' } })
-		check('"show only when" hides the presence while its text is empty', s.last().activity === null)
-		globalThis.eskimoVars = { sc_title: 'A song' }
-		globalThis.eskimoRichPresence.apply()
-		await sleep(300)
-		check('...and shows it when there is text', s.last().activity?.name === 'Gate')
-		await s.restore()
-		delete globalThis.eskimoVars
 	}
 
-	// --- Timers
+	// --- Several at once
 	{
-		const s = await setup({ fields: { name: 'T', timestampMode: 'elapsed' } })
-		const start = s.last().activity.timestamps.start
-		check('elapsed counts from when it was applied', Math.abs(Date.now() - start) < 2000, start)
+		const s = await setup({ profiles: [prof('a', { type: 0 }), prof('b', { type: 2 }), prof('c', { type: 3 })] })
+		check('every profile that is on is sent', s.live().sort().join() === 'a,b,c', s.live())
+		check('each one has its own socket', new Set(s.activities().map(a => a.socketId)).size === 3)
+		check('each one has its own process number', new Set(s.activities().map(a => a.pid)).size === 3)
+		check('each carries its own activity', s.lastOf('a').activity.name === 'Game a' && s.lastOf('b').activity.name === 'Game b' && s.lastOf('c').activity.type === 3)
+		check('they are sent one after another, in the order of the list', s.activities().map(a => a.socketId.slice(PREFIX.length)).join() === 'a,b,c', s.activities().map(a => a.socketId))
+		await s.restore()
+		check('stopping the plugin removes every presence', s.live().length === 0, s.live())
+		check('and sends a removal to each socket', ['a', 'b', 'c'].every(id => s.lastOf(id).activity === null))
+	}
+
+	// --- The limit is three at most
+	{
+		const s = await setup({ profiles: [prof('a'), prof('b'), prof('c'), prof('d')], settings: { maxActive: '2' } })
+		check('only as many as the limit are shown, the first ones in the list', s.live().sort().join() === 'a,b', s.live())
+		check('the ones over the limit are not sent at all', s.sent('c').length === 0 && s.sent('d').length === 0)
+		const view = await s.settingsView()
+		check('the screen says which are over the limit', switchOf(view, 'C').props.subLabel.includes('over the limit') && switchOf(view, 'A').props.subLabel === 'Shown on your profile', switchOf(view, 'C').props.subLabel)
+		check('and keeps their switch on', switchOf(view, 'C').props.value === true)
+		check('the heading counts them', sectionOf(view, 'Show on my profile (2 of up to 2 showing)') !== null, textOf(view.tree).slice(0, 300))
+		const limit = groupOf(view, 'Most presences at once')
+		check('the limit is a pick of 1, 2 or 3', findNodes(limit, n => n.type === 'Design.TableRadioRow').map(n => n.props.label).join() === '1,2,3' && limit.props.value === 2)
+		limit.props.onChange(3)
+		await view.settle()
+		await sleep(900)
+		check('raising the limit shows one more', s.live().sort().join() === 'a,b,c', s.live());
+		check('and saves it', s.storage.cache.maxActive === '3')
+		view.unmount()
+		await s.restore()
+	}
+	for (const [typed, shown] of [['9', 3], ['5', 3], ['0', 1], ['abc', 3], ['', 3], ['1', 1]]) {
+		const s = await setup({ profiles: [prof('a'), prof('b'), prof('c'), prof('d'), prof('e'), prof('f')].map((p, i) => ({ ...p, type: [2, 3, 5, 2, 3, 5][i] })), settings: { maxActive: typed } })
+		check(`a limit saved as "${typed}" allows ${shown}`, s.live().length === shown, s.live())
+		await s.restore()
+	}
+
+	// --- Switching one profile off leaves the others
+	{
+		const s = await setup({ profiles: [prof('a'), prof('b'), prof('c')] })
+		const view = await s.settingsView()
+		switchOf(view, 'B').props.onValueChange(false)
+		await sleep(1100)
+		check('switching a profile off removes only its presence', s.lastOf('b').activity === null && s.live().sort().join() === 'a,c', s.live())
+		check('the others still have theirs', s.lastOf('a').activity.name === 'Game a' && s.lastOf('c').activity.name === 'Game c')
+		check('the switch is saved', s.storage.cache.profiles.find(p => p.id === 'b').enabled === false)
+		check('and the screen says it is off', switchOf(await s.settingsView(), 'B').props.subLabel === 'Off')
+		switchOf(view, 'B').props.onValueChange(true)
+		await sleep(1100)
+		check('switching it on again shows it', s.live().sort().join() === 'a,b,c', s.live())
+		view.unmount()
 		await s.restore()
 	}
 	{
-		const s = await setup({ fields: { name: 'T', timestampMode: 'countdown', countdownMinutes: '10' } })
-		const end = s.last().activity.timestamps.end
-		check('countdown ends the given minutes after it was applied', Math.abs(end - (Date.now() + 600000)) < 2000, end - Date.now())
+		const s = await setup({ profiles: [prof('a'), prof('b')] })
+		const view = await s.settingsView()
+		switchOf(view, 'Show presences').props.onValueChange(false)
+		await sleep(900)
+		check('the main switch removes every presence', s.live().length === 0 && s.lastOf('a').activity === null && s.lastOf('b').activity === null, s.live())
+		switchOf(view, 'Show presences').props.onValueChange(true)
+		await sleep(900)
+		check('and turning it on shows them again', s.live().sort().join() === 'a,b')
+		view.unmount()
+		await s.restore()
+	}
+
+	// --- Each profile has its own timer
+	{
+		const s = await setup({ profiles: [prof('a', { timestampMode: 'elapsed' }), prof('b', { timestampMode: 'elapsed', enabled: false })] })
+		const startA = s.lastOf('a').activity.timestamps.start
+		await sleep(1200)
+		const view = await s.settingsView()
+		switchOf(view, 'B').props.onValueChange(true)
+		await sleep(900)
+		const startB = s.lastOf('b').activity.timestamps.start
+		check('a profile switched on later counts from when it was switched on', startB >= startA + 1000, [startA, startB])
+		check('and the first profile’s timer is not restarted when it is sent again', s.lastOf('a').activity.timestamps.start === startA, [s.lastOf('a').activity.timestamps.start, startA])
+		view.unmount()
 		await s.restore()
 	}
 	{
-		const s = await setup({ fields: { name: 'T', timestampMode: 'clock' } })
-		const now = new Date()
-		const midnight = new Date(now).setHours(0, 0, 0, 0)
-		check('clock counts from midnight', Math.abs(s.last().activity.timestamps.start - midnight) < 2000)
+		const s = await setup({ profiles: [prof('a', { state: '{uptime}' }), prof('b', { state: '{uptime}', enabled: false })] })
+		await sleep(2200)
+		const view = await s.settingsView()
+		switchOf(view, 'B').props.onValueChange(true)
+		await sleep(900)
+		const seconds = text => { const [m, sec] = text.split(':').map(Number); return m * 60 + sec }
+		check('{uptime} counts from when that profile was applied', seconds(s.lastOf('b').activity.state) <= 1 && seconds(s.lastOf('a').activity.state) >= 2, [s.lastOf('a').activity.state, s.lastOf('b').activity.state])
+		view.unmount()
+		await s.restore()
+	}
+
+	// --- Every kind of timer
+	{
+		const s = await setup({ profiles: [prof('a', { timestampMode: 'none' }), prof('b', { timestampMode: 'elapsed' })] })
+		const before = Date.now()
+		check('"No timer" sends no timestamps', s.lastOf('a').activity.timestamps === undefined)
+		check('"Since switched on" counts up from when it was applied', Math.abs(s.lastOf('b').activity.timestamps.start - before) < 3000 && s.lastOf('b').activity.timestamps.end === undefined, s.lastOf('b').activity.timestamps)
 		await s.restore()
 	}
 	{
-		const s = await setup({ fields: { name: 'T', timestampMode: 'custom', customStart: '1700000000', customEnd: '1700000600' } })
-		const t = s.last().activity.timestamps
-		check('a custom timer with both times loops from now with the same length', t.end - t.start === 600000 && Math.abs(t.start - Date.now()) < 2000, t)
+		const before = Date.now()
+		const s = await setup({ profiles: [prof('a', { timestampMode: 'app' })] })
+		const ts = s.lastOf('a').activity.timestamps
+		check('"Since Discord opened" counts up from when the plugin started', ts.start >= before - 50 && ts.start <= Date.now() && ts.end === undefined, ts)
 		await s.restore()
 	}
 	{
-		const s = await setup({ fields: { name: 'T', timestampMode: 'custom', customStart: '1700000000000' } })
-		check('a custom timer with only a start uses it', JSON.stringify(s.last().activity.timestamps) === '{"start":1700000000000}', s.last().activity.timestamps)
+		const s = await setup({ profiles: [prof('a', { timestampMode: 'clock' })] })
+		const midnight = new Date(Date.now())
+		midnight.setHours(0, 0, 0, 0)
+		check('"Time of day" counts up from midnight', s.lastOf('a').activity.timestamps.start === midnight.getTime(), s.lastOf('a').activity.timestamps)
 		await s.restore()
 	}
 	{
-		const s = await setup({ fields: { name: 'T', timestampMode: 'custom', customStart: 'not a date' } })
-		check('a custom timer that is not a time gives no timer', s.last().activity.timestamps === undefined)
+		const s = await setup({ profiles: [prof('past', { type: 2, timestampMode: 'since', timerDate: '2020-01-01 08:30' }), prof('future', { type: 3, timestampMode: 'since', timerDate: '2099-01-01 08:30' }), prof('none', { type: 5, timestampMode: 'since', timerDate: 'soon' })] })
+		check('"Since a date" counts up from a date in the past', s.lastOf('past').activity.timestamps.start === new Date(2020, 0, 1, 8, 30).getTime() && s.lastOf('past').activity.timestamps.end === undefined, s.lastOf('past').activity.timestamps)
+		check('a date still to come has no timer yet', s.lastOf('future').activity.timestamps === undefined)
+		check('text that is not a date gives no timer', s.lastOf('none').activity.timestamps === undefined)
 		await s.restore()
 	}
 	{
-		const s = await setup({ fields: { name: 'T', timestampMode: 'external' }, startApply: false })
-		globalThis.eskimoTimestamps = { start: 1000, end: 5000 }
-		globalThis.eskimoRichPresence.apply()
-		await sleep(300)
-		check('an external timer uses the other plugin\'s times', JSON.stringify(s.last().activity.timestamps) === '{"start":1000,"end":5000}', s.last().activity.timestamps)
-		globalThis.eskimoTimestamps = { start: 1000 }
-		globalThis.eskimoRichPresence.apply()
-		await sleep(300)
-		check('...also with only a start', JSON.stringify(s.last().activity.timestamps) === '{"start":1000}')
+		const s = await setup({ profiles: [prof('a', { type: 2, timestampMode: 'until', timerDate: '2099-12-31 23:59' }), prof('b', { type: 3, timestampMode: 'until', timerDate: '2020-01-01 08:30' })] })
+		check('"Until a date" counts down to it', s.lastOf('a').activity.timestamps.end === new Date(2099, 11, 31, 23, 59).getTime() && s.lastOf('a').activity.timestamps.start === undefined, s.lastOf('a').activity.timestamps)
+		check('a date that has passed and does not repeat has no timer', s.lastOf('b').activity.timestamps === undefined)
 		await s.restore()
+	}
+	{
+		// A date in the past repeating: it counts down to the next time it comes round.
+		const at = (offsetDays, h, m) => { const d = new Date(Date.now()); d.setDate(d.getDate() + offsetDays); d.setHours(h, m, 0, 0); return d }
+		const stamp = d => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
+		const twoDaysAgo = at(-2, 10, 15)
+		const nextTen = at(0, 10, 15).getTime() > Date.now() ? at(0, 10, 15) : at(1, 10, 15)
+		const s = await setup({ profiles: [prof('d', { type: 2, timestampMode: 'until', timerDate: stamp(twoDaysAgo), timerRepeat: 'daily' })] })
+		check('a daily repeat counts down to the next time of that hour', s.lastOf('d').activity.timestamps.end === nextTen.getTime(), [s.lastOf('d').activity.timestamps, nextTen.getTime()])
+		await s.restore()
+		const lastWeek = at(-8, 10, 15)
+		const nextWeekly = new Date(lastWeek.getTime())
+		while (nextWeekly.getTime() <= Date.now()) nextWeekly.setDate(nextWeekly.getDate() + 7)
+		const w = await setup({ profiles: [prof('w', { type: 2, timestampMode: 'until', timerDate: stamp(lastWeek), timerRepeat: 'weekly' })] })
+		check('a weekly repeat keeps the day of the week', w.lastOf('w').activity.timestamps.end === nextWeekly.getTime(), [w.lastOf('w').activity.timestamps, nextWeekly.getTime()])
+		await w.restore()
+		const year = new Date(Date.now()).getFullYear()
+		const birthday = new Date(year, 5, 15, 12, 0)
+		const nextBirthday = birthday.getTime() > Date.now() ? birthday : new Date(year + 1, 5, 15, 12, 0)
+		const y = await setup({ profiles: [prof('y', { type: 2, timestampMode: 'until', timerDate: '2001-06-15 12:00', timerRepeat: 'yearly' })] })
+		check('a yearly repeat counts down to the next birthday', y.lastOf('y').activity.timestamps.end === nextBirthday.getTime(), [y.lastOf('y').activity.timestamps, nextBirthday.getTime()])
+		await y.restore()
+		const m = await setup({ profiles: [prof('m', { type: 2, timestampMode: 'until', timerDate: '2001-01-31 09:00', timerRepeat: 'monthly' })] })
+		const monthEnd = new Date(m.lastOf('m').activity.timestamps.end)
+		check('a monthly repeat lands on the same day of a coming month (the 31st becomes the last day of a short month)', monthEnd.getTime() > Date.now() && monthEnd.getHours() === 9 && monthEnd.getDate() === Math.min(31, new Date(monthEnd.getFullYear(), monthEnd.getMonth() + 1, 0).getDate()), monthEnd.toString())
+		await m.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('a', { timestampMode: 'countdown', countdownMinutes: '30' })] })
+		const ts = s.lastOf('a').activity.timestamps
+		check('"Countdown" ends that many minutes from when it was applied', Math.abs(ts.end - (Date.now() + 30 * MINUTE)) < 3000 && ts.start === undefined, ts)
+		await s.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('a', { timestampMode: 'countdown', countdownMinutes: '1', countdownLoop: true })] })
+		const first = s.lastOf('a').activity.timestamps
+		check('a looping countdown starts like a countdown', Math.abs(first.end - (Date.now() + MINUTE)) < 3000, first)
+		const sends = s.sent('a').length
+		skew += 61 * 1000
+		await sleep(1600)
+		const again = s.lastOf('a').activity.timestamps
+		check('when it runs out it starts over by itself', s.sent('a').length === sends + 1 && again.end > first.end && Math.abs(again.end - (Date.now() + MINUTE)) < 3000, [again, first])
+		await s.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('a', { timestampMode: 'countdown', countdownMinutes: '1', countdownLoop: false })] })
+		skew += 61 * 1000
+		await sleep(1600)
+		check('a countdown that does not loop just ends, and the card loses its timer', s.lastOf('a').activity.timestamps === undefined, s.lastOf('a').activity)
+		await s.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('a', { timestampMode: 'midnight' })] })
+		const next = new Date(Date.now())
+		next.setHours(24, 0, 0, 0)
+		check('"Until midnight" ends at the next midnight', s.lastOf('a').activity.timestamps.end === next.getTime() && s.lastOf('a').activity.timestamps.start === undefined, s.lastOf('a').activity.timestamps)
+		const sends = s.sent('a').length
+		skew += next.getTime() - Date.now() + 500
+		await sleep(1600)
+		check('and when midnight comes it moves on to the next one', s.sent('a').length === sends + 1 && s.lastOf('a').activity.timestamps.end === next.getTime() + DAY, [s.lastOf('a').activity.timestamps.end, next.getTime() + DAY])
+		await s.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('in', { type: 2, timestampMode: 'daily', dailyFrom: clockIn(-60), dailyTo: clockIn(60) }), prof('out', { type: 3, timestampMode: 'daily', dailyFrom: clockIn(60), dailyTo: clockIn(120) })] })
+		const ts = s.lastOf('in').activity.timestamps
+		check('"Between two times each day" is a progress bar while the range is on', ts.end - ts.start === 2 * HOUR && ts.start <= Date.now() && ts.end > Date.now(), ts)
+		check('and has no timer outside the range', s.lastOf('out').activity.timestamps === undefined)
+		const sends = s.sent('out').length
+		skew += 70 * MINUTE
+		await sleep(1600)
+		const out = s.lastOf('out').activity.timestamps
+		check('when the range starts the timer appears by itself', s.sent('out').length === sends + 1 && out && out.end - out.start === HOUR, s.lastOf('out').activity)
+		await s.restore()
+	}
+	{
+		const from = clockIn(-30)
+		const to = clockIn(-60)
+		const s = await setup({ profiles: [prof('a', { timestampMode: 'daily', dailyFrom: from, dailyTo: to })] })
+		const ts = s.lastOf('a').activity.timestamps
+		check('a range that ends before it starts runs past midnight', ts.end - ts.start === 23.5 * HOUR && ts.start <= Date.now(), ts)
+		await s.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('a', { type: 2, timestampMode: 'custom', customStart: '2026-01-01 12:00' }), prof('b', { type: 3, timestampMode: 'custom', customEnd: '2099-01-01 12:00' })] })
+		check('a custom timer with only a start counts up from it', s.lastOf('a').activity.timestamps.start === new Date(2026, 0, 1, 12, 0).getTime() && s.lastOf('a').activity.timestamps.end === undefined)
+		check('with only an end it counts down to it', s.lastOf('b').activity.timestamps.end === new Date(2099, 0, 1, 12, 0).getTime() && s.lastOf('b').activity.timestamps.start === undefined)
+		await s.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('a', { timestampMode: 'external' })] })
+		check('"From the SoundCloud track" has no timer while nothing plays', s.lastOf('a').activity.timestamps === undefined)
+		await s.restore()
+		const t = await setup({ profiles: [prof('a', { timestampMode: 'external' })], timestamps: { start: 1000, end: 2000 } })
+		check('and uses the start and end of the SoundCloud track when there is one', JSON.stringify(t.lastOf('a').activity.timestamps) === '{"start":1000,"end":2000}', t.lastOf('a').activity.timestamps)
+		await t.restore()
 		delete globalThis.eskimoTimestamps
 	}
-
-	// --- Buttons
 	{
-		const s = await setup({ fields: { name: 'B', button1Label: 'Open this very long label that goes past thirty-two characters', button1Url: 'https://a.example', button2Label: 'Bad', button2Url: 'ftp://x', } })
-		const a = s.last().activity
-		check('a button needs a label and a web link', a.buttons.length === 1 && a.metadata.button_urls[0] === 'https://a.example', a)
-		check('a button label is cut to 32 characters', a.buttons[0].length === 32)
+		// A looping custom timer of 2 seconds on one profile, and an elapsed timer on another.
+		const s = await setup({ profiles: [prof('loop', { type: 2, timestampMode: 'custom', customStart: '1000', customEnd: '1002' }), prof('plain', { type: 3, timestampMode: 'elapsed' })] })
+		const plainSends = s.sent('plain').length
+		const first = s.lastOf('loop').activity.timestamps
+		check('a custom timer with a start and an end is the length between them', first.end - first.start === 2000, first)
+		await sleep(3600)
+		check('the looping timer restarts by itself', s.sent('loop').length >= 2, s.sent('loop').length)
+		check('and the restart is sent for that profile alone', s.sent('plain').length === plainSends, [s.sent('plain').length, plainSends])
+		check('with a later start each time', s.lastOf('loop').activity.timestamps.start > first.start)
 		await s.restore()
 	}
 
-	// --- Images
+	// --- Schedules
 	{
-		const calls = []
-		const assetUtils = { fetchAssetIds: async (app, keys) => (calls.push([app, keys[0]]), [`asset:${app}:${keys[0]}`]) }
-		const s = await setup({ fields: { name: 'I', applicationId: '555', largeImage: 'key1', smallImage: 'mp:external/abc', largeText: 'Big', smallText: 'Small' }, assetUtils })
-		const a = s.last().activity
-		check('an asset key is looked up with the application', a.assets.large_image === 'asset:555:key1', a.assets)
-		check('an mp: id passes through unchanged', a.assets.small_image === 'mp:external/abc')
-		check('image texts are sent with their images', a.assets.large_text === 'Big' && a.assets.small_text === 'Small')
+		const today = new Date(Date.now()).getDay()
+		const without = [0, 1, 2, 3, 4, 5, 6].map(d => d !== today)
+		const only = [0, 1, 2, 3, 4, 5, 6].map(d => d === today)
+		const s = await setup({
+			profiles: [
+				prof('off', { type: 2, scheduleOn: true, scheduleDays: without, scheduleFrom: '', scheduleTo: '' }),
+				prof('on', { type: 3, scheduleOn: true, scheduleDays: only, scheduleFrom: '', scheduleTo: '' }),
+				prof('free', { type: 5, scheduleOn: false, scheduleDays: without }),
+			],
+		})
+		check('a profile whose schedule leaves out today is not shown', s.live().sort().join() === 'free,on', s.live())
+		check('one whose schedule includes today is', s.lastOf('on').activity.name === 'Game on')
+		check('with the schedule off the days do not matter', s.lastOf('free').activity.name === 'Game free')
+		const view = await s.settingsView()
+		check('the screen says it is waiting for its schedule', switchOf(view, 'OFF').props.subLabel.includes('waiting for its schedule'), switchOf(view, 'OFF').props.subLabel)
+		check('and it does not use a place in the limit', sectionOf(view, 'Show on my profile (2 of up to 3 showing)') !== null)
+		view.unmount()
 		await s.restore()
 	}
 	{
-		const assetUtils = { fetchAssetIds: async (app, keys) => (app === '555' ? [] : [`fallback:${keys[0]}`]) }
-		const s = await setup({ fields: { name: 'I', applicationId: '555', largeImage: 'key2' }, assetUtils })
-		check('the fallback application is tried when yours has no such image', s.last().activity.assets.large_image === 'fallback:key2', s.last().activity.assets)
+		const s = await setup({
+			profiles: [prof('later', { type: 2, scheduleOn: true, scheduleFrom: clockIn(60), scheduleTo: clockIn(180) }), prof('now', { type: 3, scheduleOn: true, scheduleFrom: clockIn(-60), scheduleTo: clockIn(60) })],
+		})
+		check('a profile is shown inside its time range and not outside it', s.live().join() === 'now', s.live())
+		skew += 90 * MINUTE
+		await sleep(1800)
+		check('when its range starts it appears by itself', s.live().includes('later'), s.live())
+		check('and when the other range ends it goes by itself', s.lastOf('now').activity === null && s.live().join() === 'later', s.live())
 		await s.restore()
 	}
 	{
-		// A direct image link goes to Discord's web API to be hosted.
-		const posts = []
-		const http = { get() {}, post: async ({ url, body }) => (posts.push({ url, body }), { body: [{ external_asset_path: 'external/xyz/pic.png' }] }), patch() {}, HTTPResponseError: class {} }
-		const s = await setup({ fields: { name: 'L', largeImage: 'https://i.example.com/pic.png', largeUrl: 'https://page.example' }, http })
-		const a = s.last().activity
-		check('an image link is hosted through Discord', a.assets.large_image === 'mp:external/xyz/pic.png' && posts[0].url === '/applications/0/external-assets' && posts[0].body.urls[0] === 'https://i.example.com/pic.png', { a: a.assets, posts })
-		check('the image link is sent with the image', a.assets.large_url === 'https://page.example')
+		const s = await setup({ profiles: [prof('a', { scheduleOn: true, scheduleFrom: clockIn(-30), scheduleTo: clockIn(-60) })] })
+		check('a range that ends before it starts runs past midnight', s.live().join() === 'a', s.live())
 		await s.restore()
 	}
 	{
-		// An Imgur page link becomes the image link.
-		const posts = []
-		const http = { get() {}, post: async ({ body }) => (posts.push(body.urls[0]), { body: [{ external_asset_path: 'e/i.png' }] }), patch() {}, HTTPResponseError: class {} }
-		const s = await setup({ fields: { name: 'L', largeImage: 'https://imgur.com/abcde12' }, http })
-		check('an Imgur page link becomes the picture', posts[0] === 'https://i.imgur.com/abcde12.png', posts)
+		const s = await setup({ profiles: [prof('a', { scheduleOn: true, scheduleDays: [false, false, false, false, false, false, false], scheduleFrom: '', scheduleTo: '' })] })
+		check('a schedule with no days shows nothing', s.live().length === 0)
 		await s.restore()
 	}
+
+	// --- The watcher puts things right
 	{
-		// A web page gives the picture it would embed.
-		globalThis.__fetchAnswer = async url =>
-			url.startsWith('https://page.example')
-				? { ok: true, status: 200, headers: { get: () => 'text/html' }, text: async () => '<html><head><meta property="og:image" content="/img/cover.jpg"></head></html>' }
-				: { ok: false, status: 404, headers: { get: () => '' } }
-		const posts = []
-		const http = { get() {}, post: async ({ body }) => (posts.push(body.urls[0]), { body: [{ external_asset_path: 'e/c.jpg' }] }), patch() {}, HTTPResponseError: class {} }
-		const s = await setup({ fields: { name: 'L', largeImage: 'https://page.example/post/1' }, http })
-		check('a web page gives its og:image, made absolute', posts[0] === 'https://page.example/img/cover.jpg', posts)
+		const s = await setup({ profiles: [prof('a'), prof('b', { type: 2 }), prof('c', { type: 3 }), prof('d', { type: 5, enabled: false })], settings: { maxActive: '2' } })
+		check('with room for two only the first two show', s.live().sort().join() === 'a,b', s.live())
+		const view = await s.settingsView()
+		switchOf(view, 'A').props.onValueChange(false)
+		await sleep(1800)
+		check('when one goes away the next in line takes its place', s.live().sort().join() === 'b,c', s.live())
+		view.unmount()
 		await s.restore()
 	}
+
+	// --- Adding, copying and deleting
 	{
-		// No way to host: the error is shown in the preview and no image is sent.
-		const http = { get() {}, post: async () => { throw Object.assign(new Error('nope'), { status: 400, body: { message: 'Bad link' } }) }, patch() {}, HTTPResponseError: class {} }
-		const s = await setup({ fields: { name: 'L', largeImage: 'https://i.example.com/a.png' }, http })
-		check('a refused image is left out', s.last().activity.assets === undefined, s.last().activity)
-		const view = s.runtime.mount(s.runtime.React.createElement(s.definition.SettingsComponent, { api: { jsonStorage: s.storage } }))
+		const s = await setup({ profiles: [prof('a'), prof('b')] })
+		const view = await s.settingsView()
+		rowOf(view, 'Add a presence').props.onPress()
+		await sleep(900)
 		await view.settle()
-		check('the preview says why', findNodes(view.tree, n => typeof n.props?.children === 'string' && n.props.children.includes('Large image not sent: Bad link')).length === 1)
+		const added = s.storage.cache.profiles.at(-1)
+		check('a new profile is added at the end and starts off', s.storage.cache.profiles.length === 3 && added.enabled === false && added.kind === 'custom')
+		check('it is opened for editing', !!inputOf(view, 'Activity name') && buttonOf(view, 'Basics') !== null)
+		check('and nothing new is sent for it', s.sent(added.id).length === 0 && s.live().sort().join() === 'a,b', s.live())
+		rowOf(view, 'Duplicate').props.onPress()
+		await sleep(900)
+		check('a copy starts off as well, so copying never goes over the limit', s.storage.cache.profiles.at(-1).enabled === false && s.storage.cache.profiles.length === 4)
+		view.unmount()
 		await s.restore()
 	}
 	{
-		// Asset keys with no Discord code: the application's public list is used.
-		globalThis.__fetchAnswer = async url =>
-			url.includes('/oauth2/applications/777/assets') ? { ok: true, status: 200, json: async () => [{ name: 'logo', id: 'id-logo' }] } : { ok: false, status: 404 }
-		const s = await setup({ fields: { name: 'L', applicationId: '777', largeImage: 'logo' } })
-		check('an asset key is found in the application\'s public list', s.last().activity.assets.large_image === 'id-logo', s.last().activity)
-		await s.restore()
-	}
-
-	// --- Switching off, stopping, reconnecting
-	{
-		const s = await setup({ fields: { name: 'Off' }, settings: { enabled: false } })
-		check('when switched off the presence is cleared', s.last().activity === null)
-		await s.restore()
-	}
-	{
-		const s = await setup({ fields: { name: 'Stop' } })
-		check('the presence is sent at start', s.last().activity?.name === 'Stop')
-		check('other plugins can reach the plugin', typeof globalThis.eskimoRichPresence?.apply === 'function')
-		await s.running.stop()
-		check('stopping clears the presence', s.last().activity === null)
-		check('stopping takes the hook away', globalThis.eskimoRichPresence === undefined)
-		await s.restore()
-	}
-	{
-		const s = await setup({ fields: { name: 'Back' } })
-		const before = s.activities().length
-		s.runtime.fire('CONNECTION_OPEN', {})
-		await sleep(60)
-		check('the presence is sent again when Discord reconnects', s.activities().length === before + 1, s.activities().length)
-		await s.restore()
-	}
-
-	// --- The settings screen
-	{
-		const s = await setup({ fields: { name: 'Screen', details: 'Hello' } })
-		const view = s.runtime.mount(s.runtime.React.createElement(s.definition.SettingsComponent, { api: { jsonStorage: s.storage } }))
+		const s = await setup({ profiles: [prof('a'), prof('b')] })
+		const view = await s.settingsView()
+		await openEditor(view, 'B')
+		rowOf(view, 'Delete').props.onPress()
+		await sleep(900)
 		await view.settle()
-		const row = label => findNode(view.tree, n => n.type === 'Design.TableRow' && n.props.label === label)
-		check('the preview shows the title and details', !!findNode(view.tree, n => n.props?.children === 'Playing Screen') && !!findNode(view.tree, n => n.props?.children === 'Hello'))
+		check('deleting a profile removes its presence', s.lastOf('b').activity === null && s.live().join() === 'a', s.live())
+		check('and the profile, and goes back to the list', s.storage.cache.profiles.map(p => p.id).join() === 'a' && !!sectionOf(view, 'Show on my profile'))
+		await openEditor(view, 'A')
+		rowOf(view, 'Delete').props.onPress()
+		await sleep(300)
+		check('the last profile cannot be deleted', s.storage.cache.profiles.length === 1 && s.toasts().includes('Keep at least one presence'), s.toasts())
+		view.unmount()
+		await s.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('a', { name: 'Copy me', details: 'Hello', timestampMode: 'until', timerDate: '2099-01-01 10:00' })] })
+		const view = await s.settingsView()
+		await openEditor(view, 'A')
+		rowOf(view, 'Copy as text').props.onPress()
+		const json = JSON.parse(s.copied.at(-1))
+		check('a presence is copied as text with its timer settings', json.name === 'Copy me' && json.timestampMode === 'until' && json.timerDate === '2099-01-01 10:00' && json.id === undefined && json.enabled === undefined, json)
+		view.unmount()
+		await s.restore()
+	}
 
-		const before = s.activities().length
-		const input = label => findNode(view.tree, n => n.type === 'Design.TextInput' && n.props.label === label)
-		input('Details').props.onChange('Typing')
+	// --- Editing one profile sends only that profile
+	{
+		const s = await setup({ profiles: [prof('a'), prof('b')] })
+		const view = await s.settingsView()
+		const aSends = s.sent('a').length
+		await openEditor(view, 'B')
+		await type(view, 'Activity name', 'Renamed', 1100)
+		check('typing in a profile’s fields changes that profile’s presence', s.lastOf('b').activity.name === 'Renamed', s.lastOf('b'))
+		check('and does not send the others again', s.sent('a').length === aSends, [s.sent('a').length, aSends])
+		check('the preview follows the typing', textOf(view.tree).includes('Listening to Renamed'))
+		view.unmount()
+		await s.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('a'), prof('b')] })
+		const view = await s.settingsView()
+		const bSends = s.sent('b').length
+		rowOf(view, 'Apply everything now').props.onPress()
+		await sleep(150)
+		check('"Apply everything now" sends all of them', s.sent('a').length === 2 && s.sent('b').length === bSends + 1, [s.sent('a').length, s.sent('b').length])
+		await openEditor(view, 'A')
+		rowOf(view, 'Show this now').props.onPress()
+		await sleep(150)
+		check('"Show this now" sends only that profile', s.sent('a').length === 3 && s.sent('b').length === bSends + 1, [s.sent('a').length, s.sent('b').length])
+		buttonOf(view, '‹ All presences').props.onPress()
 		await view.settle()
-		check('the preview follows what is being typed', !!findNode(view.tree, n => n.props?.children === 'Typing'))
-		check('nothing is saved while typing', s.storage.cache.profiles[0].details === 'Hello')
+		rowOf(view, 'Clear every presence').props.onPress()
+		check('"Clear every presence" removes all of them', s.live().length === 0 && s.lastOf('a').activity === null && s.lastOf('b').activity === null)
+		check('with a toast', s.toasts().includes('Presences cleared'), s.toasts())
+		view.unmount()
+		await s.restore()
+	}
+
+	// --- Standings
+	{
+		const s = await setup({ profiles: [prof('a'), prof('noname', { name: '' }), prof('gated', { showOnlyWhen: '{sc_title}' }), prof('off', { enabled: false })] })
+		const view = await s.settingsView()
+		check('a profile that is shown says so', switchOf(view, 'A').props.subLabel === 'Shown on your profile')
+		check('one with no name says it needs one', switchOf(view, 'NONAME').props.subLabel.includes('needs an Activity name'))
+		check('one hidden by "show only when" says so', switchOf(view, 'GATED').props.subLabel.includes('"show only when" is empty'), switchOf(view, 'GATED').props.subLabel)
+		check('one that is off says off', switchOf(view, 'OFF').props.subLabel === 'Off')
+		check('the heading counts only those shown', sectionOf(view, 'Show on my profile (1 of up to 3 showing)') !== null)
+		check('only the one that is shown has a presence', s.live().join() === 'a' && s.sent('gated').length === 0 && s.sent('noname').length === 0 && s.sent('off').length === 0, s.live())
+		view.unmount()
+		await s.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('gated', { showOnlyWhen: '{sc_title}' })], vars: { sc_title: 'Song' } })
+		check('"show only when" shows the profile once its text has something in it', s.live().join() === 'gated', s.live())
+		await s.restore()
+		delete globalThis.eskimoVars
+	}
+
+	// --- The list screen
+	{
+		const s = await setup({ profiles: [prof('a', { name: 'Screen', details: 'Hello', timestampMode: 'countdown' }), prof('b', { timestampMode: 'none' })] })
+		const view = await s.settingsView()
+		const text = textOf(view.tree)
+		check('the preview lists what is on the profile', text.includes('Playing Screen') && text.includes('Listening to Game b'), text.slice(0, 300))
+		const toggles = sectionOf(view, 'Show on my profile')
+		check('each presence has a switch to show it', findNodes(toggles, n => n.type === 'Design.TableSwitchRow').length === 2)
+		check('under the switches a note says several presences need different application ids', /different Application ID/i.test(rowOf(view, 'Using more than one?').props.subLabel) && /Leave the ID empty|made up/i.test(rowOf(view, 'Using more than one?').props.subLabel), rowOf(view, 'Using more than one?')?.props.subLabel)
+		const rows = findNodes(sectionOf(view, 'Change a presence'), n => n.type === 'Design.TableRow')
+		check('there is a row for each one that opens it', rows.length === 2 && rows[0].props.arrow === true)
+		check('a row says what the presence is', rows[0].props.subLabel === 'Playing · Countdown' && rows[1].props.subLabel === 'Listening to', rows.map(r => r.props.subLabel))
+		check('it offers adding a presence or SoundCloud, and pasting', !!rowOf(view, 'Add a presence') && !!rowOf(view, 'Add SoundCloud') && !!rowOf(view, 'Paste a copied presence'))
+		check('the custom fields are not on the list', !inputOf(view, 'Activity name'))
+		check('it ends with the debugging section', text.includes('DEBUGGING') && !!buttonOf(view, 'Copy logs'))
+		view.unmount()
+		await s.restore()
+	}
+
+	// --- The editor
+	{
+		const s = await setup({ profiles: [prof('a', { name: 'Edit me' })] })
+		const view = await s.settingsView()
+		await openEditor(view, 'A')
+		check('the editor has a button for each page and one to go back', ['Basics', 'Text', 'Images', 'Timer', 'Buttons', 'When'].every(t => !!buttonOf(view, t)) && !!buttonOf(view, '‹ All presences'))
+		check('the open page is the filled button', buttonOf(view, 'Basics').props.variant === 'primary' && buttonOf(view, 'Timer').props.variant === 'secondary')
+		check('Basics has the names, the kind and the Application ID with its explanation', !!inputOf(view, 'Activity name') && !!inputOf(view, 'Name in the list') && !!inputOf(view, 'Application ID') && !!groupOf(view, 'Kind of activity') && /different one/i.test(textOf(view.tree)))
+		check('the preview shows it', textOf(view.tree).includes('Playing Edit me'))
+		buttonOf(view, 'Text').props.onPress()
+		await view.settle()
+		check('Text has the lines, their links and the group size', ['Top line', 'Bottom line', 'Top line link', 'Bottom line link', 'In the group now', 'Group size'].every(l => !!inputOf(view, l)))
+		buttonOf(view, 'Images').props.onPress()
+		await view.settle()
+		check('Images has the large and small image fields', ['Image', 'Text when pressed', 'Link when tapped'].every(l => findNodes(view.tree, n => n.type === 'Design.TextInput' && n.props.label === l).length === 2))
+		buttonOf(view, 'Buttons').props.onPress()
+		await view.settle()
+		check('Buttons has two buttons', ['Label', 'Link'].every(l => findNodes(view.tree, n => n.type === 'Design.TextInput' && n.props.label === l).length === 2))
+		buttonOf(view, 'When').props.onPress()
+		await view.settle()
+		check('When has the schedule switch and "show only when"', !!switchOf(view, 'Use a schedule') && !!inputOf(view, 'This text has to have something in it'))
+		check('the days appear only once a schedule is on', buttonOf(view, 'Mon') === null)
+		switchOf(view, 'Use a schedule').props.onValueChange(true)
+		await sleep(400)
+		await view.settle()
+		check('with a schedule on, there are seven days and a from and a to', ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].every(d => !!buttonOf(view, d)) && !!inputOf(view, 'From') && !!inputOf(view, 'To'))
+		const mon = buttonOf(view, 'Mon').props.variant
+		buttonOf(view, 'Mon').props.onPress()
+		await sleep(400)
+		await view.settle()
+		check('tapping a day turns it off and on', mon === 'primary' && buttonOf(view, 'Mon').props.variant === 'secondary' && s.storage.cache.profiles[0].scheduleDays[1] === false)
+		await type(view, 'From', '8pm', 600)
+		check('a time field says how it read what was typed', /Reads as 8:00 PM/.test(inputOf(view, 'From').props.description), inputOf(view, 'From').props.description)
+		await type(view, 'From', 'banana', 600)
+		check('and says when it did not understand', /Not a time/.test(inputOf(view, 'From').props.description))
+		view.unmount()
+		await s.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('a', { type: 1 })] })
+		const view = await s.settingsView()
+		await openEditor(view, 'A')
+		check('a Streaming presence asks for the stream link', !!inputOf(view, 'Stream link'))
+		view.unmount()
+		await s.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('a')] })
+		const view = await s.settingsView()
+		await openEditor(view, 'A', 'Timer')
+		const modes = groupOf(view, 'What the timer does')
+		const labels = findNodes(modes, n => n.type === 'Design.TableRadioRow').map(n => n.props.label)
+		check('the timer page lists every kind of timer', labels.join() === 'No timer,Since switched on,Since Discord opened,Since a date,Until a date,Countdown,Until midnight,Time of day,Between two times each day,Start and end,From the SoundCloud track', labels)
+		check('each says what it does', findNodes(modes, n => n.type === 'Design.TableRadioRow').every(n => typeof n.props.subLabel === 'string' && n.props.subLabel.length > 10))
+		check('a timer with no settings shows no extra fields', !inputOf(view, 'Date and time') && !inputOf(view, 'Minutes'))
+		modes.props.onChange('until')
+		await sleep(400)
+		await view.settle()
+		check('"Until a date" shows the date field and how it repeats', !!inputOf(view, 'Date and time') && !!groupOf(view, 'When the date has passed'))
+		check('the repeats are never, daily, weekly, monthly and yearly', findNodes(groupOf(view, 'When the date has passed'), n => n.type === 'Design.TableRadioRow').map(n => n.props.label).join() === 'Never,Every day,Every week,Every month,Every year')
+		await type(view, 'Date and time', '2099-12-25 18:30', 600)
+		check('the date field says how it read the date', /Reads as .*Dec 25 2099, 6:30 PM/.test(inputOf(view, 'Date and time').props.description), inputOf(view, 'Date and time').props.description)
+		await type(view, 'Date and time', '2099-02-31', 600)
+		check('a date that does not exist is not accepted', /Not a date/.test(inputOf(view, 'Date and time').props.description), inputOf(view, 'Date and time').props.description)
+		await type(view, 'Date and time', '2099-12-25 18:30', 600)
+		check('the date is saved and sent', s.storage.cache.profiles[0].timerDate === '2099-12-25 18:30' && s.lastOf('a').activity.timestamps.end === new Date(2099, 11, 25, 18, 30).getTime(), s.lastOf('a').activity.timestamps)
+		check('and the preview says how long is left', /left/.test(textOf(view.tree)))
+		groupOf(view, 'When the date has passed').props.onChange('yearly')
+		await sleep(400)
+		check('the repeat is saved', s.storage.cache.profiles[0].timerRepeat === 'yearly')
+		groupOf(view, 'What the timer does').props.onChange('countdown')
+		await sleep(400)
+		await view.settle()
+		check('"Countdown" shows the minutes and a switch to start over', !!inputOf(view, 'Minutes') && !!switchOf(view, 'Start over when it ends'))
+		switchOf(view, 'Start over when it ends').props.onValueChange(true)
+		await sleep(400)
+		check('the loop switch is saved', s.storage.cache.profiles[0].countdownLoop === true)
+		groupOf(view, 'What the timer does').props.onChange('daily')
+		await sleep(400)
+		await view.settle()
+		check('"Between two times each day" shows From and To', !!inputOf(view, 'From') && !!inputOf(view, 'To'))
+		groupOf(view, 'What the timer does').props.onChange('custom')
+		await sleep(400)
+		await view.settle()
+		check('"Start and end" shows Start and End', !!inputOf(view, 'Start') && !!inputOf(view, 'End'))
+		groupOf(view, 'What the timer does').props.onChange('since')
+		await sleep(400)
+		await view.settle()
+		check('"Since a date" shows the date field but no repeat', !!inputOf(view, 'Date and time') && groupOf(view, 'When the date has passed') === null)
+		view.unmount()
+		await s.restore()
+	}
+
+	// --- Discord keeps only one "Playing" at a time, so only the first one is sent
+	{
+		const s = await setup({ profiles: [prof('p1', { type: 0 }), prof('p2', { type: 0 }), prof('l', { type: 2 }), prof('s', { type: 1 })] })
+		check('of two Playing profiles only the first is sent', s.sent('p1').length > 0 && s.sent('p2').length === 0, s.live())
+		check('the other kinds are sent next to it, up to the limit', s.live().sort().join() === 'l,p1,s', s.live())
+		const view = await s.settingsView()
+		check('the second Playing says why it is not shown', switchOf(view, 'P2').props.subLabel.includes('only one Playing'), switchOf(view, 'P2').props.subLabel)
+		check('and keeps its switch on', switchOf(view, 'P2').props.value === true)
+		check('it does not use up a place in the limit', sectionOf(view, 'Show on my profile (3 of up to 3 showing)') !== null)
+		view.unmount()
+		await s.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('p1', { type: 0 }), prof('p2', { type: 2 })] })
+		const view = await s.settingsView()
+		await openEditor(view, 'P2')
+		const group = groupOf(view, 'Kind of activity')
+		check('the kind list has the kinds', !!group && group.props.value === 2)
+		group.props.onChange(0)
+		await sleep(900)
+		check('changing a profile to Playing when another already is leaves it out', s.lastOf('p2')?.activity === null && s.live().join() === 'p1', s.live())
+		group.props.onChange(3)
+		await sleep(900)
+		check('changing it to Watching shows it next to the Playing one', s.live().sort().join() === 'p1,p2' && s.lastOf('p2').activity.type === 3, s.live())
+		view.unmount()
+		await s.restore()
+	}
+
+	// --- Each profile has its own application id
+	{
+		const s = await setup({ profiles: [prof('a'), prof('b'), prof('c')] })
+		const ids = ['a', 'b', 'c'].map(id => s.lastOf(id).activity.application_id)
+		check('profiles with no application id are each sent with one of their own', new Set(ids).size === 3 && ids.every(id => /^\d{18}$/.test(id)), ids)
+		check('and not 0, which would make them all the same application', ids.every(id => id !== '0'))
+		await s.restore()
+		const again = await setup({ profiles: [prof('a'), prof('b'), prof('c')] })
+		check('the same profile gets the same id every time', again.lastOf('a').activity.application_id === ids[0] && again.lastOf('c').activity.application_id === ids[2])
+		await again.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('a', { applicationId: ' 123456 ' }), prof('b')] })
+		check('an application id that is typed in is used as it is', s.lastOf('a').activity.application_id === '123456')
+		check('and the other profile keeps its own made-up one', /^\d{18}$/.test(s.lastOf('b').activity.application_id))
+		await s.restore()
+	}
+	{
+		// The same kind, application and name are one activity for Discord.
+		const s = await setup({ profiles: [prof('a', { type: 2, name: 'Same', applicationId: '42' }), prof('b', { type: 2, name: 'Same', applicationId: '42' }), prof('c', { type: 2, name: 'Same', applicationId: '43' })] })
+		check('a profile with the same kind, application and name as an earlier one is left out', s.live().sort().join() === 'a,c', s.live())
+		const view = await s.settingsView()
+		check('and says why', switchOf(view, 'B').props.subLabel.includes('same type, application and name'), switchOf(view, 'B').props.subLabel)
+		view.unmount()
+		await s.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('a', { type: 2, name: 'Same' }), prof('b', { type: 2, name: 'Same' })] })
+		check('two profiles with no application id are not the same, whatever they are called', s.live().sort().join() === 'a,b', s.live())
+		await s.restore()
+	}
+
+	// --- A new profile starts with a kind that can show next to the others
+	{
+		const s = await setup({ profiles: [prof('a', { type: 0 })] })
+		const view = await s.settingsView()
+		rowOf(view, 'Add a presence').props.onPress()
 		await sleep(700)
 		await view.settle()
-		check('the text is saved after typing stops', s.storage.cache.profiles[0].details === 'Typing', s.storage.cache.profiles[0].details)
-		check('...and the presence is sent once', s.activities().length === before + 1 && s.last().activity.details === 'Typing', s.activities().length - before)
-
-		row('New profile').props.onPress()
-		await sleep(50)
+		check('a new profile starts as Listening to when Playing is taken', s.storage.cache.profiles.at(-1).type === 2, s.storage.cache.profiles.at(-1).type)
+		buttonOf(view, '‹ All presences').props.onPress()
 		await view.settle()
-		check('a new profile is added and chosen', s.storage.cache.profiles.length === 2 && s.storage.cache.activeProfile === s.storage.cache.profiles[1].id, s.storage.cache)
-		row('Duplicate profile').props.onPress()
-		await sleep(50)
-		check('a profile can be duplicated', s.storage.cache.profiles.length === 3 && /copy$/.test(s.storage.cache.profiles[2].label), s.storage.cache.profiles.map(p => p.label))
-		row('Delete profile').props.onPress()
-		await sleep(50)
-		check('a profile can be deleted', s.storage.cache.profiles.length === 2)
-		row('Use for SoundCloud').props.onPress()
-		await sleep(50)
-		const sc = s.storage.cache.profiles.at(-1)
-		check('the SoundCloud profile is set up', sc.name === 'SoundCloud' && sc.type === 2 && sc.details === '{sc_title}' && sc.timestampMode === 'external' && sc.showOnlyWhen === '{sc_title}' && s.toasts().includes('SoundCloud profile added'), sc)
-		await s.restore()
-	}
-	{
-		const s = await setup({ fields: { name: 'Only' } })
-		const view = s.runtime.mount(s.runtime.React.createElement(s.definition.SettingsComponent, { api: { jsonStorage: s.storage } }))
-		await view.settle()
-		findNode(view.tree, n => n.type === 'Design.TableRow' && n.props.label === 'Delete profile').props.onPress()
-		check('the last profile cannot be deleted', s.toasts().includes('Keep at least one profile') && s.storage.cache.profiles.length === 1)
-		await s.restore()
-	}
-	{
-		const copied = []
-		const s = await setup({ fields: { name: 'Copy me', details: 'x' } })
-		const clip = s.runtime.valenced.externals.ReactNativeClipboard.Clipboard
-		clip.setString = text => copied.push(text)
-		const view = s.runtime.mount(s.runtime.React.createElement(s.definition.SettingsComponent, { api: { jsonStorage: s.storage } }))
-		await view.settle()
-		const row = label => findNode(view.tree, n => n.type === 'Design.TableRow' && n.props.label === label)
-		row('Copy profile').props.onPress()
-		const data = JSON.parse(copied[0])
-		check('a profile is copied as JSON without its id', data.name === 'Copy me' && data.details === 'x' && data.id === undefined, data)
-		clip.getString = async () => JSON.stringify({ ...data, name: 'Pasted', label: 'From clipboard', sneaky: 'ignored' })
-		row('Paste profile').props.onPress()
-		await sleep(50)
-		const pasted = s.storage.cache.profiles.at(-1)
-		check('a profile is added from the clipboard', pasted.name === 'Pasted' && pasted.label === 'From clipboard' && pasted.sneaky === undefined, pasted)
-		clip.getString = async () => 'not json'
-		row('Paste profile').props.onPress()
-		await sleep(50)
-		check('a bad clipboard says so', s.toasts().includes('Clipboard has no copied profile'))
-		await s.restore()
-	}
-	{
-		const s = await setup({ fields: { name: 'Act' } })
-		const view = s.runtime.mount(s.runtime.React.createElement(s.definition.SettingsComponent, { api: { jsonStorage: s.storage } }))
-		await view.settle()
-		const row = label => findNode(view.tree, n => n.type === 'Design.TableRow' && n.props.label === label)
-		row('Clear presence').props.onPress()
-		check('Clear presence removes the presence', s.last().activity === null && s.toasts().includes('Presence cleared'))
-		row('Apply now').props.onPress()
-		await sleep(80)
-		check('Apply now sends it again', s.last().activity?.name === 'Act' && s.toasts().includes('Presence applied'))
-		const switchRow = findNode(view.tree, n => n.type === 'Design.TableSwitchRow' && n.props.label === 'Show presence')
-		switchRow.props.onValueChange(false)
-		await sleep(350)
-		check('switching it off clears the presence', s.last().activity === null)
+		rowOf(view, 'Add a presence').props.onPress()
+		await sleep(700)
+		check('the next one starts as Watching', s.storage.cache.profiles.at(-1).type === 3)
+		view.unmount()
 		await s.restore()
 	}
 
+	// --- Pasting a copied presence
+	{
+		const s = await setup({ profiles: [prof('a')] })
+		s.runtime.valenced.externals.ReactNativeClipboard.Clipboard.getString = async () => JSON.stringify({ label: 'From a friend', name: 'Their game', type: 3, timestampMode: 'since', timerDate: '2020-05-05 10:00', kind: 'soundcloud', enabled: true, id: 'evil', scheduleDays: [false, true, true, true, true, true, false], scheduleOn: true })
+		const view = await s.settingsView()
+		rowOf(view, 'Paste a copied presence').props.onPress()
+		await sleep(700)
+		const added = s.storage.cache.profiles.at(-1)
+		check('a pasted presence is added, switched off', added.label === 'From a friend' && added.name === 'Their game' && added.timestampMode === 'since' && added.enabled === false, added)
+		check('it cannot pose as SoundCloud or take another id', added.kind === 'custom' && added.id !== 'evil')
+		check('its schedule days come across', added.scheduleOn === true && added.scheduleDays.join() === 'false,true,true,true,true,true,false')
+		s.runtime.valenced.externals.ReactNativeClipboard.Clipboard.getString = async () => 'not json'
+		rowOf(view, 'Paste a copied presence').props.onPress()
+		await sleep(300)
+		check('something that is not a presence is refused', s.toasts().includes('Clipboard has no copied presence') && s.storage.cache.profiles.length === 2, s.toasts())
+		view.unmount()
+		await s.restore()
+	}
+
+	// --- The report
+	{
+		const s = await setup({
+			profiles: [prof('a', { type: 0, name: 'Secret game', details: 'Secret details', applicationId: '99' }), prof('b', { type: 0 }), prof('c', { type: 2, timestampMode: 'countdown' })],
+		})
+		const view = await s.settingsView()
+		findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === 'Copy logs').props.onPress()
+		await sleep(10)
+		const report = s.copied.at(-1) || ''
+		check('Copy logs puts a report on the clipboard', report.length > 200)
+		check('the report names the plugin and credits only the author', report.includes('marklong.rich-presence') && report.includes('Made by MarkLong0467') && !report.includes('kmmiio99o') && !report.includes('PalmDevs'), report.split('\n').slice(0, 4))
+		check('it counts the profiles, the ones shown and the ones sent', /Profiles: 3, switched on: 3, shown: 2 \(limit 3\), sent now: 2/.test(report), report.split('\n').slice(6, 18))
+		check('it shows what Discord’s own lists hold, to see where activities are lost', /local store 3, kept by its filter 2, before its filter 3/.test(report), report)
+		check('and says for each profile its kind, timer and why it is or is not shown', /Profile 1: type 0, timer none, application set, shown, sent/.test(report) && /Profile 2: type 0, timer none, application made up, second playing, not sent/.test(report) && /Profile 3: type 2, timer countdown, application made up, shown, sent/.test(report), report.split('\n').slice(6, 18))
+		check('the report holds no names, texts or application ids', !report.includes('Secret game') && !report.includes('Secret details') && !report.includes('"99"'))
+		view.unmount()
+		await s.restore()
+	}
+
+	// --- Other plugins and reconnecting
+	{
+		const s = await setup({ profiles: [prof('a'), prof('b')], settings: { applyOnStart: false } })
+		check('another plugin can reach the plugin’s global', typeof globalThis.eskimoRichPresence?.apply === 'function')
+		globalThis.eskimoRichPresence.apply()
+		await sleep(900)
+		check('asking for the presences to be sent again sends every profile that is shown', s.live().sort().join() === 'a,b', s.live())
+		await s.restore()
+		check('the global is gone after stopping', globalThis.eskimoRichPresence === undefined)
+	}
+	{
+		const s = await setup({ profiles: [prof('a'), prof('b')] })
+		const before = s.activities().length
+		s.runtime.fire('CONNECTION_OPEN', {})
+		await sleep(150)
+		check('when Discord reconnects every presence is sent again', s.activities().length === before + 2 && s.live().sort().join() === 'a,b', [before, s.activities().length])
+		await s.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('a', { details: '{seconds}' }), prof('b')], settings: { refreshSeconds: '15' } })
+		check('with a refresh interval set a profile is still sent once at start', s.sent('a').length === 1 && s.sent('b').length === 1)
+		await s.restore()
+	}
+
+	// --- Old saves
+	{
+		const old = { enabled: true, applyOnStart: true, refreshSeconds: '0', activeProfile: 'x', profiles: [{ id: 'x', label: 'Old', name: 'From before', type: 0 }, { id: 'y', label: 'Other', name: 'Not chosen', type: 2 }] }
+		const runtime = createRuntime({ stores: { UserStore: { getCurrentUser: () => ({ username: 'u' }) } } }).install()
+		const { definition } = loadPlugin('rich-presence')
+		const storage = runtime.makeStorage(old)
+		const running = await startPlugin(definition, runtime, { storage })
+		await sleep(150)
+		check('a save from Rich Presence 1 (one profile in use, no switches) loads without breaking', running.errors.length === 0)
+		const live = runtime.log.dispatched.filter(a => a.type === 'LOCAL_ACTIVITY_UPDATE' && a.activity)
+		check('the profile that was in use is on and the other is off', live.length === 1 && live[0].activity.name === 'From before', live.map(a => a.activity.name))
+		const view = runtime.mount(runtime.React.createElement(definition.SettingsComponent, { api: { jsonStorage: storage } }))
+		await view.settle()
+		check('the list shows both, with the right switches', findNode(view.tree, n => n.type === 'Design.TableSwitchRow' && n.props.label === 'Old').props.value === true && findNode(view.tree, n => n.type === 'Design.TableSwitchRow' && n.props.label === 'Other').props.value === false)
+		view.unmount()
+		await running.stop()
+	}
+
+	globalThis.setTimeout = realSetTimeout
+	Date.now = realNow
 	done()
 })().catch(error => {
 	console.error(error)

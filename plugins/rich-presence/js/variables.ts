@@ -1,6 +1,6 @@
 import { Stores } from '@valenced/discord/flux'
 import { DAYS, MONTHS } from './constants'
-import { state } from './state'
+import { parseDate } from './timers'
 
 /** Variables other plugins provide, for example `{sc_title}` from SoundCloud Presence. */
 type SharedVars = Record<string, unknown> | undefined
@@ -9,8 +9,8 @@ type SharedVars = Record<string, unknown> | undefined
 export const pad = (n: number): string => (n < 10 ? `0${n}` : `${n}`)
 
 /** How long the presence has been applied: `5:07` or `1:05:07`. */
-function uptime(): string {
-	const s = Math.max(0, Math.floor((Date.now() - state.appliedAt) / 1000))
+function uptime(appliedAt: number): string {
+	const s = Math.max(0, Math.floor((Date.now() - appliedAt) / 1000))
 	const h = Math.floor(s / 3600)
 	const m = Math.floor((s % 3600) / 60)
 	return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`
@@ -23,7 +23,7 @@ function uptime(): string {
  * puts in `globalThis.eskimoVars`. With SoundCloud Presence off or missing, `{sc_title}` and the other `sc_` names come
  * out empty rather than as typed, so "show only when" can hide the presence.
  */
-export function fill(text: unknown): unknown {
+export function fill(text: unknown, appliedAt = Date.now()): unknown {
 	if (typeof text !== 'string' || text.indexOf('{') < 0) return text
 	const now = new Date()
 	const user = (
@@ -46,7 +46,7 @@ export function fill(text: unknown): unknown {
 		year: `${now.getFullYear()}`,
 		user: user ? user.globalName || user.username || '' : '',
 		username: user ? user.username || '' : '',
-		uptime: uptime(),
+		uptime: uptime(appliedAt),
 	}
 	return text.replace(/\{(\w+)\}/g, (all, name: string) => {
 		// Object.hasOwn is newer than the oldest phones' JavaScript, so the long form is used.
@@ -61,17 +61,8 @@ export function fill(text: unknown): unknown {
 	})
 }
 
-/** A time typed as a Unix time (seconds or milliseconds) or as a date, in milliseconds. Nothing if it is neither. */
-export function parseTime(value: unknown): number | undefined {
-	const s = String(value == null ? '' : value).trim()
-	if (!s) return undefined
-	if (/^\d+$/.test(s)) {
-		const n = Number(s)
-		return n < 1e12 ? n * 1000 : n
-	}
-	const t = Date.parse(s)
-	return Number.isNaN(t) ? undefined : t
-}
+/** A date typed by a person, in milliseconds. Nothing if it is not a date. See `parseDate` in `timers.ts`. */
+export const parseTime = parseDate
 
 /** A whole number typed as text. Nothing if it is not one, or is negative. */
 export function num(value: unknown): number | undefined {
@@ -80,7 +71,7 @@ export function num(value: unknown): number | undefined {
 }
 
 /** A text with its variables filled in, or nothing if it comes out empty. */
-export function text(value: unknown): string | undefined {
-	const s = fill(value)
+export function text(value: unknown, appliedAt?: number): string | undefined {
+	const s = fill(value, appliedAt)
 	return typeof s === 'string' && s.trim() ? s : undefined
 }

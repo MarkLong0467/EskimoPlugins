@@ -1,10 +1,15 @@
 import { ToastActionCreators } from '@valenced/discord/actions'
-import { TOAST_KEY } from './constants'
+import { PID_BASE, SOCKET_PREFIX, TOAST_KEY } from './constants'
 import { merge } from './profiles'
-import type { RichPresenceSettings } from './types'
+import type { RichPresenceSettings, Runtime } from './types'
 
 /** The plugin's JSON storage, handed over when the plugin starts and again when the settings screen opens. */
-let storage: { cache?: Partial<RichPresenceSettings> } | undefined
+let storage:
+	| {
+			cache?: Partial<RichPresenceSettings>
+			set?: (value: RichPresenceSettings, replace: boolean) => unknown
+	  }
+	| undefined
 
 /** Remembers the storage to read settings from. */
 export function setStorage(next: unknown): void {
@@ -16,30 +21,83 @@ export function read(): RichPresenceSettings {
 	return merge(storage?.cache)
 }
 
+/** Saves some settings over the ones already saved. */
+export function save(patch: Partial<RichPresenceSettings>): Promise<unknown> {
+	return Promise.resolve(storage?.set?.(Object.assign({}, read(), patch), true))
+}
+
+/** Saves some of the SoundCloud settings over the ones already saved. */
+export function saveSoundCloud(
+	patch: Partial<RichPresenceSettings['soundcloud']>,
+): Promise<unknown> {
+	return save({ soundcloud: Object.assign({}, read().soundcloud, patch) })
+}
+
 /** Things that change as the plugin runs, kept together so every file reads the same ones. */
 export const state: {
 	/** Whether the plugin is running. */
 	active: boolean
-	/** When the presence was last applied from scratch (milliseconds); timers count from here. */
-	appliedAt: number
-	/** Counts applications, so an older one that finishes late is dropped. */
-	applySeq: number
-	/** When the looping custom timer last restarted (milliseconds). */
-	loopAnchor: number
 	refreshTimer: ReturnType<typeof setInterval> | undefined
 	applyTimer: ReturnType<typeof setTimeout> | undefined
+	/** The one timer that watches every timer that changes by itself, and the schedules. */
 	loopTimer: ReturnType<typeof setInterval> | undefined
+	/** The profile ids waiting to be applied (a change waits a moment so a burst of changes sends once). */
+	pending: Set<string>
+	/** Whether the waiting application restarts the timers. */
+	pendingReset: boolean
+	/** Whether every profile is waiting, not only the ones in `pending`. */
+	pendingAll: boolean
+	/** Counts applications of every profile, so an older one that is still waiting between profiles stops. */
+	applyRun: number
+	/** When the watcher last had to put right a presence that was missing or should not be there (milliseconds). */
+	lastCatchUp: number
 } = {
 	active: false,
-	appliedAt: Date.now(),
-	applySeq: 0,
-	loopAnchor: Date.now(),
 	refreshTimer: undefined,
 	applyTimer: undefined,
 	loopTimer: undefined,
+	pending: new Set(),
+	pendingReset: false,
+	pendingAll: false,
+	applyRun: 0,
+	lastCatchUp: 0,
 }
 
-/** How each image slot (`large`, `small`) turned out: `ok`, an error text, or nothing. Shown in the preview. */
+/** What is kept for each profile, by the profile's id. A profile gets its own the first time it is shown. */
+const runtimes = new Map<string, Runtime>()
+
+/** The next process number to give out. */
+let nextPid = PID_BASE
+
+/** The runtime of a profile, made on first use. */
+export function runtimeOf(profileId: string): Runtime {
+	let rt = runtimes.get(profileId)
+	if (!rt) {
+		rt = {
+			id: profileId,
+			socket: `${SOCKET_PREFIX}${profileId}`,
+			pid: nextPid++,
+			appliedAt: Date.now(),
+			loopAnchor: Date.now(),
+			changeAt: 0,
+			applySeq: 0,
+			live: false,
+		}
+		runtimes.set(profileId, rt)
+	}
+	return rt
+}
+
+/** Every runtime there is. */
+export const allRuntimes = (): Runtime[] => [...runtimes.values()]
+
+/** Forgets every runtime. Used when the plugin stops. */
+export function forgetRuntimes(): void {
+	runtimes.clear()
+	nextPid = PID_BASE
+}
+
+/** How each image slot turned out, by `<profile id>:large` or `<profile id>:small`: `ok`, an error text, or nothing. Shown in the preview. */
 export const imageStatus: Record<string, string | undefined> = {}
 
 /** Functions to call when `imageStatus` changes, so the preview can redraw. */
