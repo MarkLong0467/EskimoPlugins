@@ -1,4 +1,4 @@
-import type { ByteReader } from './nef'
+import type { ByteReader } from './reader'
 
 /** How much of the start of the file is read first. The TIFF headers that point to the preview are inside it. */
 const HEAD_SIZE = 256 * 1024
@@ -8,7 +8,7 @@ const MIN_CHUNK = 64 * 1024
 
 /**
  * Creates a reader over remote file using HTTP Range requests.
- * Only TIFF headers and preview bytes get downloaded, not the whole RAW file.
+ * Only headers, metadata and preview bytes get downloaded, not the whole file.
  */
 export function createRangeReader(url: string): ByteReader {
 	const chunks: Array<{ start: number; bytes: Uint8Array }> = []
@@ -43,7 +43,7 @@ export function createRangeReader(url: string): ByteReader {
 		return null
 	}
 
-	return async (offset, length) => {
+	const read: ByteReader = async (offset, length) => {
 		if (!chunks.length) await fetchChunk(0, HEAD_SIZE)
 		if (offset >= size) return new Uint8Array(0)
 
@@ -53,4 +53,6 @@ export function createRangeReader(url: string): ByteReader {
 		await fetchChunk(offset, Math.max(length, MIN_CHUNK))
 		return fromChunks(offset, length) ?? new Uint8Array(0)
 	}
+	read.size = () => (Number.isFinite(size) ? size : undefined)
+	return read
 }

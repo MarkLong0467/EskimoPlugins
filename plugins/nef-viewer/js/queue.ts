@@ -1,7 +1,8 @@
 import { Dispatcher } from '@valenced/discord/common/flux'
 import { Stores } from '@valenced/discord/flux'
+import { isRawAttachment } from './attachments'
 import { MAX_CONCURRENT, TAG } from './constants'
-import { convert } from './convert'
+import { convert, previews } from './convert'
 import type { Attachment, MessageStore } from './types'
 
 /**
@@ -23,7 +24,7 @@ const pending = new Map<string, { channelId: string; messageId: string }>()
 const failed = new Set<string>()
 
 /** Attachments waiting for a free conversion slot, oldest first. */
-const queue: Array<{ id: string; url: string }> = []
+const queue: Array<{ id: string; url: string; filename: string }> = []
 
 /** How many conversions are running now. */
 let running = 0
@@ -50,7 +51,7 @@ export function schedule(
 	if (failed.has(id) || pending.has(id)) return
 
 	pending.set(id, { channelId, messageId })
-	queue.push({ id, url: attachment.url })
+	queue.push({ id, url: attachment.url, filename: attachment.filename })
 	pump()
 }
 
@@ -58,10 +59,14 @@ export function schedule(
 function pump(): void {
 	while (active && running < MAX_CONCURRENT && queue.length) {
 		// Safe: the loop condition checked that the queue has an item.
-		const { id, url } = queue.shift() as { id: string; url: string }
+		const { id, url, filename } = queue.shift() as {
+			id: string
+			url: string
+			filename: string
+		}
 		running++
 
-		convert(id, url)
+		convert(id, url, filename)
 			.then(() => refreshMessage(id))
 			.catch(error => {
 				failed.add(id)
@@ -96,4 +101,39 @@ function refreshMessage(attachmentId: string): void {
 			attachments: message.attachments,
 		},
 	} as never)
+}
+
+/**
+ * Renders the RAW files of one message now, whatever the "render only when I ask" setting says.
+ *
+ * @returns How many files were queued: those of the message that have no photo yet and did not fail before.
+ */
+export function renderMessage(channelId: string, messageId: string): number {
+	const messages = Stores.MessageStore as unknown as MessageStore | undefined
+	const message = messages?.getMessage?.(channelId, messageId)
+	let queued = 0
+	for (const attachment of message?.attachments ?? []) {
+		if (
+			!isRawAttachment(attachment) ||
+			previews.has(attachment.id) ||
+			pending.has(attachment.id)
+		)
+			continue
+		failed.delete(attachment.id)
+		schedule(attachment, channelId, messageId)
+		queued++
+	}
+	return queued
+}
+
+/** Whether a message has RAW files that are still files (not rendered yet). */
+export function hasUnrenderedRaw(
+	channelId: string,
+	messageId: string,
+): boolean {
+	const messages = Stores.MessageStore as unknown as MessageStore | undefined
+	const message = messages?.getMessage?.(channelId, messageId)
+	return !!message?.attachments?.some(
+		attachment => isRawAttachment(attachment) && !previews.has(attachment.id),
+	)
 }

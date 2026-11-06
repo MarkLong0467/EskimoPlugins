@@ -9,7 +9,8 @@
 import { FileModule } from '@valenced/discord/native'
 import { toBase64 } from './base64'
 import { createRangeReader } from './http'
-import { findPreview, readJpegInfo, withOrientation } from './nef'
+import { readJpegInfo, withOrientation } from './jpeg'
+import { findPreview } from './preview'
 
 /** Folder inside Discord's cache directory where the previews are written. */
 const CACHE_DIR = 'nef-viewer'
@@ -23,6 +24,10 @@ export interface ConvertedPreview {
 	width: number
 	height: number
 	size: number
+	/** The link of the RAW file it was made from, so its metadata can be read later. Missing in older saves. */
+	original?: string
+	/** The RAW file name. */
+	filename?: string
 }
 
 /** Converted previews keyed by attachment ID. */
@@ -71,9 +76,10 @@ function saveIndex() {
  *
  * @param id The attachment id. It names the cached file.
  * @param url The download link of the RAW file.
+ * @param filename The RAW file name, kept with the preview.
  * @throws If the file has no embedded JPEG, or the bytes are not a valid JPEG.
  */
-export async function convert(id: string, url: string) {
+export async function convert(id: string, url: string, filename?: string) {
 	const read = createRangeReader(url)
 
 	const location = await findPreview(read)
@@ -104,9 +110,18 @@ export async function convert(id: string, url: string) {
 		width: rotated ? info.height : info.width,
 		height: rotated ? info.width : info.height,
 		size: jpeg.length,
+		original: url,
+		filename,
 	}
 
 	previews.set(id, preview)
 	saveIndex()
 	return preview
+}
+
+/** The preview that is saved at a path or link on the phone, if the plugin made one. Used to find the RAW file behind a picture. */
+export function previewAt(uri: string): ConvertedPreview | undefined {
+	for (const preview of previews.values())
+		if (preview.uri === uri) return preview
+	return undefined
 }

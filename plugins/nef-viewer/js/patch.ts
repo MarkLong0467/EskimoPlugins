@@ -1,4 +1,5 @@
 import { isRawAttachment, toImageAttachment } from './attachments'
+import { setting } from './config'
 import { previews } from './convert'
 import { schedule } from './queue'
 import type { DiscordMessage } from './types'
@@ -19,7 +20,7 @@ export function patchMessage(
 	message: DiscordMessage | undefined,
 	channelId?: string,
 ): void {
-	if (!message) return
+	if (!message || !setting('convertRaw')) return
 
 	const channel = message.channel_id ?? channelId
 	const { attachments } = message
@@ -28,7 +29,8 @@ export function patchMessage(
 		message.attachments = attachments.map(attachment => {
 			if (!isRawAttachment(attachment)) return attachment
 			if (previews.has(attachment.id)) return toImageAttachment(attachment)
-			if (channel && message.id) schedule(attachment, channel, message.id)
+			if (channel && message.id && !setting('renderOnDemand'))
+				schedule(attachment, channel, message.id)
 			return attachment
 		})
 	}

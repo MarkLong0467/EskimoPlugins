@@ -331,7 +331,7 @@ const rawAttachment = (id, extra = {}) => ({ id, filename: `${id}.NEF`, url: `ht
 		s.runtime.fire('MESSAGE_CREATE', { message: s.store({ id: 'm1', channel_id: 'c1', attachments: [rawAttachment('bad')] }) })
 		await sleep(80)
 		console.warn = warn
-		check('a file that is not a TIFF is reported and nothing is dispatched', warnings.some(line => line.includes('[nef-viewer]') && line.includes('bad')) && s.updates().length === 0, warnings)
+		check('a file that is not a TIFF is reported and nothing is dispatched', warnings.some(line => line.includes('[raw-viewer]') && line.includes('bad')) && s.updates().length === 0, warnings)
 	}
 	{
 		const server = installServer(new Map(), { mode: 404 })
