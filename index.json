@@ -2106,6 +2106,33 @@
       "channels": {
         "latest": "0.4.1"
       }
+    },
+    "marklong.text-react": {
+      "name": "Text React",
+      "description": "Hold a message, tap Text React, type some text and it is added to the message as reactions: letters become emoji letters, digits become keycaps, and words like ok, cool and 100 have an emoji of their own.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.text-react@1.0.0.zip",
+          "sha256": "075a8543caf401db26c7facf39614d8262e10d4717e8d3c528d546afec71b2ff",
+          "size": 4836,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "contributors": [
+        "ArjixWasTaken (https://github.com/ArjixWasTaken/aliucord-plugins \"Original TextReact plugin for Aliucord, Open Software License 3.0\")",
+        "Juby210 (https://github.com/Juby210/text-react \"The text-react plugin that the Aliucord one is based on\")"
+      ]
     }
   }
 }
