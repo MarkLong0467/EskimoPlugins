@@ -131,6 +131,13 @@
       "suffix": ""
     },
     {
+      "id": "marklong.quiet-hours",
+      "name": "Quiet Hours",
+      "version": "1.0.0",
+      "short": "switches your status to Do Not Disturb on a schedule and puts it back, with one-tap skip tonight",
+      "suffix": ""
+    },
+    {
       "id": "marklong.nef-viewer",
       "name": "Raw Viewer",
       "version": "1.1.2",
