@@ -2177,7 +2177,7 @@
       "description": "Hold a message, tap Text React, type some text and it is added to the message as reactions: letters become emoji letters, digits become keycaps, and words like ok, cool and 100 have an emoji of their own.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.1.1"
+        "latest": "1.1.2"
       },
       "versions": {
         "1.0.0": {
@@ -2236,6 +2236,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.text-react@1.1.1.zip",
           "sha256": "ace1dc622f020ec1bb1396a5dbba0d9f9dbc3b9c59a022f38bf7b9c15281086e",
           "size": 14446,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.1.2": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.text-react@1.1.2.zip",
+          "sha256": "c6e4e45f50798e3be5d099d8069525826755a34f93dc4eee2f7d05e0a5d928b7",
+          "size": 14495,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
