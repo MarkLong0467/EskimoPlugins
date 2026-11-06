@@ -614,7 +614,7 @@
       "description": "Shows RAW photos (Nikon, Canon, Sony, Fujifilm, Olympus, Panasonic, DNG and more) in chat, and adds an info button and swipe-up metadata sheet with a Google Maps link to every picture.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.1.1"
+        "latest": "1.1.2"
       },
       "versions": {
         "1.0.1": {
@@ -660,6 +660,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.nef-viewer@1.1.1.zip",
           "sha256": "6d7cd5e474b83a04d8abee4f193f99458aca6d286b434cfd9db9a4d4e7416529",
           "size": 11628,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.1.2": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.nef-viewer@1.1.2.zip",
+          "sha256": "9855019ecf06acdd2faa5a6947f56845129ffb8cd6de3a5d4e0a0457289e48a1",
+          "size": 11629,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
