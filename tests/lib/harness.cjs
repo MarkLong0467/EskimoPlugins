@@ -395,6 +395,9 @@ function createFinders() {
 		withDependencies: filter => filter,
 		allOf: (...list) => ({ test: mod => list.every(f => f.test(mod)) }),
 		anyOf: (...list) => ({ test: mod => list.some(f => f.test(mod)) }),
+		/** Like Valenced's: `createFilterGenerator(test, key, scope)(...args)` makes a filter that runs `test(args, id, exports)`. */
+		createFilterGenerator: test => (...args) => ({ test: mod => exportsOf(mod).some(exports => !!test(args, 0, exports)) }),
+		FilterScopes: { Uninitialized: 'uninitialized', Initialized: 'initialized', All: 'all' },
 	}
 
 	const matches = (filter, mod) => {

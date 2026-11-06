@@ -1,0 +1,23 @@
+{
+	"format": 1,
+	"id": "marklong.better-chat-buttons",
+	"name": "Better Chat Buttons",
+	"description": "Hide the annoying chat buttons, or make them never collapse, all configurable.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [
+		"PalmDevs <629368283354628116> (https://github.com/PalmDevs \"Original author\") (https://github.com/PalmDevs/revenge-plugins \"Source\")"
+	],
+	"icon": "ChatCheckIcon",
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
