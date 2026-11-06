@@ -362,6 +362,53 @@ const dateOf = id => new Date(Number(BigInt(id) >> 22n) + 1420070400000).toLocal
 		check('after stopping the menu is no longer changed', s.menu.default(GUILD).length === 1)
 	}
 
+	// --- The owner and their profile
+	{
+		// The profile route is used first, and an error answer is never taken for a user.
+		const calls2 = []
+		const rest2 = {
+			get: async ({ url }) => {
+				calls2.push(url)
+				if (url === `/guilds/${GUILD}`) return { body: { owner_id: OWNER } }
+				if (url.startsWith(`/users/${OWNER}/profile`)) return { body: { user: { id: OWNER, username: 'viaprofile', global_name: 'Profile Owner', avatar: null } } }
+				return { body: { message: '405: Method Not Allowed', code: 0 } }
+			},
+			post() {},
+			patch() {},
+		}
+		const s2 = await setup({ guild: { id: GUILD, name: 'No Owner', premiumTier: 1 }, rest: rest2 })
+		s2.menu.default(GUILD)[1].action()
+		const view2 = await s2.mountSheet(SHEET_KEY)
+		await sleep(30)
+		await view2.settle()
+		check('the owner is asked from the profile route first', calls2.some(u => u.startsWith(`/users/${OWNER}/profile`)), calls2)
+		check('and shown by name', rowOf(view2, 'Owner')?.props.subLabel === 'Profile Owner', rowOf(view2, 'Owner')?.props)
+		const bad = {
+			get: async ({ url }) => (url === `/guilds/${GUILD}` ? { body: { owner_id: OWNER } } : { body: { message: '405: Method Not Allowed', code: 0 } }),
+			post() {},
+			patch() {},
+		}
+		const s3 = await setup({ guild: { id: GUILD, name: 'No Owner', premiumTier: 1 }, rest: bad })
+		s3.menu.default(GUILD)[1].action()
+		const view3 = await s3.mountSheet(SHEET_KEY)
+		await sleep(30)
+		await view3.settle()
+		check('an error answer is not shown as the owner', String(rowOf(view3, 'Owner')?.props.subLabel).startsWith('User ('), rowOf(view3, 'Owner')?.props)
+		check('and is not given to Discord as a user', !s3.runtime.log.dispatched.some(a => a.type === 'USER_UPDATE'))
+	}
+	{
+		const opens = []
+		const sheet = Object.assign(args => opens.push(args), {})
+		const mod = { default: args => opens.push(args), USER_PROFILE_ACTION_SHEET_KEY_PREFIX: 'UserProfile', getUserProfileActionSheetKey: id => 'UserProfile' + id }
+		const s4 = await setup({ profileModule: mod })
+		s4.menu.default(GUILD)[1].action()
+		const view4 = await s4.mountSheet(SHEET_KEY)
+		rowOf(view4, 'Owner').props.onPress()
+		check('the profile opens through the profile sheet of Discord', opens.length === 1 && opens[0].userId === OWNER && opens[0].guildId === GUILD, opens)
+		void sheet
+	}
+
+
 	done()
 })().catch(error => {
 	console.error(error)

@@ -93,11 +93,65 @@ export async function apiGet(
 	return res.json()
 }
 
+/** A user as Discord's web API describes one. */
+export interface ApiUser {
+	id: string
+	username: string
+	global_name?: string | null
+	avatar?: string | null
+}
+
+/** Whether something is a user: it has an id and a name (an error answer has neither). */
+function isUser(value: unknown, id: string): value is ApiUser {
+	const user = value as Partial<ApiUser> | null | undefined
+	return (
+		!!user &&
+		typeof user.username === 'string' &&
+		!!user.username &&
+		String(user.id) === id
+	)
+}
+
+/**
+ * Asks Discord's web API who a user is.
+ *
+ * The profile route is tried first (the one the app itself uses, which accounts may call), then the plain user route. Only an
+ * answer that really is a user is accepted: Discord also answers with errors that have a message and no name.
+ *
+ * @throws If neither route gave a user.
+ */
+export async function fetchUser(
+	userId: string,
+	guildId?: string,
+): Promise<ApiUser> {
+	const routes: Array<
+		[string, Record<string, unknown> | undefined, (body: unknown) => unknown]
+	> = [
+		[
+			`/users/${userId}/profile`,
+			{ with_mutual_guilds: false, ...(guildId ? { guild_id: guildId } : {}) },
+			body => (body as { user?: unknown } | undefined)?.user,
+		],
+		[`/users/${userId}`, undefined, body => body],
+	]
+	let last: unknown
+	for (const [path, query, pick] of routes) {
+		try {
+			const user = pick(await apiGet(path, query))
+			if (isUser(user, userId)) return user
+			last = new Error('no user in the answer')
+		} catch (error) {
+			last = error
+		}
+	}
+	throw last
+}
+
 /**
  * Opens a user's profile.
  *
- * Discord's code for it has had several names, so each is tried until one works. The sheet that is open is closed
- * first. If none works, a toast says so.
+ * The profile is a sheet, opened by Discord's `showUserProfileActionSheet` (found by its exports); the older names it has had
+ * are tried after it. The sheet that is open is closed first. If none works, a toast says so.
  */
 export function openProfile(userId: string, guildId: string): void {
 	try {
@@ -106,9 +160,25 @@ export function openProfile(userId: string, guildId: string): void {
 		// Nothing was open.
 	}
 	const args = { userId, guildId }
+	const sheet = findByProps<unknown>(
+		'USER_PROFILE_ACTION_SHEET_KEY_PREFIX',
+		'getUserProfileActionSheetKey',
+	)
+	const shower =
+		typeof sheet === 'function'
+			? sheet
+			: (sheet as { default?: unknown } | undefined)?.default
+	if (typeof shower === 'function') {
+		try {
+			;(shower as (args: unknown) => void)(args)
+			return
+		} catch {
+			// Try the other ways.
+		}
+	}
 	for (const name of [
-		'openUserProfileModal',
 		'openUserProfile',
+		'openUserProfileModal',
 		'showUserProfile',
 	]) {
 		const module = findByProps<Record<string, unknown>>(name)

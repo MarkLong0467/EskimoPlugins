@@ -8,6 +8,7 @@ import { chevron } from './Chevron'
 import { FRIENDS_KEY, SHEET_KEY } from './constants'
 import {
 	apiGet,
+	fetchUser,
 	findByProps,
 	openProfile,
 	sheets,
@@ -170,19 +171,10 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 			return
 		}
 		let cancelled = false
-		apiGet(`/users/${ownerId}`).then(
-			body => {
-				const user = body as
-					| {
-							global_name?: string
-							globalName?: string
-							username?: string
-							avatar?: string
-					  }
-					| undefined
-				if (!user || cancelled) return
-				const name =
-					user.global_name || user.globalName || user.username || null
+		fetchUser(ownerId, guildId).then(
+			user => {
+				if (cancelled) return
+				const name = user.global_name || user.username || null
 				try {
 					Dispatcher.dispatch({ type: 'USER_UPDATE', user } as never)
 				} catch {
