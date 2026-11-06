@@ -18,7 +18,7 @@ const ABOUT = 'About'
 const HOW =
 	'Hold a message and tap Text React. Type some text and it is added to the message as reactions, one at a time. Discord holds at most 20 different reactions on a message.'
 const CREDIT =
-	'Ported from TextReact for Aliucord by ArjixWasTaken, which is based on text-react by Juby210.'
+	'Ported from TextReact for Aliucord by ArjixWasTaken, which is based on text-react by Juby210. Ideas for custom mappings, export and import, and accents from axonyum (Discord 921011505263149097).'
 
 /**
  * The settings screen: whether "Text React" is in the message menu, whether to warn when part of the text has no emoji,

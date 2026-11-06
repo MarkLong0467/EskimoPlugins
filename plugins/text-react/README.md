@@ -62,6 +62,8 @@ Ported from **TextReact for Aliucord** by ArjixWasTaken (<https://github.com/Arj
 License 3.0), which is based on **text-react** by Juby210 (<https://github.com/Juby210/text-react>). The emoji tables come from
 those plugins. The code is written again for Valenced.
 
+Ideas for your own mappings, exporting and importing settings, and accented letters come from **axonyum** (Discord user 921011505263149097).
+
 ## Developing
 
 ```sh
