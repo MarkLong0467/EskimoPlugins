@@ -2673,7 +2673,7 @@
       "description": "Floating markdown formatting bar under chat input.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.2.3"
+        "latest": "1.2.4"
       },
       "versions": {
         "1.2.0": {
@@ -2728,6 +2728,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.markdown-toolbar@1.2.3.zip",
           "sha256": "414a778f1eb5b197e920904fda575428001adc3a31347bce3fc74dbc8ae9c778",
           "size": 9325,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.2.4": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.markdown-toolbar@1.2.4.zip",
+          "sha256": "fa6f3c17945729e2940834734e77328df6cf94f7fd674f2a80c5805da41e3716",
+          "size": 9524,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
