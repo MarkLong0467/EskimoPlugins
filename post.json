@@ -47,13 +47,6 @@
       "suffix": ""
     },
     {
-      "id": "marklong.better-chat-buttons",
-      "name": "Better Chat Buttons",
-      "version": "1.0.1",
-      "short": "hide the Apps, Gift, Thread and Voice Message buttons, or stop the chat buttons collapsing",
-      "suffix": ""
-    },
-    {
       "id": "marklong.better-devices",
       "name": "Better Devices",
       "version": "1.0.4",

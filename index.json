@@ -3050,45 +3050,6 @@
         "PalmDevs <629368283354628116> (https://github.com/PalmDevs \"Original author\") (https://github.com/PalmDevs/revenge-plugins \"Source\")"
       ]
     },
-    "marklong.better-chat-buttons": {
-      "name": "Better Chat Buttons",
-      "description": "Hide the annoying chat buttons, or make them never collapse, all configurable.",
-      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-      "channels": {
-        "latest": "1.0.1"
-      },
-      "versions": {
-        "1.0.0": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.better-chat-buttons@1.0.0.zip",
-          "sha256": "9cb0f4ab8e1ba932ba608e6faec2d84f7b779f790ca8c1c25b46510269c3aa9e",
-          "size": 6167,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        },
-        "1.0.1": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.better-chat-buttons@1.0.1.zip",
-          "sha256": "3b2978421270dec830d1e73a54ae0811035cb01a6d4350b7b4b1cf17abd44e41",
-          "size": 6577,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        }
-      },
-      "contributors": [
-        "PalmDevs <629368283354628116> (https://github.com/PalmDevs \"Original author\") (https://github.com/PalmDevs/revenge-plugins \"Source\")"
-      ]
-    },
     "marklong.force-timestamp-locale": {
       "name": "Force Timestamp Locale",
       "description": "Forces timestamps to be in a specific language.",
