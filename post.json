@@ -175,7 +175,7 @@
     {
       "id": "marklong.repo-post",
       "name": "Repo Post",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "short": "keeps your repository thread post up to date with the plugin list and versions",
       "suffix": ""
     },
