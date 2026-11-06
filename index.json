@@ -610,11 +610,11 @@
       }
     },
     "marklong.nef-viewer": {
-      "name": "NEF Viewer",
-      "description": "Shows Nikon RAW (.nef, .nrw) attachments as photos in chat instead of files.",
+      "name": "Raw Viewer",
+      "description": "Shows RAW photos (Nikon, Canon, Sony, Fujifilm, Olympus, Panasonic, DNG and more) in chat, and adds an info button and swipe-up metadata sheet with a Google Maps link to every picture.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.0.2"
+        "latest": "1.1.0"
       },
       "versions": {
         "1.0.1": {
@@ -634,6 +634,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.nef-viewer@1.0.2.zip",
           "sha256": "af402237f699fb982343c6d054d0f46fb3e14242e098832e2da795bc59f756ae",
           "size": 3749,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.1.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.nef-viewer@1.1.0.zip",
+          "sha256": "9d53894e2ed2fe080b769a31c7f36e563b44bbd4a892d052718651246561565d",
+          "size": 11414,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
