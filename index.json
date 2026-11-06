@@ -2842,58 +2842,6 @@
         "kmmiio99o <879393496627306587> (https://kmmiio99o.dev \"Original author\") (https://github.com/kmmiio99o \"GitHub\")"
       ]
     },
-    "marklong.toast-api": {
-      "name": "Toast API",
-      "description": "Provides API for custom toast notifications used by other plugins.",
-      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-      "channels": {
-        "latest": "1.0.3"
-      },
-      "versions": {
-        "1.0.1": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.toast-api@1.0.1.zip",
-          "sha256": "7463e6c0971cb22ae1a76f4d2d2cac1ae141d012fe7064fd71c4bb6acfb76564",
-          "size": 16489,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        },
-        "1.0.2": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.toast-api@1.0.2.zip",
-          "sha256": "4e930b67440c3d988efe02241155ed0320cc212c5eefaf9bcce4e18409e181d5",
-          "size": 16064,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        },
-        "1.0.3": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.toast-api@1.0.3.zip",
-          "sha256": "0dd575d07d5bbe20e0bae3b307a98e10a63557360842c909dbcbece16ba91a59",
-          "size": 16063,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        }
-      },
-      "contributors": [
-        "kmmiio99o <879393496627306587> (https://kmmiio99o.dev \"Original author\") (https://github.com/kmmiio99o \"GitHub\")"
-      ]
-    },
     "marklong.better-devices": {
       "name": "Better Devices",
       "description": "Better session control: multi-select logout, new-device alerts, and clearer device details.",
