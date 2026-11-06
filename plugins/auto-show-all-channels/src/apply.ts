@@ -6,6 +6,7 @@ import {
 	hidesChannels,
 	isCommunity,
 	optInActions,
+	showAllByFlags,
 	toast,
 } from './discord'
 import { state } from './state'
@@ -43,14 +44,22 @@ export function showAllIn(guildId: string, how: HistoryEntry['how']): Outcome {
 	if (!isCommunity(guild)) outcome = 'not a community server'
 	else if (!hidesChannels(guildId)) outcome = 'already on'
 	else {
+		// Discord loads `setGuildOptIn` late, the first time it is used. When it is there it is used. When it is not, the
+		// same change is made through the server's notification flags, which is what `setGuildOptIn` ends in.
 		const actions = optInActions()
-		// Discord loads this function late, so it may turn up a moment from now: nothing is recorded and it is tried again.
-		if (!actions) return 'not loaded'
 		try {
-			actions.setGuildOptIn(guildId, false, 'auto_show_all_channels')
-			outcome = 'turned on'
+			if (actions) {
+				actions.setGuildOptIn(guildId, false, 'auto_show_all_channels')
+				outcome = 'turned on'
+			} else if (showAllByFlags(guildId)) {
+				state.byFlags++
+				outcome = 'turned on'
+			} else {
+				// Discord's HTTP object or the server's flags are not loaded yet: nothing is recorded and it is tried again.
+				return 'not loaded'
+			}
 		} catch (error) {
-			diag.fail('setGuildOptIn', error)
+			diag.fail('show all channels', error)
 			outcome = 'failed'
 		}
 	}

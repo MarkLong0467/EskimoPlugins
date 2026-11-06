@@ -7,6 +7,8 @@ export const state = {
 	/** How many join events it saw, and how many servers it dealt with. */
 	joins: 0,
 	turnedOn: 0,
+	/** How many servers were changed through the notification flags, because Discord had not loaded `setGuildOptIn`. */
+	byFlags: 0,
 	alreadyOn: 0,
 	skipped: 0,
 	failed: 0,
@@ -18,6 +20,7 @@ export function resetState(): void {
 	state.armed = false
 	state.joins = 0
 	state.turnedOn = 0
+	state.byFlags = 0
 	state.alreadyOn = 0
 	state.skipped = 0
 	state.failed = 0

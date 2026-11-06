@@ -17,13 +17,16 @@ export const diag = createDiagnostics('Auto Show All Channels', {
 	extra: () => [
 		`Watching for joins: ${state.armed ? 'yes' : 'not yet (Discord is still connecting)'}`,
 		`Joins seen: ${state.joins}`,
-		`Turned on: ${state.turnedOn}, already on: ${state.alreadyOn}, not community: ${state.skipped}, failed: ${state.failed}`,
+		`Turned on: ${state.turnedOn} (${state.byFlags} through the flags), already on: ${state.alreadyOn}, not community: ${state.skipped}, failed: ${state.failed}`,
 		`Servers loaded: ${guildCount()}, community servers: ${allGuilds().filter(isCommunity).length}`,
 	],
 	checks: () => [
 		{
-			ok: !!optInActions(),
-			label: 'Discord’s setGuildOptIn was found',
+			ok: true,
+			label: 'Discord’s setGuildOptIn',
+			detail: optInActions()
+				? 'found'
+				: 'not loaded yet, so the notification flags are changed directly',
 		},
 		{
 			ok: guildCount() > 0,

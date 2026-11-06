@@ -19,7 +19,7 @@
 
 import { DEFAULT_SETTINGS, store } from './config'
 import { diag } from './diag'
-import { optInActions, watchOptIn } from './discord'
+import { optInActions, watchHttp, watchOptIn } from './discord'
 import { watchJoins } from './join'
 import Settings from './Settings'
 import { resetState, state } from './state'
@@ -38,6 +38,7 @@ export default plugin<{ jsonStorage: AutoSettings }>({
 			resetState()
 		})
 		watchOptIn(cleanup)
+		watchHttp(cleanup)
 		state.actionFound = !!diag.guard('find setGuildOptIn', () => optInActions())
 		watchJoins(cleanup)
 		diag.log('plugin', 'started')

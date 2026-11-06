@@ -16,7 +16,9 @@ In a community server, Discord can hide channels until you opt in to them (the s
 
 ## How it works
 
-The switch in Discord's server menu calls `OptInOnboardingUtils.toggleShowAllChannels`, which ends in `OptInChannelsActionCreators.setGuildOptIn(guildId, false)`. The plugin calls the same `setGuildOptIn`.
+The switch in Discord's server menu calls `OptInOnboardingUtils.toggleShowAllChannels`, which ends in `OptInChannelsActionCreators.setGuildOptIn(guildId, false)`. The plugin calls the same `setGuildOptIn` when Discord has loaded it.
+
+Discord only loads that function the first time it is used, which is often after you join a server. So when it is not there, the plugin makes the same change that `setGuildOptIn` ends in: it turns off the opt-in bit (`OPT_IN_CHANNELS_ON`, 16384) in the server's notification flags, keeping every other bit, tells Discord's stores (`USER_GUILD_SETTINGS_GUILD_UPDATE`) so the app shows it at once, and saves it with `PATCH /users/@me/guilds/<id>/settings`.
 
 It learns about a join from two events:
 

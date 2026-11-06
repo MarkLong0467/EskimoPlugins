@@ -16,7 +16,7 @@ globalThis.setTimeout = (fn, ms, ...rest) => realSetTimeout(fn, Math.min(ms ?? 0
 const SECRET_NAME = 'Mark’s secret club'
 
 /** A fake Discord: servers, which of them hide channels, and Discord's own `setGuildOptIn`. */
-function fake({ servers = {}, optIn = [], withAction = true, actionBreaks = false, actionIgnored = false } = {}) {
+function fake({ servers = {}, optIn = [], withAction = true, withHttp = true, actionBreaks = false, actionIgnored = false } = {}) {
 	const guilds = {}
 	const hiding = new Set(optIn)
 	const calls = []
@@ -24,10 +24,14 @@ function fake({ servers = {}, optIn = [], withAction = true, actionBreaks = fals
 		guilds[id] = { id, name, features: { has: feature => feature === 'COMMUNITY' && community } }
 	}
 	for (const [id, options] of Object.entries(servers)) add(id, options)
+	const OPT_IN = 16384
+	const otherBits = {}
+	const patches = []
 	const stores = {
 		GuildStore: { getGuild: id => guilds[id], getGuilds: () => ({ ...guilds }) },
-		UserGuildSettingsStore: { isOptInEnabled: id => hiding.has(id) },
+		UserGuildSettingsStore: { isOptInEnabled: id => hiding.has(id), getGuildFlags: id => (hiding.has(id) ? OPT_IN : 0) | (otherBits[id] ?? 0) },
 	}
+	const http = { HTTPResponseError: class {}, get: async () => ({}), patch: request => (patches.push(request), Promise.resolve({ ok: true })) }
 	const actions = {
 		setGuildOptIn: (id, on, location) => {
 			calls.push([id, on, location])
@@ -35,10 +39,22 @@ function fake({ servers = {}, optIn = [], withAction = true, actionBreaks = fals
 			if (!actionIgnored && !on) hiding.delete(id)
 		},
 	}
+	const events = []
 	const before = runtime => {
 		if (withAction) runtime.valenced.modules.finders.loadModule(actions)
+		// Discord's stores react to the settings event: the server stops hiding channels when the opt-in bit is off.
+		const flux = runtime.valenced.discord.common.flux
+		const dispatch = flux.Dispatcher.dispatch
+		flux.Dispatcher.dispatch = action => {
+			dispatch(action)
+			if (action.type === 'USER_GUILD_SETTINGS_GUILD_UPDATE') {
+				events.push(action)
+				if (!(action.settings.flags & OPT_IN)) hiding.delete(action.guildId)
+			}
+		}
+		if (withHttp) runtime.valenced.modules.finders.loadModule(http)
 	}
-	return { guilds, hiding, calls, add, stores, before }
+	return { guilds, hiding, calls, add, stores, before, otherBits, patches, events, http, OPT_IN }
 }
 
 const start = (f, options = {}) => startPort('auto-show-all-channels', { stores: f.stores, before: f.before, ...options })
@@ -215,17 +231,54 @@ const history = s => s.storage.cache.history ?? []
 		check('if Discord’s function throws it is reported, not thrown', history(s)[0].outcome === 'failed' && s.errors.length === 0, history(s))
 		s.stop()
 	}
+	// --- Discord has not loaded setGuildOptIn: the flags are changed directly
 	{
 		const f = fake({ servers: { old: {} }, withAction: false })
+		const s = await start(f)
+		f.otherBits.g1 = 2048 | 4096
+		join(s, f, 'g1')
+		f.hiding.add('g1')
+		await wait(50)
+		check('without setGuildOptIn the notification flags are changed', f.events.length === 1 && f.events[0].guildId === 'g1', f.events)
+		check('with the opt-in bit off and every other bit kept', f.events[0].settings.flags === (2048 | 4096), f.events[0]?.settings)
+		check('and the setting is saved with the same flags', f.patches.length === 1 && f.patches[0].url === '/users/@me/guilds/g1/settings' && f.patches[0].body.flags === (2048 | 4096), f.patches)
+		check('the server no longer hides channels', !f.hiding.has('g1'))
+		check('the history has it as turned on', history(s)[0]?.outcome === 'turned on', history(s))
+		check('Discord’s own function was not needed', f.calls.length === 0)
+		const view = await s.mountSettings()
+		button(view, 'Run self-check').props.onPress()
+		await view.settle()
+		check('the self-check says how it works', textOf(view.tree).includes('not loaded yet, so the notification flags are changed directly'), textOf(view.tree).slice(-500))
+		button(view, 'Copy logs').props.onPress()
+		await wait(5)
+		check('and the report counts it', /Turned on: 1 \(1 through the flags\)/.test(s.copied.at(-1) || ''), (s.copied.at(-1) || '').split('\n').slice(6, 14))
+		view.unmount()
+		s.stop()
+	}
+	{
+		const f = fake({ servers: { old: {} }, withAction: false, withHttp: false })
 		const s = await start(f)
 		join(s, f, 'g1')
 		f.hiding.add('g1')
 		await wait(30)
-		check('while Discord has not loaded setGuildOptIn nothing is changed or recorded as failed', f.calls.length === 0 && history(s).length === 0, history(s))
-		// Discord loads its module later, the first time it needs it.
-		s.runtime.valenced.modules.finders.loadModule({ setGuildOptIn: (id, on, location) => { f.calls.push([id, on, location]); if (!on) f.hiding.delete(id) } })
+		check('without Discord’s HTTP object either nothing is changed or recorded as failed', f.events.length === 0 && history(s).length === 0, history(s))
+		s.runtime.valenced.modules.finders.loadModule(f.http)
 		await wait(60)
-		check('when Discord loads it the server is changed', f.calls.length === 1 && f.calls[0][0] === 'g1' && history(s)[0]?.outcome === 'turned on', [f.calls, history(s)])
+		check('when Discord loads it the server is changed', f.events.length === 1 && history(s)[0]?.outcome === 'turned on', [f.events.length, history(s)])
+		s.stop()
+	}
+	{
+		const f = fake({ servers: { old: {} }, withAction: false, actionBreaks: false })
+		const s = await start(f)
+		join(s, f, 'g1')
+		f.hiding.add('g1')
+		await wait(10)
+		s.runtime.valenced.modules.finders.loadModule({ setGuildOptIn: (id, on, location) => { f.calls.push([id, on, location]); if (!on) f.hiding.delete(id) } })
+		check('when Discord’s function is there it is used', true)
+		join(s, f, 'g2')
+		f.hiding.add('g2')
+		await wait(60)
+		check('for later servers it is used instead of the flags', f.calls.some(c => c[0] === 'g2'), f.calls)
 		s.stop()
 	}
 
@@ -271,7 +324,7 @@ const history = s => s.storage.cache.history ?? []
 		const report = s.copied.at(-1) || ''
 		check('Copy logs names the plugin and credits the author', report.includes('marklong.auto-show-all-channels 1.0.0') && report.includes('Made by MarkLong0467'))
 		check('the report does not credit kmmiio99o or PalmDevs', !report.includes('kmmiio99o') && !report.includes('PalmDevs'))
-		check('the report has the counts', /Turned on: 2, already on: 0, not community: 0, failed: 0/.test(report) && /Servers loaded: 4, community servers: 3/.test(report), report.split('\n').slice(6, 20))
+		check('the report has the counts', /Turned on: 2 \(0 through the flags\), already on: 0, not community: 0, failed: 0/.test(report) && /Servers loaded: 4, community servers: 3/.test(report), report.split('\n').slice(6, 20))
 		check('the report holds no server names', !report.includes('Alpha') && !report.includes('Beta') && !report.includes(SECRET_NAME))
 		after.unmount()
 		s.stop()
@@ -288,7 +341,7 @@ const history = s => s.storage.cache.history ?? []
 		button(view, 'Run self-check').props.onPress()
 		await view.settle()
 		const checks = textOf(view.tree)
-		check('the self-check finds Discord’s function and the servers', checks.includes('Discord’s setGuildOptIn was found') && checks.includes('Your servers are loaded') && checks.includes('The plugin is watching for joins'), checks.slice(-500))
+		check('the self-check finds Discord’s function and the servers', checks.includes('Discord’s setGuildOptIn found') && checks.includes('Your servers are loaded') && checks.includes('The plugin is watching for joins'), checks.slice(-500))
 		view.unmount()
 		s.stop()
 	}

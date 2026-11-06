@@ -1,3 +1,4 @@
+import { Dispatcher } from '@valenced/discord/common/flux'
 import { Stores } from '@valenced/discord/flux'
 import { getModules, lookupModule } from '@valenced/modules/finders'
 import { withProps } from '@valenced/modules/finders/filters'
@@ -32,6 +33,7 @@ interface GuildStore {
 /** The store that has your settings for each server. */
 interface UserGuildSettingsStore {
 	isOptInEnabled(guildId: string): boolean
+	getGuildFlags?(guildId: string): number
 }
 
 /** One of Discord's Flux stores by name. Nothing if Discord has no such store. */
@@ -121,4 +123,88 @@ export function watchOptIn(
 /** Discord's `setGuildOptIn`, if Discord has loaded it. */
 export function optInActions(): OptInActions | undefined {
 	return cachedActions ?? actionsOf(lookupModule(withProps('setGuildOptIn'))[0])
+}
+
+/**
+ * The bit of a server's notification flags that is Discord's "channel opt-in mode" (`GuildNotificationSettingsFlags`,
+ * `OPT_IN_CHANNELS_ON`). Show All Channels is this bit turned off.
+ */
+export const OPT_IN_CHANNELS_ON = 16384
+
+/** What this plugin uses of Discord's HTTP object. */
+interface Http {
+	get?: unknown
+	patch(request: { url: string; body: unknown }): unknown
+}
+
+/** Discord's HTTP object, kept as soon as Discord loads it (it is the one the HypeSquad Switcher finds, by `HTTPResponseError`). */
+let cachedHttp: Http | undefined
+
+function httpOf(exports: unknown): Http | undefined {
+	const e = exports as (Partial<Http> & { default?: Partial<Http> }) | undefined
+	if (typeof e?.patch === 'function' && typeof e.get === 'function')
+		return e as Http
+	if (
+		typeof e?.default?.patch === 'function' &&
+		typeof e.default.get === 'function'
+	)
+		return e.default as Http
+	return undefined
+}
+
+/** Starts keeping Discord's HTTP object as Discord loads it. */
+export function watchHttp(
+	cleanup: (...fns: Array<() => unknown>) => unknown,
+): void {
+	cleanup(
+		getModules(withProps('HTTPResponseError', 'get'), (exports: unknown) => {
+			cachedHttp = httpOf(exports) ?? cachedHttp
+		}),
+	)
+	cleanup(() => {
+		cachedHttp = undefined
+	})
+}
+
+/** Discord's HTTP object, if Discord has loaded it. */
+function discordHttp(): Http | undefined {
+	return (
+		cachedHttp ??
+		httpOf(lookupModule(withProps('HTTPResponseError', 'get'))[0]) ??
+		httpOf(lookupModule(withProps('get', 'post', 'del', 'patch'))[0])
+	)
+}
+
+/**
+ * Turns Show All Channels on for a server by changing its notification flags the way Discord does: the stores are told
+ * (`USER_GUILD_SETTINGS_GUILD_UPDATE`, which is what makes the app show it at once), and the setting is saved with
+ * `PATCH /users/@me/guilds/<id>/settings`. This is what `setGuildOptIn` ends in, without needing that function, which Discord
+ * only loads when it is first used.
+ *
+ * @returns Whether it was sent. Nothing is sent if the server's flags or Discord's HTTP object are not there.
+ */
+export function showAllByFlags(guildId: string): boolean {
+	const flags = store<UserGuildSettingsStore>(
+		'UserGuildSettingsStore',
+	)?.getGuildFlags?.(guildId)
+	const http = discordHttp()
+	if (typeof flags !== 'number' || !http) return false
+	// OPT_IN_CHANNELS_ON is turned off, and every other bit is kept.
+	const next = flags - (flags & OPT_IN_CHANNELS_ON)
+	Dispatcher.dispatch({
+		type: 'USER_GUILD_SETTINGS_GUILD_UPDATE',
+		guildId,
+		settings: { flags: next },
+	})
+	const sent = http.patch({
+		url: `/users/@me/guilds/${guildId}/settings`,
+		body: { flags: next },
+	})
+	// A refusal arrives later; it is only noted.
+	;(
+		sent as { catch?: (handler: (error: unknown) => void) => void } | undefined
+	)?.catch?.(error =>
+		console.warn('[auto-show-all-channels] save refused:', String(error)),
+	)
+	return true
 }
