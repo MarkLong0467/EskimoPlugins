@@ -16,7 +16,7 @@ The bubble styling itself is done by the native part of **kmmiio Library**, whic
 
 ## Debugging
 
-At the bottom of the settings are two additions that are not in the original:
+At the bottom of the settings is a debugging section that is not in the original:
 
 - **Copy logs** puts a report on the clipboard: the plugin and Discord versions, your phone, the settings (usernames, keys, tokens and links' query strings are hidden), which patches were installed, the errors that were caught and the last events. Paste it in a chat when something breaks.
 - **Run self-check** asks the plugin which of its parts were found and shows the answers on the screen.

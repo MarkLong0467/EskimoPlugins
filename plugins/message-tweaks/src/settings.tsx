@@ -208,8 +208,8 @@ export default function Settings({
 				),
 			},
 			{
-				id: 'about',
-				label: 'About',
+				id: 'debug',
+				label: 'Debug',
 				page: (
 					<ScrollView contentContainerStyle={{ padding: 0 }}>
 						<Stack>

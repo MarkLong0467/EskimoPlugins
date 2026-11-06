@@ -149,10 +149,7 @@ const buttonOf = (view, text) => findNode(view.tree, n => n.type === 'Design.But
 			check(`${name}: the settings screen can be drawn`, false, String(error?.stack ?? error).split(String.fromCharCode(10)).slice(0, 4).join(' | '))
 			continue
 		}
-		const text = textOf(view.tree)
-		check(`${name}: the settings credit kmmiio99o`, text.includes('kmmiio99o'))
-		check(`${name}: the settings name the porter`, text.includes('MarkLong0467'))
-		check(`${name}: the settings link the original source`, !!findNode(view.tree, n => n.type === 'Design.TableRow' && n.props.label === 'Original plugins'))
+		check(`${name}: the settings carry no credit card, credits are in the manifest`, !textOf(view.tree).includes('Ported by'))
 		check(`${name}: the settings end with the debugging section`, !!buttonOf(view, 'Copy logs') && !!buttonOf(view, 'Run self-check'))
 
 		// --- Copy logs
