@@ -22,6 +22,7 @@
 		"marklong.colorful-channels": "colored channel icons for locked and NSFW channels, plus a red NSFW tag",
 		"marklong.crop-plus": "crop pictures much smaller than Discord allows by cropping the result again",
 		"marklong.custom-sounds": "replace any Discord sound with your own link, with seasonal packs",
+		"marklong.custom-rpc-test": "a test of Rich Presence that shows several presences at once, each profile on its own switch",
 		"marklong.force-timestamp-locale": "show every timestamp in one language, such as en-gb 24-hour times",
 		"marklong.haptics": "turn Discord's buzzing on or off, with a log of what buzzed",
 		"marklong.hypesquad": "change your HypeSquad house, or leave it, in one tap",
