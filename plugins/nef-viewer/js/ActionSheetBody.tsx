@@ -87,7 +87,7 @@ function scrollView(props: ScrollProps, children: ReactNode): ReactNode {
 /**
  * The frame of both sheets: Discord's action sheet with a scrolling stack inside it. The scrolling part is at most
  * three quarters of the screen tall, and it can be scrolled with the sheet's own scrolling, so a long sheet can be read to
- * the end and pulled fully open.
+ * the end and pulled fully open. The height is fixed (not the content's) so the sheet does not change size when the picture has been read.
  */
 export default function ActionSheetBody({
 	children,
@@ -99,7 +99,8 @@ export default function ActionSheetBody({
 		<Design.ActionSheet>
 			{scrollView(
 				{
-					style: { maxHeight: Math.round(height * 0.75) },
+					style: { height: Math.round(height * 0.7) },
+					contentContainerStyle: { paddingBottom: 48 },
 					keyboardShouldPersistTaps: 'handled',
 					nestedScrollEnabled: true,
 					showsVerticalScrollIndicator: true,
