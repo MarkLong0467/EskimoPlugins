@@ -1,6 +1,7 @@
 import { Dispatcher } from '@valenced/discord/common/flux'
 import { MAX_BUTTON_LABEL } from './constants'
 import { resolveImage } from './images'
+import { effectiveAppId } from './profiles'
 import { text as fillText, num, parseTime } from './variables'
 import type { Activity, Profile, Runtime } from './types'
 
@@ -78,7 +79,7 @@ export async function buildActivity(
 
 	const appId = String(p.applicationId || '').trim() || '0'
 	const activity: Activity = {
-		application_id: appId,
+		application_id: effectiveAppId(p),
 		name,
 		type: Number(p.type) || 0,
 		flags: 1,

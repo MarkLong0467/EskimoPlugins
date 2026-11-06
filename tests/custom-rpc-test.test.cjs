@@ -5,7 +5,28 @@
  * (build first: bun run build:dev, or just run `bun run test`).
  */
 
-const { createReporter, createRuntime, loadPlugin, startPlugin, findNode, findNodes, textOf, sleep } = require('./lib/harness.cjs')
+const fs = require('node:fs')
+const path = require('node:path')
+const { createReporter, createRuntime, loadPlugin, findNode, findNodes, textOf, sleep, ROOT } = require('./lib/harness.cjs')
+
+/** Starts the plugin with a manifest, as Valenced does, and returns what is needed to stop it. */
+async function startPlugin(definition, runtime, { storage }) {
+	const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugins', 'custom-rpc-test', 'manifest.json'), 'utf8'))
+	const cleanups = []
+	const errors = []
+	const plugin = { manifest: { ...manifest, version: { nums: [0, 2, 0] } }, errors, reportError: e => errors.push(e), requireReload() {}, startedLate: false }
+	const api = { cleanup: (...fns) => cleanups.push(...fns), decorate() {}, jsonStorage: storage, logger: { log() {}, warn() {}, error() {}, info() {}, debug() {} }, plugin, unscoped: runtime.valenced }
+	plugin.api = api
+	await definition.start.call(plugin, { ...api, plugin })
+	return {
+		api,
+		storage,
+		errors,
+		async stop() {
+			for (const cleanup of [...cleanups].reverse()) if (typeof cleanup === 'function') cleanup()
+		},
+	}
+}
 
 const { check, done } = createReporter('CustomRPC Test')
 
@@ -16,12 +37,13 @@ globalThis.setTimeout = (fn, ms, ...rest) => (ms === 3000 ? setImmediate(fn, ...
 const PREFIX = 'EskimoCustomRpcTest:'
 
 /** A profile with the given fields over a blank one. It is switched on unless the fields say otherwise. */
+const TYPE_OF = { a: 0, b: 2, c: 3, d: 5, e: 1 }
 const prof = (id, fields = {}) => ({
 	id,
 	label: id.toUpperCase(),
 	enabled: true,
 	name: `Game ${id}`,
-	type: 0,
+	type: TYPE_OF[id] ?? 0,
 	details: '',
 	detailsUrl: '',
 	state: '',
@@ -51,7 +73,14 @@ const prof = (id, fields = {}) => ({
 /** A fake Discord with the plugin running and the given profiles saved. */
 async function setup({ profiles = [prof('a')], settings = {}, user = { username: 'chase', globalName: 'Chase' }, vars = null } = {}) {
 	const saved = { enabled: true, applyOnStart: true, refreshSeconds: '0', maxActive: '3', editing: profiles[0].id, profiles, ...settings }
-	const runtime = createRuntime({ stores: { UserStore: { getCurrentUser: () => user } } }).install()
+	const copied = []
+	const runtime = createRuntime({
+		stores: { UserStore: { getCurrentUser: () => user }, LocalActivityStore: { getActivities: () => [1, 2, 3] }, SelfPresenceStore: { getActivities: () => [1, 2], getUnfilteredActivities: () => [1, 2, 3] } },
+		overrides: {
+			externals: { ReactNativeClipboard: { Clipboard: { setString: text => copied.push(text), getString: async () => '' } } },
+			discord: { native: { ClientInfoModule: { getConstants: () => ({ Version: '352.6', Build: '352206', ReleaseChannel: 'canary' }) } } },
+		},
+	}).install()
 	delete globalThis.eskimoVars
 	delete globalThis.eskimoTimestamps
 	if (vars) globalThis.eskimoVars = vars
@@ -74,7 +103,7 @@ async function setup({ profiles = [prof('a')], settings = {}, user = { username:
 	const restore = async () => {
 		await running.stop()
 	}
-	return { runtime, running, definition, storage, activities, sent, lastOf, live, toasts, settingsView, restore }
+	return { runtime, running, definition, storage, activities, sent, lastOf, live, toasts, settingsView, restore, copied }
 }
 
 const switchOf = (view, label) => findNode(view.tree, n => n.type === 'Design.TableSwitchRow' && n.props.label === label)
@@ -95,7 +124,7 @@ const inputOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Tex
 	}
 	{
 		const s = await setup({ profiles: [prof('a', { name: '' })] })
-		check('a profile with no name sends a removal and nothing shows', s.activities().length === 1 && s.lastOf('a').activity === null)
+		check('a profile with no name sends nothing and nothing shows', s.activities().length === 0 && s.live().length === 0, s.activities())
 		await s.restore()
 	}
 	{
@@ -196,7 +225,7 @@ const inputOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Tex
 	}
 	{
 		// A looping timer of 2 seconds on one profile, and an elapsed timer on another.
-		const s = await setup({ profiles: [prof('loop', { timestampMode: 'custom', customStart: '1000', customEnd: '1002' }), prof('plain', { timestampMode: 'elapsed' })] })
+		const s = await setup({ profiles: [prof('loop', { type: 2, timestampMode: 'custom', customStart: '1000', customEnd: '1002' }), prof('plain', { type: 3, timestampMode: 'elapsed' })] })
 		const plainSends = s.sent('plain').length
 		const first = s.lastOf('loop').activity.timestamps
 		check('a custom timer with a start and an end is the length between them', first.end - first.start === 2000, first)
@@ -281,7 +310,7 @@ const inputOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Tex
 		check('one hidden by "show only when" says so', switchOf(view, 'GATED').props.subLabel.includes('"show only when" is empty'), switchOf(view, 'GATED').props.subLabel)
 		check('one that is off says off', switchOf(view, 'OFF').props.subLabel === 'Off')
 		check('the heading counts only those shown', textOf(view.tree).includes('Showing now (1 of up to 3)'), textOf(view.tree).slice(0, 500))
-		check('only the one that is shown has a presence: the hidden and nameless ones send only a removal', s.live().join() === 'a' && s.sent('gated').every(a => a.activity === null) && s.sent('noname').every(a => a.activity === null) && s.sent('off').length === 0, s.live())
+		check('only the one that is shown has a presence: the hidden and nameless ones send only a removal', s.live().join() === 'a' && s.sent('gated').length === 0 && s.sent('noname').length === 0 && s.sent('off').length === 0, s.live())
 		view.unmount()
 		await s.restore()
 	}
@@ -302,6 +331,103 @@ const inputOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Tex
 		check('it has the limit field', !!inputOf(view, 'Most presences at once'))
 		check('and the three actions', !!rowOf(view, 'Apply everything now') && !!rowOf(view, 'Apply this profile now') && !!rowOf(view, 'Clear every presence'))
 		check('with the same fields as Rich Presence', ['Activity name', 'Details', 'State', 'Large image', 'Button 1 label', 'Party size'].every(l => !!inputOf(view, l)))
+		view.unmount()
+		await s.restore()
+	}
+
+	// --- Discord keeps only one "Playing" at a time, so only the first one is sent
+	{
+		const s = await setup({ profiles: [prof('p1', { type: 0 }), prof('p2', { type: 0 }), prof('l', { type: 2 }), prof('s', { type: 1 })] })
+		check('of two Playing profiles only the first is sent', s.sent('p1').length > 0 && s.sent('p2').length === 0, s.live())
+		check('the other kinds are sent next to it', s.live().sort().join() === 'l,p1,s', s.live())
+		const view = await s.settingsView()
+		check('the second Playing says why it is not shown', switchOf(view, 'P2').props.subLabel.includes('only one Playing'), switchOf(view, 'P2').props.subLabel)
+		check('and keeps its switch on', switchOf(view, 'P2').props.value === true)
+		check('it does not use up a place in the limit', textOf(view.tree).includes('Showing now (3 of up to 3)'), textOf(view.tree).slice(0, 400))
+		view.unmount()
+		await s.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('p1', { type: 0 }), prof('p2', { type: 2 })], settings: { editing: 'p2' } })
+		const view = await s.settingsView()
+		const group = findNode(view.tree, n => n.type === 'Design.TableRadioGroup' && n.props.title === 'Activity type')
+		check('the Activity type list has the kinds', !!group && group.props.value === 2)
+		group.props.onChange(0)
+		await sleep(900)
+		check('changing a profile to Playing when another already is leaves it out', s.lastOf('p2')?.activity === null && s.live().join() === 'p1', s.live())
+		group.props.onChange(3)
+		await sleep(900)
+		check('changing it to Watching shows it next to the Playing one', s.live().sort().join() === 'p1,p2' && s.lastOf('p2').activity.type === 3, s.live())
+		view.unmount()
+		await s.restore()
+	}
+
+	// --- Each profile has its own application id
+	{
+		const s = await setup({ profiles: [prof('a'), prof('b'), prof('c')] })
+		const ids = ['a', 'b', 'c'].map(id => s.lastOf(id).activity.application_id)
+		check('profiles with no application id are each sent with one of their own', new Set(ids).size === 3 && ids.every(id => /^\d{18}$/.test(id)), ids)
+		check('and not 0, which would make them all the same application', ids.every(id => id !== '0'))
+		await s.restore()
+		const again = await setup({ profiles: [prof('a'), prof('b'), prof('c')] })
+		check('the same profile gets the same id every time', again.lastOf('a').activity.application_id === ids[0] && again.lastOf('c').activity.application_id === ids[2])
+		await again.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('a', { applicationId: ' 123456 ' }), prof('b')] })
+		check('an application id that is typed in is used as it is', s.lastOf('a').activity.application_id === '123456')
+		check('and the other profile keeps its own made-up one', /^\d{18}$/.test(s.lastOf('b').activity.application_id))
+		await s.restore()
+	}
+	{
+		// The same kind, application and name are one activity for Discord.
+		const s = await setup({ profiles: [prof('a', { type: 2, name: 'Same', applicationId: '42' }), prof('b', { type: 2, name: 'Same', applicationId: '42' }), prof('c', { type: 2, name: 'Same', applicationId: '43' })] })
+		check('a profile with the same kind, application and name as an earlier one is left out', s.live().sort().join() === 'a,c', s.live())
+		const view = await s.settingsView()
+		check('and says why', switchOf(view, 'B').props.subLabel.includes('same type, application and name'), switchOf(view, 'B').props.subLabel)
+		view.unmount()
+		await s.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('a', { type: 2, name: 'Same' }), prof('b', { type: 2, name: 'Same' })] })
+		check('two profiles with no application id are not the same, whatever they are called', s.live().sort().join() === 'a,b', s.live())
+		await s.restore()
+	}
+
+	// --- A new profile starts with a kind that can show next to the others
+	{
+		const s = await setup({ profiles: [prof('a', { type: 0 })] })
+		const view = await s.settingsView()
+		rowOf(view, 'New profile').props.onPress()
+		await sleep(700)
+		check('a new profile starts as Listening to when Playing is taken', s.storage.cache.profiles.at(-1).type === 2, s.storage.cache.profiles.at(-1).type)
+		rowOf(view, 'New profile').props.onPress()
+		await sleep(700)
+		check('the next one starts as Watching', s.storage.cache.profiles.at(-1).type === 3)
+		rowOf(view, 'Duplicate profile').props.onPress()
+		await sleep(700)
+		check('a copy starts as the next free kind too, so it can show', s.storage.cache.profiles.at(-1).type === 5)
+		view.unmount()
+		await s.restore()
+	}
+
+	// --- The report
+	{
+		const s = await setup({
+			profiles: [prof('a', { type: 0, name: 'Secret game', details: 'Secret details', applicationId: '99' }), prof('b', { type: 0 }), prof('c', { type: 2 })],
+		})
+		const view = await s.settingsView()
+		const text = textOf(view.tree)
+		check('the settings end with the debugging section', text.includes('DEBUGGING') && !!findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === 'Copy logs'))
+		findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === 'Copy logs').props.onPress()
+		await sleep(10)
+		const report = s.copied.at(-1) || ''
+		check('Copy logs puts a report on the clipboard', report.length > 200)
+		check('the report names the plugin and credits only the author', report.includes('marklong.custom-rpc-test') && report.includes('Made by MarkLong0467') && !report.includes('kmmiio99o') && !report.includes('PalmDevs'), report.split('\n').slice(0, 4))
+		check('it counts the profiles, the ones shown and the ones sent', /Profiles: 3, switched on: 3, shown: 2 \(limit 3\), sent now: 2/.test(report), report.split('\n').slice(6, 18))
+		check('it shows what Discord’s own lists hold, to see where activities are lost', /local store 3, kept by its filter 2, before its filter 3/.test(report), report)
+		check('and says for each profile its kind and why it is or is not shown', /Profile 1: type 0, application set, shown, sent/.test(report) && /Profile 2: type 0, application made up, second playing, not sent/.test(report) && /Profile 3: type 2, application made up, shown, sent/.test(report), report.split('\n').slice(6, 18))
+		check('the report holds no names, texts or application ids', !report.includes('Secret game') && !report.includes('Secret details') && !report.includes('"99"'))
 		view.unmount()
 		await s.restore()
 	}

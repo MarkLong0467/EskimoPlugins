@@ -2,6 +2,7 @@ import { Design } from '@valenced/discord/design'
 import { Clipboard } from '@valenced/externals/react-native-clipboard'
 import { useState } from 'react'
 import { ScrollView } from 'react-native'
+import { DebugSection } from '../../../shared/kmmiio/Debug'
 import {
 	applyAll,
 	applySome,
@@ -13,9 +14,16 @@ import {
 	standingOf,
 } from './apply'
 import { PROFILE_KEYS, TIME_MODES, TYPES } from './constants'
+import { diag } from './diag'
 import Field from './Field'
 import Preview, { describe } from './Preview'
-import { currentProfile, maxActive, merge, newProfile } from './profiles'
+import {
+	currentProfile,
+	maxActive,
+	merge,
+	newProfile,
+	nextFreeType,
+} from './profiles'
 import { read, runtimeOf, setStorage, toast } from './state'
 import { text } from './variables'
 import type { PluginSettingsComponent } from '@valenced/plugins/types'
@@ -46,6 +54,10 @@ const STANDING_TEXT: Record<Standing, string> = {
 	'over the limit': 'On, but over the limit. It shows when there is room',
 	'needs a name': 'On, but it needs an Activity name',
 	'hidden by show only when': 'On, hidden while its "show only when" is empty',
+	'second playing':
+		'On, but Discord shows only one Playing at a time. Change its type to Listening to, Watching or Competing in',
+	duplicate:
+		'On, but it is the same type, application and name as one above, which Discord counts as one',
 }
 
 /** The fields of the profile the live preview follows while typing. */
@@ -268,7 +280,12 @@ export default function Settings({ api }: Props) {
 			'Manage profiles',
 			row('New profile', 'Start from a blank profile', () => {
 				const id = newId()
-				addProfile(newProfile(id, `Profile ${read().profiles.length + 1}`))
+				addProfile(
+					Object.assign(
+						newProfile(id, `Profile ${read().profiles.length + 1}`),
+						{ type: nextFreeType(read()) },
+					),
+				)
 			}),
 			row(
 				'Use for SoundCloud',
@@ -298,6 +315,7 @@ export default function Settings({ api }: Props) {
 					Object.assign({}, source, {
 						id: newId(),
 						label: `${source.label || 'Profile'} copy`,
+						type: nextFreeType(read()),
 					}),
 				)
 			}),
@@ -344,7 +362,7 @@ export default function Settings({ api }: Props) {
 			'applicationId',
 			'Application ID',
 			'',
-			'Create an application at discord.com/developers and paste its ID. Needed for images and asset keys. Leave empty to use none.',
+			'Create an application at discord.com/developers and paste its ID. Needed for asset keys. Leave empty and the plugin makes up a different one for each profile, so Discord shows them as separate activities.',
 			24,
 		),
 		field(
@@ -473,7 +491,7 @@ export default function Settings({ api }: Props) {
 			),
 			row(
 				'Several at once',
-				'Each profile that is on is sent as its own activity, one after another a moment apart. Discord decides how they are shown: the member list shows one, your profile can show several. Give each one its own Activity name.',
+				'Each profile that is on is sent as its own activity, one after another a moment apart. Discord’s app keeps only ONE Playing at a time, so make the others Listening to, Watching, Competing in or Streaming. Those can all show together. Give each one its own Activity name.',
 			),
 			row(
 				'Share activity',
@@ -541,6 +559,7 @@ export default function Settings({ api }: Props) {
 				spacing={24}
 			>
 				{items}
+				<DebugSection diag={diag} />
 			</Design.Stack>
 		</ScrollView>
 	)

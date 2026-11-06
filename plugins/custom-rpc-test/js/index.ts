@@ -27,6 +27,7 @@
 import { onFluxEventDispatched } from '@valenced/discord/flux'
 import { applyAll, clearAll, restartRefresh, scheduleApply } from './apply'
 import { RECONNECT_DELAY_MS } from './constants'
+import { diag } from './diag'
 import { DEFAULT_SETTINGS } from './profiles'
 import Settings from './Settings'
 import { forgetRuntimes, read, setStorage, state } from './state'
@@ -41,7 +42,9 @@ export default plugin<{ jsonStorage: RichPresenceSettings }>({
 	jsonStorage: { load: true, default: DEFAULT_SETTINGS },
 	SettingsComponent: Settings,
 
-	start({ cleanup, jsonStorage }) {
+	start({ cleanup, jsonStorage, plugin }) {
+		diag.attach(plugin)
+		cleanup(diag.listen())
 		setStorage(jsonStorage)
 		shared.eskimoCustomRpcTest = richApi
 		state.active = true

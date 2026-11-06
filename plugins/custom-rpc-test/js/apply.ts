@@ -5,9 +5,9 @@ import {
 	SEND_GAP_MS,
 	TAG,
 } from './constants'
-import { maxActive, wanted } from './profiles'
+import { maxActive, plan, wanted } from './profiles'
 import { allRuntimes, read, runtimeOf, state } from './state'
-import { num, parseTime, text } from './variables'
+import { num, parseTime } from './variables'
 import type { Profile, RichPresenceSettings, Runtime, Standing } from './types'
 
 /** Waits a number of milliseconds. */
@@ -27,26 +27,17 @@ export function loopLength(p: Profile): number | undefined {
 		: undefined
 }
 
-/**
- * Why a profile is shown or not, for the settings screen. A profile is shown when the main switch and its own are on, it is
- * within the limit, it has a name, and its "show only when" text is not empty.
- */
+/** Why a profile is shown or not, for the settings screen. See `plan` for the rules. */
 export function standingOf(
 	settings: RichPresenceSettings,
 	p: Profile,
 ): Standing {
-	if (!settings.enabled || !p.enabled) return 'off'
-	if (!wanted(settings).some(w => w.id === p.id)) return 'over the limit'
-	if (!text(p.name)) return 'needs a name'
-	const gate = String(p.showOnlyWhen || '').trim()
-	if (gate && !text(gate)) return 'hidden by show only when'
-	return 'shown'
+	return plan(settings).why.get(p.id) ?? 'shown'
 }
 
-/** The profiles that are being shown right now, as far as the settings say. */
+/** How many profiles are being shown right now, as far as the settings say. */
 export function shownCount(settings: RichPresenceSettings): number {
-	return settings.profiles.filter(p => standingOf(settings, p) === 'shown')
-		.length
+	return plan(settings).shown.length
 }
 
 /** Keeps the custom timers that loop going. One timer watches all of them: once a second it restarts any that ran out. */

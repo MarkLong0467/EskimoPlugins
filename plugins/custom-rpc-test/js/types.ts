@@ -139,3 +139,5 @@ export type Standing =
 	| 'over the limit'
 	| 'needs a name'
 	| 'hidden by show only when'
+	| 'second playing'
+	| 'duplicate'

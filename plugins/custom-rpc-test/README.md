@@ -8,10 +8,11 @@ It is a separate plugin on purpose: Rich Presence is untouched, and the two can 
 
 - **Each profile has its own switch** under **Showing now**. Every profile that is on is sent to Discord as its own activity, so each one appears as an activity of its own on your profile.
 - **A limit** (**Most presences at once**, 1 to 5, 3 by default). The first profiles that are on, in the order of the list, are shown. One that is on but over the limit waits, and the list says so.
-- **A status under every switch**: shown, off, over the limit, needs an Activity name, or hidden because its "show only when" text is empty.
+- **A status under every switch**: shown, off, over the limit, needs an Activity name, hidden because its "show only when" text is empty, a second Playing, or a duplicate.
 - **Separate timers.** Each profile has its own start time and its own looping countdown, so a looping timer on one does not restart the others. `{uptime}` counts from when that profile was applied.
 - **Edit profile** chooses which profile's fields are below, apart from which are shown.
 - **Three actions**: apply everything, apply only the profile being edited, and clear every presence.
+- **Copy logs and a self-check** at the bottom of the settings. The report has numbers and kinds only, never names or texts.
 
 Everything else is the same as Rich Presence: variables (`{time}`, `{date}`, `{uptime}`, the SoundCloud ones and so on), images from links or asset keys, a timer, a party size, up to two buttons, "show only when", a live preview of the profile being edited, and refreshing every N seconds.
 
@@ -21,10 +22,16 @@ Discord's local activity store keeps one activity **for each socket id** (`LOCAL
 
 The profiles are sent one after another, 0.4 seconds apart, so Discord is not given a burst of presence updates. They are sent again when Discord reconnects, because Discord drops local activities then.
 
+## Two rules of Discord's that decide what shows
+
+Found in Discord's code (`SelfPresenceStore`), and the plugin works with both:
+
+1. **Only one "Playing" at a time.** Discord's app keeps one Playing activity when there are several, and keeps every other kind. So make the others **Listening to**, **Watching**, **Competing in** or **Streaming**, which can all show together next to one Playing. The plugin sends only the first Playing profile and tells you why the others are left out. A new profile starts as the next free kind, so it can show.
+2. **Activities of the same application are one activity.** Rich Presence sends application id `0` for every profile with none of its own. Here, a profile with no Application ID gets its own made-up one (the same every time), so each profile is a different activity. If you type the same Application ID, kind and name in two profiles, one is left out.
+
 ## Things to know while testing
 
-- **Discord's servers decide.** The app has no limit that I found, but the servers may show fewer activities than are sent, and your member-list status shows only one. Your profile can show several.
-- **Give each profile its own Activity name.** Activities with the same name and application can be drawn as one.
+- **Discord's servers decide.** The app has no limit beyond the two rules above that I found, but the servers may show fewer activities than are sent, and your member-list status shows only one. Your profile can show several. The report from Copy logs shows how many activities Discord's own lists hold, to tell where one is lost.
 - **SoundCloud Presence** asks Rich Presence, not this plugin, to resend when the track changes. Here the track shows on the next refresh, so set **Refresh every (seconds)** to 15 or more for a SoundCloud profile.
 - Discord doesn't show buttons on your own profile, and your presence only shows if Discord may share your activity in your privacy settings.
 
