@@ -17,6 +17,9 @@ before leaving it out (this can be switched off). Reactions are added one second
 fast they can be added; you can pick a different pause in the settings.
 The sheet slides in when it opens. If that lags on your phone, turn off **Opening animation** in the settings and it pops up at once.
 
+The sheet shows how full the message is: **Up to X different reactions fit on this message** and **N/20 reactions**. A text that
+needs more new reactions than fit is refused with the numbers. An emoji the message already has costs no space.
+
 ## Your own emoji
 
 In the settings you can:

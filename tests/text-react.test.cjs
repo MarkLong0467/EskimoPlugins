@@ -17,8 +17,8 @@ const put = (channel, message, emoji) => `/channels/${channel}/messages/${messag
  * Builds a fake Discord with a web connection that records every PUT, and the plugin running. `answer(url, n)` can make
  * a request fail by returning an error to throw.
  */
-async function setup({ saved = {}, answer = () => undefined, token = null, withHttp = true } = {}) {
-	const runtime = createRuntime().install()
+async function setup({ saved = {}, answer = () => undefined, token = null, withHttp = true, messages = {} } = {}) {
+	const runtime = createRuntime({ stores: { MessageStore: { getMessage: (channel, id) => messages[channel + ':' + id] } } }).install()
 	const { valenced } = runtime
 	valenced.assets.getAssetIdByName = name => (name === 'KeyboardIcon' ? 99 : name)
 	const urls = []
@@ -390,6 +390,44 @@ async function setup({ saved = {}, answer = () => undefined, token = null, withH
 		s.jsx.jsx('Group', { children: [tapRow('A'), tapRow('B')] })
 		const unknown = s.jsx.jsx('Group', { children: [tapRow('C'), tapRow('D'), tapRow('E')] })
 		check('with no message known the row is not added by position', unknown.props.children.length === 3)
+		await s.running.stop()
+	}
+
+
+	// --- How many reactions fit on the message
+	{
+		const reactions = [...'abcde'].map(n => ({ emoji: { id: null, name: n === 'a' ? '🍎' : '🔸' + n } }))
+		const s = await setup({ messages: { 'chan1:msg1': { id: 'msg1', channel_id: 'chan1', reactions } } })
+		const { view } = await s.openSheet()
+		const text = JSON.stringify(view.tree)
+		check('the sheet says how many different reactions fit', text.includes('Up to 15 different reactions fit on this message'), text.slice(0, 200))
+		check('and how full the message is', text.includes('5/20 reactions'))
+		await s.running.stop()
+	}
+	{
+		const reactions = Array.from({ length: 19 }, (_, i) => ({ emoji: { id: null, name: 'x' + i } }))
+		const s = await setup({ messages: { 'chan1:msg1': { id: 'msg1', channel_id: 'chan1', reactions } } })
+		const { view } = await s.openSheet()
+		await s.type(view, 'hi')
+		s.button(view, 'React').props.onPress()
+		await sleep(80)
+		check('a text that needs more new reactions than fit is refused', s.urls.length === 0 && s.toasts().includes('Only 1 more different reactions fit on this message, and this text needs 2'), s.toasts())
+		await s.running.stop()
+	}
+	{
+		const reactions = [...Array.from({ length: 19 }, (_, i) => ({ emoji: { id: null, name: 'x' + i } })), { emoji: { id: null, name: '🇭' } }]
+		const s = await setup({ messages: { 'chan1:msg1': { id: 'msg1', channel_id: 'chan1', reactions } } })
+		const { view } = await s.openSheet()
+		await s.type(view, 'h')
+		s.button(view, 'React').props.onPress()
+		await sleep(80)
+		check('an emoji already on a full message still fits', s.urls.length === 1, s.toasts())
+		await s.running.stop()
+	}
+	{
+		const s = await setup()
+		const { view } = await s.openSheet()
+		check('a message that is not in the store shows no counts', !JSON.stringify(view.tree).includes('reactions fit'))
 		await s.running.stop()
 	}
 

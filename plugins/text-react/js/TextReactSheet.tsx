@@ -2,6 +2,7 @@ import { ActionSheetActionCreators } from '@valenced/discord/actions'
 import { Design } from '@valenced/discord/design'
 import { createContext, createElement, useContext, useState } from 'react'
 import { View } from 'react-native'
+import { newReactions, reactionCapacity } from './capacity'
 import { setting } from './config'
 import { MAX_REACTIONS, SHEET_KEY } from './constants'
 import { motionContext, toast } from './discord'
@@ -46,6 +47,13 @@ export default function TextReactSheet({ target }: { target: Target }) {
 	const accessibility = useContext(Motion ?? FALLBACK_CONTEXT)
 	const [confirm, setConfirm] = useState<string[] | null>(null)
 
+	// How full the message is, read again each time the sheet draws.
+	const room = reactionCapacity(target)
+	const fits = room
+		? `Up to ${room.left} different reactions fit on this message`
+		: ''
+	const counted = room ? `${room.used}/${MAX_REACTIONS} reactions` : ''
+
 	/** Closes the sheet and adds the reactions in the background. */
 	const go = (emoji: string[]) => {
 		close()
@@ -60,9 +68,12 @@ export default function TextReactSheet({ target }: { target: Target }) {
 		})
 		if (!emoji.length)
 			return toast('None of that text can be turned into reactions')
-		if (emoji.length > MAX_REACTIONS)
+		const fresh = room ? newReactions(emoji, room) : emoji.length
+		if (room ? fresh > room.left : emoji.length > MAX_REACTIONS)
 			return toast(
-				`That is ${emoji.length} reactions. A message holds at most ${MAX_REACTIONS}`,
+				room
+					? `Only ${room.left} more different reactions fit on this message, and this text needs ${fresh}`
+					: `That is ${emoji.length} reactions. A message holds at most ${MAX_REACTIONS}`,
 			)
 		if (incomplete && setting('warn')) return setConfirm(emoji)
 		go(emoji)
@@ -91,6 +102,16 @@ export default function TextReactSheet({ target }: { target: Target }) {
 						<Design.Text variant="text-sm/medium" color="text-muted">
 							{HELP}
 						</Design.Text>
+						{room ? (
+							<>
+								<Design.Text variant="text-sm/medium" color="text-muted">
+									{fits}
+								</Design.Text>
+								<Design.Text variant="text-sm/medium" color="text-muted">
+									{counted}
+								</Design.Text>
+							</>
+						) : null}
 						<Design.TextInput
 							label="Text"
 							placeholder="Enter text..."
