@@ -1,7 +1,7 @@
 import { Stores } from '@valenced/discord/flux'
-import { lookupModule } from '@valenced/modules/finders'
+import { getModules, lookupModule } from '@valenced/modules/finders'
+import { withProps } from '@valenced/modules/finders/filters'
 import { openToast } from '../../../shared/kmmiio/toast'
-import { propsFilter } from '../../../shared/palmdevs/finders'
 
 /** The id of the toasts this plugin shows. */
 const TOAST_KEY = 'MARKLONG_AUTO_SHOW_ALL_CHANNELS'
@@ -90,13 +90,35 @@ interface OptInActions {
 	setGuildOptIn(guildId: string, optInEnabled: boolean, location?: string): void
 }
 
-/** Discord's `setGuildOptIn`. */
-export function optInActions(): OptInActions | undefined {
-	const found = lookupModule(propsFilter('setGuildOptIn'))[0] as
+/** Discord's `setGuildOptIn`, kept as soon as Discord loads its module. Discord loads modules late, when they are first needed. */
+let cachedActions: OptInActions | undefined
+
+/** The function inside what a finder gave: the object itself or its default export. */
+function actionsOf(exports: unknown): OptInActions | undefined {
+	const found = exports as
 		| (Partial<OptInActions> & { default?: Partial<OptInActions> })
 		| undefined
 	if (typeof found?.setGuildOptIn === 'function') return found as OptInActions
 	if (typeof found?.default?.setGuildOptIn === 'function')
 		return found.default as OptInActions
 	return undefined
+}
+
+/** Starts keeping `setGuildOptIn` as Discord loads it. */
+export function watchOptIn(
+	cleanup: (...fns: Array<() => unknown>) => unknown,
+): void {
+	cleanup(
+		getModules(withProps('setGuildOptIn'), (exports: unknown) => {
+			cachedActions = actionsOf(exports) ?? cachedActions
+		}),
+	)
+	cleanup(() => {
+		cachedActions = undefined
+	})
+}
+
+/** Discord's `setGuildOptIn`, if Discord has loaded it. */
+export function optInActions(): OptInActions | undefined {
+	return cachedActions ?? actionsOf(lookupModule(withProps('setGuildOptIn'))[0])
 }

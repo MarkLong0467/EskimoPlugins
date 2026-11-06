@@ -1,8 +1,10 @@
 import { getModules } from '@valenced/modules/finders'
 import { displayNameFilter, memoOf } from '../../../shared/palmdevs/finders'
+import { installJsxFinder } from '../../../shared/palmdevs/jsxFind'
 import { hidden, store } from './config'
 import { diag } from './diag'
 import { state } from './state'
+import type { JsxRule } from '../../../shared/palmdevs/jsxFind'
 
 /** Registers a function to run when the plugin stops. */
 type Cleanup = (...fns: Array<() => unknown>) => unknown
@@ -52,27 +54,40 @@ export function installPatches(cleanup: Cleanup): void {
 	const wrappedSend = new WeakSet<object>()
 	const wrappedActions = new WeakSet<object>()
 
-	/** Finds a chat bar part by its name and patches it when Discord has loaded it. */
+	/** The rules for the JSX runtime, which tell the plugin when Discord first draws each part. */
+	const rules: JsxRule[] = []
+
+	/**
+	 * Finds a chat bar part by its name and patches it.
+	 *
+	 * Two ways of finding it work together, and the first to find a part patches it: Discord drawing it (the JSX runtime,
+	 * which tells the plugin before the part is first drawn), and Discord's module being loaded (the module search, which
+	 * only sees modules Discord has already loaded).
+	 */
 	const onComponent = (
 		name: string,
 		apply: (component: ForwardRefComponent) => void,
 	) => {
-		cleanup(
-			getModules(displayNameFilter(name), (exports: unknown) => {
-				if (found.has(name)) return
-				const component = memoOf<ForwardRefComponent>(exports)?.type
-				if (!component || typeof component.render !== 'function') {
-					diag.log(
-						'find',
-						`${name}: found, but it has no render function`,
-						'warn',
-					)
-					return
-				}
-				found.add(name)
-				apply(component)
-			}),
-		)
+		const take = (given: unknown) => {
+			if (found.has(name)) return
+			// What Discord draws is a `React.memo` of the `forwardRef` component, and the `forwardRef` has `render`.
+			const component =
+				memoOf<ForwardRefComponent>(given)?.type ??
+				(given as ForwardRefComponent | undefined)
+			if (!component || typeof component.render !== 'function') {
+				diag.log(
+					'find',
+					`${name}: found, but it has no render function`,
+					'warn',
+				)
+				return
+			}
+			found.add(name)
+			diag.log('found', name)
+			apply(component)
+		}
+		rules.push({ name, seen: take })
+		cleanup(getModules(displayNameFilter(name), take))
 	}
 
 	onComponent('ChatInputSendButton', component => {
@@ -175,4 +190,7 @@ export function installPatches(cleanup: Cleanup): void {
 			),
 		)
 	})
+
+	state.jsx = installJsxFinder(cleanup, rules)
+	if (!state.jsx) diag.log('jsx', 'The JSX runtime was not found', 'warn')
 }

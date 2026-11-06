@@ -1,6 +1,5 @@
-import { lookupModule } from '@valenced/modules/finders'
 import { createDiagnostics } from '../../../shared/kmmiio/diagnostics'
-import { propsFilter } from '../../../shared/palmdevs/finders'
+import { hasDiscordClear } from './clear'
 import { state } from './state'
 
 /**
@@ -14,33 +13,31 @@ export const diag = createDiagnostics('No Suggestions', {
 		'Ported to Valenced by MarkLong0467 (https://github.com/MarkLong0467)',
 	],
 	extra: () => [
-		`Suggested sections patched: ${state.patched}`,
+		`Watching the JSX runtime: ${state.jsx ? 'yes' : 'no'}`,
+		`Section replaced: ${state.replaced} time(s), patched in its module: ${state.patched}`,
 		`Rendered while empty: ${state.empty}`,
-		`Cleared: ${state.cleared} time(s), ${state.channelsCleared} channel(s)`,
+		`Cleared: ${state.cleared} time(s), ${state.channelsCleared} channel(s) (by Discord's function ${state.clearedByDiscord}, by the event ${state.clearedByEvent})`,
 	],
-	checks: () => {
-		let clear = false
-		try {
-			clear =
-				typeof (
-					lookupModule(propsFilter('clearRecentChannels'))[0] as
-						| { clearRecentChannels?: unknown }
-						| undefined
-				)?.clearRecentChannels === 'function'
-		} catch {
-			clear = false
-		}
-		return [
-			{
-				ok: state.patched > 0,
-				label: 'The suggested channels section was found and patched',
-				detail: state.patched > 0 ? undefined : 'Open a server to load it',
-			},
-			{
-				ok: clear,
-				label: 'Discord’s "clear recent channels" was found',
-			},
-		]
-	},
-	consolePrefixes: ['[no-suggestions'],
+	checks: () => [
+		{
+			ok: state.jsx,
+			label: 'The plugin is watching Discord’s components',
+		},
+		{
+			ok: state.replaced > 0 || state.patched > 0,
+			label: 'The suggested channels section was found',
+			detail:
+				state.replaced > 0 || state.patched > 0
+					? undefined
+					: 'Open a server that has the Suggested section',
+		},
+		{
+			ok: hasDiscordClear() || state.clearedByEvent > 0,
+			label: 'Suggestions can be cleared',
+			detail: hasDiscordClear()
+				? 'Discord’s own function was found'
+				: 'Discord has not loaded its function yet, so the event alone is used',
+		},
+	],
+	consolePrefixes: ['[no-suggestions', '[jsxFind'],
 })

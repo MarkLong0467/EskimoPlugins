@@ -1,6 +1,7 @@
 import {
 	createFilterGenerator,
 	FilterScopes,
+	withProps,
 } from '@valenced/modules/finders/filters'
 
 /**
@@ -15,14 +16,15 @@ import {
 const isObjectLike = (value: unknown): value is Record<string, unknown> =>
 	value != null && (typeof value === 'object' || typeof value === 'function')
 
-/** A filter for modules that have all of the named properties (on the module, or on its default export). */
+/**
+ * A filter for modules that have all of the named properties (on the module, or on its default export).
+ *
+ * This is Valenced's own `withProps`, which is the search the other plugins use. A search of your own made with
+ * `createFilterGenerator` should only be used when `withProps` cannot do it.
+ */
 export function propsFilter(...props: string[]) {
-	return createFilterGenerator<[props: string[]]>(
-		([wanted], _id, exports: unknown) =>
-			isObjectLike(exports) && wanted.every(prop => prop in exports),
-		([wanted]) => `palmdevs.props(${wanted.join(',')})`,
-		FilterScopes.Initialized,
-	)(props)
+	const [first, ...rest] = props
+	return withProps(first as string, ...rest)
 }
 
 /**

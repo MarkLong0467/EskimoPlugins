@@ -74,25 +74,46 @@ export default plugin<{ jsonStorage: LocaleSettings }>({
 				resetState()
 			})
 
-			const loaders = findLocaleLoaders()
-			if (!loaders)
-				diag.log('locales', 'The list of locales was not found', 'warn')
-			for (const name in loaders ?? {}) {
-				if (stopped) return
-				try {
-					await (loaders as Record<string, () => Promise<unknown>>)[name]?.()
-					state.loaded++
-				} catch (error) {
-					state.failed++
-					diag.fail(`locale ${name}`, error)
+			/** Loads every locale, then applies the chosen one. Done once, whichever way the list of locales turns up. */
+			let loading = false
+			const loadAll = async (
+				loaders: Record<string, () => Promise<unknown>>,
+			) => {
+				if (loading) return
+				loading = true
+				for (const name in loaders) {
+					if (stopped) return
+					try {
+						await loaders[name]?.()
+						state.loaded++
+					} catch (error) {
+						state.failed++
+						diag.fail(`locale ${name}`, error)
+					}
 				}
+				if (stopped) return
+				state.ready = true
+				applyLocale(moment, store.get('locale'))
+				diag.log(
+					'locale',
+					`${store.get('locale')} applied, ${state.loaded} loaded`,
+				)
 			}
-			if (stopped) return
-			state.ready = true
+
+			const loaders = diag.guard('find locales', () => findLocaleLoaders())
+			if (loaders) {
+				await loadAll(loaders)
+				return
+			}
+			// Discord loads its list of locales late, so it is waited for. The chosen locale is applied right away in case
+			// its data is already there.
+			diag.log('locales', 'not loaded yet, waiting', 'warn')
 			applyLocale(moment, store.get('locale'))
-			diag.log(
-				'locale',
-				`${store.get('locale')} applied, ${state.loaded} loaded`,
+			cleanup(
+				getModules(propsFilter('momentLocales'), () => {
+					const late = findLocaleLoaders()
+					if (late) loadAll(late).catch(error => diag.fail('locales', error))
+				}),
 			)
 		}
 

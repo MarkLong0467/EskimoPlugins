@@ -1,11 +1,13 @@
 /** What was found and patched, and what the plugin did, for the settings screen and the report. */
 export const state = {
-	/** The DM header buttons were patched. */
+	/** The DM header was seen being drawn, and the hook that replaces it is on. */
 	buttons: false,
-	/** Discord's `ring` was patched. */
+	jsxButtons: false,
+	/** The ring request is being watched (Discord's HTTP object was found and patched). */
 	ring: false,
-	/** The speaker button of the voice panel was patched. */
+	/** The speaker button of the voice panel was seen being drawn, and the hook that replaces it is on. */
 	speaker: false,
+	jsxSpeaker: false,
 	/** How many calls were made without ringing. */
 	silenced: 0,
 	/** How many calls rang. */
@@ -19,8 +21,10 @@ export const state = {
 /** Forgets what happened. Used when the plugin stops. */
 export function resetState(): void {
 	state.buttons = false
+	state.jsxButtons = false
 	state.ring = false
 	state.speaker = false
+	state.jsxSpeaker = false
 	state.silenced = 0
 	state.rang = 0
 	state.toggles = 0

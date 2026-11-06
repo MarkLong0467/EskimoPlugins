@@ -7,11 +7,17 @@
  *
  * How it works. Discord draws the section with `SuggestedCategory({ guildId, channelIds, withMarginTop })` from
  * `modules/channel_list_v2/native/items`. This plugin replaces it: with no suggestions it draws nothing, and with some it
- * asks Discord to clear them (`clearRecentChannels`) and draws the section with none.
+ * clears them (the same `BULK_CLEAR_RECENTS` Discord's own "clear" option sends) and draws the section with none.
+ *
+ * How it finds the section. The original found Discord's module with `findByProps`. Valenced's finders only see modules that
+ * Discord has already loaded, so the plugin watches the JSX runtime for the component by its name instead (see `jsxFind.ts`),
+ * which needs no module. The module is patched too, if it is found, as a second way.
  */
 
-import { getModules, lookupModule } from '@valenced/modules/finders'
-import { propsFilter } from '../../../shared/palmdevs/finders'
+import { getModules } from '@valenced/modules/finders'
+import { withProps } from '@valenced/modules/finders/filters'
+import { installJsxFinder } from '../../../shared/palmdevs/jsxFind'
+import { clearSuggestions, watchForClear } from './clear'
 import { diag } from './diag'
 import Settings from './Settings'
 import { resetState, state } from './state'
@@ -23,17 +29,58 @@ interface SuggestedProps {
 	[key: string]: unknown
 }
 
+/** Draws the suggested section. */
+type SuggestedCategory = (props: SuggestedProps) => unknown
+
 /** Something that has the section as a property. */
 interface Datasource {
-	SuggestedCategory: (props: SuggestedProps) => unknown
+	SuggestedCategory: SuggestedCategory
 }
 
-/** Asks Discord to clear the recent channels of a server. */
-function clearRecentChannels(guildId: string, channelIds: string[]): void {
-	const found = lookupModule(propsFilter('clearRecentChannels'))[0] as
-		| { clearRecentChannels?: (guildId: string, channelIds: string[]) => void }
-		| undefined
-	found?.clearRecentChannels?.(guildId, channelIds)
+/** Set while the plugin's own version is drawing, so the other way of finding the section does not do it twice. */
+let drawing = false
+
+/**
+ * What the section draws: nothing with no suggestions, and with some, it clears them and draws the section with none.
+ *
+ * Discord's own component is run in both cases, so that its hooks run on every draw (a component that skips them on one draw
+ * makes React fail). With no suggestions its result is thrown away.
+ */
+function suggested(
+	props: SuggestedProps,
+	original: SuggestedCategory,
+): unknown {
+	if (drawing) return original(props)
+	drawing = true
+	try {
+		// If it still gets rendered without any suggestions, we can just render an empty section.
+		// There is no need to send an unnecessary request to clear the recent channels.
+		if (!props?.channelIds?.length) {
+			state.empty++
+			original(props)
+			return null
+		}
+		state.cleared++
+		state.channelsCleared += props.channelIds.length
+		clearSuggestions(props.guildId, props.channelIds)
+		return original({ ...props, channelIds: [] })
+	} finally {
+		drawing = false
+	}
+}
+
+/** The component that stands in for a copy of Discord's section. One for each copy, always the same one. */
+const stand = new WeakMap<object, SuggestedCategory>()
+
+function standInFor(original: SuggestedCategory): SuggestedCategory {
+	let made = stand.get(original)
+	if (!made) {
+		made = function SuggestedCategoryWithoutSuggestions(props) {
+			return suggested(props, original)
+		}
+		stand.set(original, made)
+	}
+	return made
 }
 
 export default plugin({
@@ -43,14 +90,28 @@ export default plugin({
 		diag.attach(plugin)
 		cleanup(diag.listen())
 		cleanup(resetState)
+		watchForClear(cleanup)
 
-		// More than one module has the section (the file that defines it and the one that re-exports it), and Discord reads it
-		// from one of them, so every copy is patched.
+		// The main way: watch for the section being drawn.
+		state.jsx = installJsxFinder(cleanup, [
+			{
+				name: 'SuggestedCategory',
+				seen: () => diag.log('found', 'SuggestedCategory was drawn'),
+				replace: type => {
+					if (typeof type !== 'function') return undefined
+					state.replaced++
+					return standInFor(type as SuggestedCategory)
+				},
+			},
+		])
+		if (!state.jsx) diag.log('jsx', 'The JSX runtime was not found', 'warn')
+
+		// The second way: patch the module that has the section, if Discord has loaded it.
 		const patched = new Set<object>()
 		cleanup(
-			getModules(propsFilter('SuggestedCategory'), (exports: unknown) => {
-				const found = exports as { default?: unknown } | null
-				const datasource = [exports, found?.default].find(
+			getModules(withProps('SuggestedCategory'), (exports: unknown) => {
+				const module = exports as { default?: unknown } | null
+				const datasource = [exports, module?.default].find(
 					candidate =>
 						!!candidate &&
 						typeof (candidate as Partial<Datasource>).SuggestedCategory ===
@@ -60,34 +121,12 @@ export default plugin({
 				patched.add(datasource)
 
 				cleanup(
-					diag.apply('SuggestedCategory', () => {
+					diag.apply('SuggestedCategory (module)', () => {
 						const unpatch = valenced.patcher.instead(
 							datasource,
 							'SuggestedCategory',
-							(
-								args: [SuggestedProps],
-								original: Datasource['SuggestedCategory'],
-							) => {
-								const props = args[0]
-								// If it still gets rendered without any suggestions, we can just render an empty section.
-								// There is no need to send an unnecessary request to clear the recent channels.
-								if (!props?.channelIds?.length) {
-									state.empty++
-									// Discord's own component is run first, and its result thrown away, so that its hooks run on
-									// every draw (a component that skips them on one draw makes React fail).
-									original(props)
-									return null
-								}
-								state.cleared++
-								state.channelsCleared += props.channelIds.length
-								diag.guard('clear', () =>
-									clearRecentChannels(
-										props.guildId,
-										props.channelIds as string[],
-									),
-								)
-								return original({ ...props, channelIds: [] })
-							},
+							((args: [SuggestedProps], original: SuggestedCategory) =>
+								suggested(args[0], original)) as never,
 						)
 						state.patched++
 						return unpatch

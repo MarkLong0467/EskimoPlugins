@@ -220,8 +220,12 @@ const history = s => s.storage.cache.history ?? []
 		const s = await start(f)
 		join(s, f, 'g1')
 		f.hiding.add('g1')
-		await wait(40)
-		check('without Discord’s function nothing breaks and the server is reported as failed', history(s)[0].outcome === 'failed' && f.calls.length === 0)
+		await wait(30)
+		check('while Discord has not loaded setGuildOptIn nothing is changed or recorded as failed', f.calls.length === 0 && history(s).length === 0, history(s))
+		// Discord loads its module later, the first time it needs it.
+		s.runtime.valenced.modules.finders.loadModule({ setGuildOptIn: (id, on, location) => { f.calls.push([id, on, location]); if (!on) f.hiding.delete(id) } })
+		await wait(60)
+		check('when Discord loads it the server is changed', f.calls.length === 1 && f.calls[0][0] === 'g1' && history(s)[0]?.outcome === 'turned on', [f.calls, history(s)])
 		s.stop()
 	}
 

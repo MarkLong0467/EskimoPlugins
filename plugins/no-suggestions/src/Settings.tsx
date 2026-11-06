@@ -18,7 +18,7 @@ export default function Settings() {
 	const [, redraw] = useState(0)
 	useEffect(() => diag.subscribe(() => redraw(n => n + 1)), [])
 
-	const patched = state.patched > 0
+	const patched = state.replaced > 0 || state.patched > 0
 	return (
 		<ScrollView
 			style={{ flex: 1 }}

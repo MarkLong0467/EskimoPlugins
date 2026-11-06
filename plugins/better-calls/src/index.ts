@@ -17,10 +17,11 @@
  * - `Settings.tsx` is the settings screen, and `config.ts`, `state.ts`, `discord.ts` and `diag.ts` are helpers.
  */
 
-import { getAudioDevices } from './audio'
+import { getAudioDevices, watchAudio } from './audio'
 import { DEFAULT_SETTINGS, setDevice, store } from './config'
 import { diag } from './diag'
 import { installRememberDevice } from './rememberOutputDevice'
+import { installRingBlock } from './ringBlock'
 import Settings from './Settings'
 import { installSilentCall } from './silentCall'
 import { resetState } from './state'
@@ -59,6 +60,7 @@ export default plugin<{ jsonStorage: CallSettings }>({
 		diag.attach(plugin)
 		cleanup(diag.listen())
 		store.attach(jsonStorage)
+		watchAudio(cleanup)
 
 		let removeSilent: (() => void) | undefined
 		let removeRemember: (() => void) | undefined
@@ -69,7 +71,14 @@ export default plugin<{ jsonStorage: CallSettings }>({
 			if (!store.get('silentCall').enabled) {
 				removeSilent?.()
 				removeSilent = undefined
-			} else if (!removeSilent) removeSilent = installSilentCall()
+			} else if (!removeSilent) {
+				const removeButtons = installSilentCall()
+				const removeRing = installRingBlock()
+				removeSilent = () => {
+					removeButtons()
+					removeRing()
+				}
+			}
 
 			if (!store.get('rememberOutputDevice').enabled) {
 				removeRemember?.()

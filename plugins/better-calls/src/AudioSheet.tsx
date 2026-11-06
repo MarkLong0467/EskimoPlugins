@@ -13,7 +13,8 @@ import { DEVICE_SHEET_KEY, sheets } from './discord'
 
 /** Texts as constants because React Native text must be passed as an expression. */
 const TITLE = 'Select Preferred Audio Output Device'
-const NO_DEVICES = 'No audio output devices were found on this phone.'
+const NO_DEVICES =
+	'No audio output devices were found yet. Discord loads the device list the first time you use a call, so start or join a call once and open this again.'
 const FROM_CALL_HELP =
 	'Alternatively, you can swipe up the dock and use the Change Audio Output option.'
 

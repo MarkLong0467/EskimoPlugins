@@ -44,15 +44,14 @@ export function showAllIn(guildId: string, how: HistoryEntry['how']): Outcome {
 	else if (!hidesChannels(guildId)) outcome = 'already on'
 	else {
 		const actions = optInActions()
-		if (!actions) outcome = 'failed'
-		else {
-			try {
-				actions.setGuildOptIn(guildId, false, 'auto_show_all_channels')
-				outcome = 'turned on'
-			} catch (error) {
-				diag.fail('setGuildOptIn', error)
-				outcome = 'failed'
-			}
+		// Discord loads this function late, so it may turn up a moment from now: nothing is recorded and it is tried again.
+		if (!actions) return 'not loaded'
+		try {
+			actions.setGuildOptIn(guildId, false, 'auto_show_all_channels')
+			outcome = 'turned on'
+		} catch (error) {
+			diag.fail('setGuildOptIn', error)
+			outcome = 'failed'
 		}
 	}
 

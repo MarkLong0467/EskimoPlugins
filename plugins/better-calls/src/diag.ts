@@ -50,31 +50,58 @@ export const diag = createDiagnostics('Better Calls', {
 		return [
 			{
 				ok: !silent || state.ring,
-				label: 'Discord’s ring was patched',
+				label: 'The ring request is being watched',
+				detail: silent
+					? state.ring
+						? undefined
+						: 'Discord’s HTTP object was not found'
+					: 'Silent calls are off',
+			},
+			{
+				ok: !silent || state.jsxButtons,
+				label: 'The plugin is watching for the DM header',
 				detail: silent ? undefined : 'Silent calls are off',
 			},
 			{
 				ok: !silent || state.buttons,
-				label: 'The DM header buttons were patched',
+				label: 'The DM header was found',
 				detail: silent
 					? state.buttons
 						? undefined
-						: 'Open a DM to load them'
+						: 'Open a DM to load it'
 					: 'Silent calls are off',
 			},
 			{
 				ok: !remember || state.speaker,
-				label: 'The speaker button of the voice panel was patched',
+				label: 'The speaker button of the voice panel was found',
 				detail: remember
 					? state.speaker
 						? undefined
 						: 'Join a call to load it'
 					: 'Remembering the device is off',
 			},
-			{ ok: parts.store, label: 'The phone’s audio device list was found' },
-			{ ok: parts.action, label: 'The audio output action was found' },
-			{ ok: parts.helpers, label: 'The icons and names of devices were found' },
+			{
+				ok: parts.store,
+				label: 'The phone’s audio device list was found',
+				detail: parts.store
+					? undefined
+					: 'Discord loads it when a call is first used',
+			},
+			{
+				ok: parts.action,
+				label: 'The audio output action was found',
+				detail: parts.action
+					? undefined
+					: 'Discord loads it when a call is first used',
+			},
+			{
+				ok: parts.helpers,
+				label: 'The icons and names of devices were found',
+				detail: parts.helpers
+					? undefined
+					: 'Discord loads them when a call is first used',
+			},
 		]
 	},
-	consolePrefixes: ['[better-calls'],
+	consolePrefixes: ['[better-calls', '[jsxFind'],
 })

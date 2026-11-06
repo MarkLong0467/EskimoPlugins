@@ -144,6 +144,28 @@ const rows = view => findNodes(view.tree, n => n.type === 'Design.TableRadioRow'
 		s.stop()
 	}
 
+	// --- Discord loads the list of locales late
+	{
+		const moment = fakeMoment('en')
+		const loaders = fakeLoaders()
+		const s = await startPort('force-timestamp-locale', {
+			saved: { locale: 'de' },
+			before: runtime => runtime.valenced.modules.finders.loadModule(moment),
+		})
+		await sleep(30)
+		check('before the list of locales is loaded the chosen locale is applied anyway', moment.locale() === 'de' && loaders.loaded.length === 0, moment.locale())
+		s.runtime.valenced.modules.finders.loadModule({ momentLocales: loaders.momentLocales })
+		await sleep(30)
+		check('when Discord loads the list, every locale is loaded', loaders.loaded.join() === 'fr,de,ja', loaders.loaded)
+		check('and the chosen locale is applied again', moment.locale() === 'de')
+		const view = await s.mountSettings()
+		button(view, 'Run self-check').props.onPress()
+		await view.settle()
+		check('the self-check says every locale is loaded', textOf(view.tree).includes('Every locale is loaded'))
+		view.unmount()
+		s.stop()
+	}
+
 	// --- The list of locales is missing
 	{
 		const moment = fakeMoment('en')

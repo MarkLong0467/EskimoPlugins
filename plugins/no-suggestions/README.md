@@ -17,9 +17,15 @@ Removes the annoying "Suggested" channel section of a server's channel list, whi
 Discord draws the section with `SuggestedCategory({ guildId, channelIds, withMarginTop })`. The plugin replaces it:
 
 - with no suggestions, it draws nothing,
-- with some, it asks Discord to clear them (`clearRecentChannels`, the same request the section's own "clear" option sends) and draws the section with none.
+- with some, it clears them and draws the section with none.
 
-More than one file has the section in Discord (the one that defines it and the one that re-exports it), so every copy is patched, including a copy that loads later.
+Clearing sends the same `BULK_CLEAR_RECENTS` event Discord's own "clear" option sends (the stores then drop the channels from the list), a moment after the draw rather than in the middle of it. Discord's own `clearRecentChannels`, which also saves that you dismissed them, is used too once Discord has loaded it.
+
+## Differences from the original
+
+- **Finding the section.** The original found Discord's module with `findByProps`. Valenced's finders only see modules Discord has already loaded, so the plugin watches for `SuggestedCategory` to be drawn and swaps in its own version for that element. The module is patched too if it is found, and the two never do the work twice.
+- **Hooks.** Discord's own component is always run, even when the section is drawn empty, so its hooks run on every draw.
+- The same suggestions are not cleared again for a few seconds, since Discord can draw the section more than once before it has updated.
 
 ## Debugging
 

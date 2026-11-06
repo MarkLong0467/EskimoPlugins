@@ -27,15 +27,18 @@ Adds more options to calling: silent calls, and remembering the audio output dev
 
 ## How it works
 
-Starting a call goes through `CallActionCreators.ring`, which the plugin skips for silent calls. The button is added to `PrivateChannelButtons`, the buttons in a DM's header. The output device is chosen with the `NATIVE_AUDIO_SET_OUTPUT_DEVICE` action each time the voice panel's speaker button is drawn during a call.
+- **Silent calls.** Every way Discord has of ringing ends in one request, `POST /channels/<id>/call/ring`. The plugin stops that request at Discord's HTTP layer for calls that are silent, and answers Discord as if it went through. Starting the call itself is not touched, so the call connects and the other person is just not rung.
+- **The button.** The plugin watches for `PrivateChannelButtons`, the buttons in a DM's header, to be drawn, and draws Discord's own header with the silent call button in front.
+- **The device.** The output device is chosen with the `NATIVE_AUDIO_SET_OUTPUT_DEVICE` action each time the voice panel's speaker button is drawn during a call. The plugin watches for `VoicePanelHeaderSpeaker` the same way as the header.
 
 ## Differences from the original
 
-These are fixes for how Valenced and Discord 354 work, not changes to what the plugin does:
+These are fixes for how Valenced and Discord work, not changes to what the plugin does:
 
+- **Finding Discord's parts.** The original found Discord's modules with `findByProps`, which can load a module on the spot. Valenced's finders only see modules Discord has already loaded, and Discord loads call code the first time a call is used, so searching at the start finds nothing. The header and the speaker button are found when Discord draws them, and the ring is stopped at the HTTP layer (see above), which does not need the call module.
 - **The header.** Discord 354 draws the DM header as a row of the call, video and search buttons, where the original expected them inside a fragment. The silent call button goes in front of that row, and is left out for bots and while you are in the call.
-- **Hooks.** Valenced's `after` hooks do not get the props, so the header and the speaker button are patched with `instead`, which runs Discord's own version first so its hooks still run on every draw.
-- **The audio action.** `setAudioOutputDevice` is also a method of `MediaEngineStore`, which takes something else, so the plugin picks the module that is only the action.
+- **Hooks.** Discord's own header and speaker button are run first, so their hooks still run on every draw.
+- **The audio parts.** The device list, the action that chooses a device and the device icons are kept when Discord loads them. `setAudioOutputDevice` is also a method of `MediaEngineStore`, which takes something else, so the plugin picks the module that is only the action. Until a call has been used once, Discord has not loaded them, and the device list says so.
 - **Storage.** Valenced's storage merges objects, so removing one DM's choice replaces the whole setting.
 - **Icons.** Discord's old icon names are tried after the current ones.
 - The link to the original's feature requests is left out of the device list.
@@ -45,7 +48,7 @@ These are fixes for how Valenced and Discord 354 work, not changes to what the p
 At the bottom of the settings is a debugging section that is not in the original:
 
 - **Copy logs** puts a report on the clipboard: the plugin and Discord versions, your phone, the settings, what was found and patched, how many calls were silent and the kinds of device. It holds no names of people or devices.
-- **Run self-check** shows which parts were found. The header and the speaker button are only found once you open a DM or join a call.
+- **Run self-check** shows which parts were found. The header and the speaker button are only found once you open a DM or join a call, and the audio parts once a call has been used.
 
 ## Source
 

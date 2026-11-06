@@ -23,8 +23,19 @@ function fake({ withAudio = true } = {}) {
 	const setDevice = []
 	const wrongSetDevice = []
 	const devices = makeDevices()
-	const callModule = { call() {}, ring: id => rings.push(id), stopRinging() {} }
-	const originalRing = callModule.ring
+	// Every way Discord rings ends in this request. `rings` holds the channels whose request got through.
+	const http = {
+		HTTPResponseError: class {},
+		get: async () => ({}),
+		post: request => {
+			const match = /\/channels\/(\w+)\/call\/ring/.exec(String(request.url))
+			if (match) rings.push(match[1])
+			return Promise.resolve({ ok: true, sent: true })
+		},
+	}
+	const originalPost = http.post
+	/** Discord ringing a call: the request that `CallActionCreators.ring` sends. */
+	const ring = id => http.post({ url: `/channels/${id}/call/ring`, body: { recipients: null } })
 
 	function PrivateChannelButtons(props) {
 		// Discord draws a single button, not a row, for the changelog.
@@ -32,13 +43,11 @@ function fake({ withAudio = true } = {}) {
 		return { type: 'View', props: { children: [{ type: 'CallButton', props: {} }, { type: 'VideoButton', props: {} }, { type: 'SearchButton', props: {} }] } }
 	}
 	const header = { $$typeof: MEMO, type: PrivateChannelButtons }
-	const originalHeader = header.type
-
+	
 	function VoicePanelHeaderSpeaker() {
 		return { type: 'OwnSpeaker', props: {} }
 	}
 	const speaker = { $$typeof: MEMO, type: VoicePanelHeaderSpeaker }
-	const originalSpeaker = speaker.type
 
 	const stores = {
 		ChannelStore: {
@@ -58,7 +67,7 @@ function fake({ withAudio = true } = {}) {
 
 	const before = runtime => {
 		const { loadModule } = runtime.valenced.modules.finders
-		loadModule(callModule)
+		loadModule(http)
 		loadModule({ default: header })
 		loadModule({ default: speaker })
 		if (withAudio) {
@@ -73,13 +82,20 @@ function fake({ withAudio = true } = {}) {
 		}
 	}
 	const overrides = { utils: { discord: { lookupGeneratedIconComponent: name => Object.assign(function Icon() { return null }, { iconName: name }) } } }
-	return { rings, setDevice, wrongSetDevice, devices, callModule, originalRing, header, originalHeader, speaker, originalSpeaker, stores, before, overrides }
+	return { rings, ring, http, originalPost, setDevice, wrongSetDevice, devices, header, speaker, stores, before, overrides }
 }
 
 const start = (f, options = {}) => startPort('better-calls', { stores: f.stores, overrides: f.overrides, before: f.before, ...options })
 
 /** Draws the DM header like Discord does, inside a component. */
-const drawHeader = (s, f, channelId = 'dm1') => s.mountRender(() => f.header.type({ channelId }))
+const jsx = (s, type, props) => s.runtime.valenced.react.ReactJSXRuntime.jsx(type, props)
+/** Renders what Discord's element is for: the component, or the function inside a `React.memo`. */
+const renderElement = element => (typeof element.type === 'function' ? element.type(element.props) : element.type.type(element.props))
+const drawHeader = (s, f, channelId = 'dm1') => s.mountRender(() => renderElement(jsx(s, f.header, { channelId })))
+/** Draws the speaker button the way Discord does, and renders it. */
+const drawSpeaker = (s, f, props) => s.mountRender(() => renderElement(jsx(s, f.speaker, props)))
+const headerPatched = (s, f) => jsx(s, f.header, { channelId: 'dm1' }).type !== f.header
+const speakerPatched = (s, f) => jsx(s, f.speaker, {}).type !== f.speaker
 const toggleOf = view => findNode(view.tree, n => n.type === 'Design.IconButton' && n.props.accessibilityLabel === 'Silent call')
 const switchOf = (view, label) => findNode(view.tree, n => n.type === 'Design.TableSwitchRow' && n.props.label === label)
 const rowOf = (view, label) => findNode(view.tree, n => n.type === 'Design.TableRow' && n.props.label === label)
@@ -89,7 +105,7 @@ const rowOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Table
 	{
 		const f = fake()
 		const s = await start(f)
-		check('ring and the header are patched', f.callModule.ring !== f.originalRing && f.header.type !== f.originalHeader)
+		check('the ring request and the header are watched', f.http.post !== f.originalPost && headerPatched(s, f))
 
 		const view = await drawHeader(s, f)
 		const toggle = toggleOf(view)
@@ -105,15 +121,16 @@ const rowOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Table
 		check('tapping it once makes the call silent', s.storage.cache.silentCall.users.dm1 === true, s.storage.cache.silentCall)
 		check('and says so', s.toasts().at(-1) === 'Calling will now silently call this user', s.toasts())
 		check('with the bell that has a Z, in the primary colour', toggleOf(view).props.variant === 'primary' && toggleOf(view).props.icon.type.iconName === 'BellZIcon')
-		f.callModule.ring('dm1')
+		const stopped = await f.ring('dm1')
 		check('a silent call does not ring', f.rings.length === 0, f.rings)
+		check('and Discord is given an answer that looks like success', stopped && stopped.ok === true)
 
 		toggleOf(view).props.onPress()
 		await view.settle()
 		check('tapping again makes the call ring', s.storage.cache.silentCall.users.dm1 === false)
 		check('and says so', s.toasts().at(-1) === 'Calling will now ring this user')
 		check('the button looks different', toggleOf(view).props.variant === 'secondary' && toggleOf(view).props.icon.type.iconName === 'PhoneCallIcon')
-		f.callModule.ring('dm1')
+		f.ring('dm1')
 		check('a call set to ring rings', f.rings.join() === 'dm1', f.rings)
 
 		toggleOf(view).props.onPress()
@@ -121,7 +138,7 @@ const rowOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Table
 		check('tapping a third time follows the global setting again', !('dm1' in s.storage.cache.silentCall.users), s.storage.cache.silentCall.users)
 		check('and says so', s.toasts().at(-1) === 'Following the global setting for this user')
 		check('the button is back as it was', toggleOf(view).props.variant === 'tertiary')
-		f.callModule.ring('dm1')
+		f.ring('dm1')
 		check('a call with no choice rings, because ringing is the default', f.rings.join() === 'dm1,dm1')
 		check('every hook returned what Valenced needs', s.violations.length === 0, s.violations)
 		view.unmount()
@@ -153,7 +170,7 @@ const rowOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Table
 			check(`and keeps Discord’s own buttons (${why})`, findNodes(view.tree, n => n.type === 'CallButton').length === 1)
 			view.unmount()
 		}
-		const none = await s.mountRender(() => f.header.type({}))
+		const none = await drawHeader(s, f, null)
 		check('a header with no channel is left alone', !toggleOf(none))
 		group.unmount()
 		none.unmount()
@@ -172,11 +189,11 @@ const rowOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Table
 	{
 		const f = fake()
 		const s = await start(f, { saved: { silentCall: { default: true, users: { dm3: false } } } })
-		f.callModule.ring('dm2')
+		f.ring('dm2')
 		check('with "Ring by default" off, calls with no choice are silent', f.rings.length === 0, f.rings)
-		f.callModule.ring('dm3')
+		f.ring('dm3')
 		check('but a call set to ring still rings', f.rings.join() === 'dm3', f.rings)
-		check('a call comes back with Discord’s own result', f.callModule.ring('dm9') === undefined)
+		check('a ring that is let through comes back with Discord’s own answer', (await f.ring('dm3')).sent === true)
 		s.stop()
 	}
 
@@ -186,32 +203,32 @@ const rowOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Table
 		const s = await start(f)
 		const view = await s.mountSettings()
 		switchOf(view, 'Enable Silent Call').props.onValueChange(false)
-		check('turning silent calls off takes the patches off', f.callModule.ring === f.originalRing && f.header.type === f.originalHeader, [f.callModule.ring === f.originalRing, f.header.type === f.originalHeader])
+		check('turning silent calls off takes the patches off', f.http.post === f.originalPost && !headerPatched(s, f), [f.http.post === f.originalPost, headerPatched(s, f)])
 		const header = await drawHeader(s, f)
 		check('and the header has no button', !toggleOf(header))
 		header.unmount()
 		switchOf(view, 'Enable Silent Call').props.onValueChange(true)
 		await sleep(10)
-		check('turning them on puts the patches back', f.callModule.ring !== f.originalRing && f.header.type !== f.originalHeader)
+		check('turning them on puts the patches back', f.http.post !== f.originalPost && headerPatched(s, f))
 		view.unmount()
 		s.stop()
-		check('after stopping Discord’s own functions are back', f.callModule.ring === f.originalRing && f.header.type === f.originalHeader && f.speaker.type === f.originalSpeaker)
+		check('after stopping Discord’s own functions are back', f.http.post === f.originalPost && !headerPatched(s, f) && !speakerPatched(s, f))
 	}
 
 	// --- Remembering the audio output device
 	{
 		const f = fake()
 		const s = await start(f)
-		check('by default remembering the device is off, so the speaker button is not patched', f.speaker.type === f.originalSpeaker)
+		check('by default remembering the device is off, so the speaker button is not patched', !speakerPatched(s, f))
 		const view = await s.mountSettings()
 		switchOf(view, 'Remember audio output device').props.onValueChange(true)
 		await sleep(10)
-		check('turning it on patches the speaker button', f.speaker.type !== f.originalSpeaker)
+		check('turning it on patches the speaker button', speakerPatched(s, f))
 		check('and picks the first device if none was saved', s.storage.cache.rememberOutputDevice.device.deviceId === 1, s.storage.cache.rememberOutputDevice)
 
-		const out = await s.mountRender(() => f.speaker.type({ isConnectedToVoiceChannel: false }))
+		const out = await drawSpeaker(s, f, { isConnectedToVoiceChannel: false })
 		check('outside a call Discord’s own speaker button is drawn', findNodes(out.tree, n => n.type === 'OwnSpeaker').length === 1)
-		const call = await s.mountRender(() => f.speaker.type({ isConnectedToVoiceChannel: true }))
+		const call = await drawSpeaker(s, f, { isConnectedToVoiceChannel: true })
 		const speaker = findNode(call.tree, n => n.type === 'Design.IconButton')
 		check('in a call it is replaced with the device button', !!speaker && speaker.props.variant === 'primary-overlay' && speaker.props.icon === 14, speaker && speaker.props)
 		check('and the remembered device is chosen', f.setDevice.length > 0 && f.setDevice.at(-1).deviceId === 1, f.setDevice)
@@ -231,7 +248,7 @@ const rowOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Table
 		group.props.onChange('2')
 		check('choosing a device saves it', s.storage.cache.rememberOutputDevice.device.deviceId === 2 && s.storage.cache.rememberOutputDevice.enabled === true, s.storage.cache.rememberOutputDevice)
 		check('and switches to it now', f.setDevice.at(-1).deviceId === 2)
-		const again = await s.mountRender(() => f.speaker.type({ isConnectedToVoiceChannel: true }))
+		const again = await drawSpeaker(s, f, { isConnectedToVoiceChannel: true })
 		check('the next draw in a call uses the new device and its icon', f.setDevice.at(-1).deviceId === 2 && findNode(again.tree, n => n.type === 'Design.IconButton').props.icon === 12)
 
 		// Unplugging the device falls back to the first.
@@ -246,12 +263,12 @@ const rowOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Table
 		sheet.unmount()
 		view.unmount()
 		s.stop()
-		check('after stopping the speaker button is Discord’s own again', f.speaker.type === f.originalSpeaker)
+		check('after stopping the speaker button is Discord’s own again', !speakerPatched(s, f))
 	}
 	{
 		const f = fake({ withAudio: false })
 		const s = await start(f, { saved: { rememberOutputDevice: { enabled: true } } })
-		const call = await s.mountRender(() => f.speaker.type({ isConnectedToVoiceChannel: true }))
+		const call = await drawSpeaker(s, f, { isConnectedToVoiceChannel: true })
 		check('with no devices known Discord’s own speaker button stays', findNodes(call.tree, n => n.type === 'OwnSpeaker').length === 1 && s.errors.length === 0)
 		call.unmount()
 		s.stop()
@@ -290,7 +307,7 @@ const rowOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Table
 		button(view, 'Run self-check').props.onPress()
 		await view.settle()
 		const checks = textOf(view.tree)
-		check('the self-check finds the ring, the audio parts and the device list', checks.includes('Discord’s ring was patched') && checks.includes('The phone’s audio device list was found') && checks.includes('The audio output action was found') && checks.includes('The icons and names of devices were found'), checks.slice(-900))
+		check('the self-check finds the ring request, the audio parts and the device list', checks.includes('The ring request is being watched') && checks.includes('The plugin is watching for the DM header') && checks.includes('The phone’s audio device list was found') && checks.includes('The audio output action was found') && checks.includes('The icons and names of devices were found'), checks.slice(-900))
 
 		button(view, 'Copy logs').props.onPress()
 		await sleep(5)
@@ -302,6 +319,60 @@ const rowOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Table
 		view.unmount()
 		s.stop()
 		check('the plugin reported no errors', s.errors.length === 0, s.errors)
+	}
+
+	// --- The ring request is found whenever Discord loads its HTTP object
+	{
+		const f = fake()
+		const loadHttp = f.before
+		// Nothing is loaded when the plugin starts.
+		const s = await startPort('better-calls', { stores: f.stores, overrides: f.overrides, saved: { silentCall: { default: true } } })
+		const early = await f.ring('late')
+		check('before Discord loads its HTTP object nothing is stopped (and nothing breaks)', f.rings.join() === 'late' && early.sent === true, f.rings)
+		f.rings.length = 0
+		loadHttp(s.runtime)
+		await sleep(10)
+		check('when Discord loads it the ring request is watched', f.http.post !== f.originalPost)
+		const stopped = await f.ring('late')
+		check('and a silent call is stopped', f.rings.length === 0 && stopped.ok === true, f.rings)
+		const other = await f.http.post({ url: '/channels/late/messages', body: { content: 'hi' } })
+		check('a request that is not a ring goes through untouched', other.sent === true || other.ok === true)
+		check('whatever else Discord posts goes through', (await f.http.post({ url: '/users/@me/settings', body: {} })).ok === true)
+		for (const url of ['/channels/9/call/ring?x=1', '/channels/9/call/ring/', '/channels/9/call/ring']) {
+			const answer = await f.http.post({ url, body: {} })
+			check(`the ring request is recognised as ${url}`, answer.sent !== true, answer)
+		}
+		for (const url of ['/channels/9/call/ringtone', '/channels/9/call', '/channels/9/call/stop-ringing', '/guilds/9/call/ring/extra']) {
+			const answer = await f.http.post({ url, body: {} })
+			check(`and ${url} is not mistaken for it`, answer.sent === true, answer)
+		}
+		s.stop()
+		check('after stopping the HTTP object is Discord’s own again', f.http.post === f.originalPost)
+	}
+	{
+		const f = fake()
+		const wrapped = { default: f.http }
+		const s = await startPort('better-calls', { stores: f.stores, overrides: f.overrides, before: runtime => runtime.valenced.modules.finders.loadModule(wrapped) })
+		const patched = wrapped.default.post !== f.originalPost
+		check('an HTTP object that is a default export is found too', patched)
+		s.stop()
+	}
+
+	// --- The audio parts are kept when Discord loads them later
+	{
+		const f = fake({ withAudio: false })
+		const s = await start(f, { saved: { rememberOutputDevice: { enabled: true, device: makeDevices()[1] } } })
+		let view = await s.mountSettings()
+		check('before Discord loads the audio parts the device row has no name for its kind', !textOf(view.tree).includes('kind 8'))
+		view.unmount()
+		const loadAudio = fake().before
+		const probe = fake()
+		probe.before(s.runtime)
+		await sleep(10)
+		view = await s.mountSettings()
+		check('once Discord has loaded them the row shows it', textOf(view.tree).includes(`${SECRET_DEVICE} - kind 8`), textOf(view.tree).slice(0, 500))
+		view.unmount()
+		s.stop()
 	}
 
 	// --- Pieces that are missing

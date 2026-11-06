@@ -165,6 +165,49 @@ const switches = view => findNodes(view.tree, n => n.type === 'Design.TableSwitc
 		s.stop()
 	}
 
+	// --- The parts are found when Discord draws them, with no module search
+	{
+		const bar = fakeChatBar()
+		const s = await startPort('better-chat-buttons')
+		const jsx = (type, props) => s.runtime.valenced.react.ReactJSXRuntime.jsx(type, props)
+		check('before Discord draws anything nothing is patched', bar.send.type.render === bar.send.original)
+		const element = jsx(bar.send.memo, { canSendVoiceMessage: true })
+		check('when Discord makes the element for a part, the part is patched at once', bar.send.type.render !== bar.send.original)
+		check('and the element is Discord’s own (the plugin changes what it draws, not the element)', element.type === bar.send.memo)
+		bar.send.type.render({ canSendVoiceMessage: true }, {})
+		check('so the first draw already has the voice message button hidden', bar.drawn.send[0].canSendVoiceMessage === false, bar.drawn.send)
+		jsx(bar.actions.memo, {})
+		jsx(bar.right.memo, {})
+		bar.actions.type.render({ isAppLauncherEnabled: true, canStartThreads: true, shouldShowGiftButton: true }, {})
+		bar.right.type.render({ shouldShowGiftButton: true })
+		check('the other two parts are found the same way', bar.drawn.actions[0].isAppLauncherEnabled === false && bar.drawn.right[0].shouldShowGiftButton === false)
+		const wrapped = bar.send.type.render
+		jsx(bar.send.memo, {})
+		jsx(bar.send.memo, {})
+		check('drawing a part again does not patch it again', bar.send.type.render === wrapped)
+		jsx(() => null, {})
+		jsx('View', {})
+		check('other elements are left alone', bar.send.type.render === wrapped)
+		check('every hook returned what Valenced needs', s.violations.length === 0, s.violations)
+		const view = await s.mountSettings()
+		button(view, 'Run self-check').props.onPress()
+		await view.settle()
+		check('the self-check says the parts were found', textOf(view.tree).includes('The send button was found'))
+		view.unmount()
+		s.stop()
+		check('after stopping new elements no longer find parts', (() => { const other = fakeChatBar(); jsx(other.send.memo, {}); return other.send.type.render === other.send.original })())
+		check('and the parts that were patched are back', bar.send.type.render === bar.send.original && bar.actions.type.render === bar.actions.original)
+	}
+	{
+		// A part found by Discord's module and then drawn is patched once.
+		const bar = fakeChatBar()
+		const s = await startPort('better-chat-buttons', { before: load(bar) })
+		const patchedFirst = bar.send.type.render
+		s.runtime.valenced.react.ReactJSXRuntime.jsx(bar.send.memo, {})
+		check('a part found both ways is patched once', bar.send.type.render === patchedFirst)
+		s.stop()
+	}
+
 	// --- The parts load later, or are not what was expected
 	{
 		const bar = fakeChatBar()

@@ -21,6 +21,7 @@ The chat bar parts `ChatInputSendButton`, `ChatInputActions` and `ChatInputRight
 
 These are fixes for how Valenced works, not changes to what the plugin does:
 
+- The chat bar parts are found when Discord first draws them (by their names, through the JSX runtime), as well as by searching Discord's modules. The search only sees modules Discord has already loaded, so it can miss a part.
 - Valenced's patcher needs a hook to return the arguments or the result, so each hook returns them.
 - The original wrapped the refs again every time the bar was drawn. Each ref is wrapped once.
 - With *Collapse when no text*, the send button is hidden only while that setting is on. In the original it stayed hidden after switching the setting off, until you typed.

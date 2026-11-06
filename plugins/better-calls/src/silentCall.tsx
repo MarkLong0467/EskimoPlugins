@@ -1,17 +1,7 @@
 import { Design } from '@valenced/discord/design'
-import { getModules } from '@valenced/modules/finders'
 import { cloneElement, useState } from 'react'
-import {
-	memoOf,
-	propsFilter,
-	typeNameFilter,
-} from '../../../shared/palmdevs/finders'
-import {
-	setSilentFor,
-	store as settings,
-	shouldBeSilent,
-	silentFor,
-} from './config'
+import { installJsxFinder } from '../../../shared/palmdevs/jsxFind'
+import { setSilentFor, store as settings, silentFor } from './config'
 import { diag } from './diag'
 import { findAsset, findIcon, store, toast } from './discord'
 import { state } from './state'
@@ -128,99 +118,95 @@ function SilentToggle({
 	)
 }
 
+/** The function inside what Discord gave: the component itself, or the one a `React.memo` wraps. */
+function innerFunction<P>(
+	type: unknown,
+): ((props: P) => ReactElement | null) | undefined {
+	if (typeof type === 'function')
+		return type as (props: P) => ReactElement | null
+	const inner = (type as { type?: unknown } | null)?.type
+	return typeof inner === 'function'
+		? (inner as (props: P) => ReactElement | null)
+		: undefined
+}
+
 /**
- * Adds the silent call button to DM headers and stops Discord from ringing for silent calls.
+ * What a DM header draws: Discord's own buttons with the silent call button in front.
+ *
+ * Discord's own header is drawn first, so its hooks run on every draw. Only a row of buttons has a list of children; a
+ * single button (the changelog) does not.
+ */
+function header(
+	props: HeaderProps,
+	own: (props: HeaderProps) => ReactElement | null,
+): ReactElement | null {
+	const channelId = props?.channelId
+	// Hooks must run on every draw, so this comes before anything that might return early.
+	const [choice, setChoice] = useState<Choice>(() =>
+		channelId ? silentFor(channelId) : undefined,
+	)
+	const drawn = own(props)
+	if (!drawn || !channelId) return drawn
+	const children = (drawn.props as { children?: unknown }).children
+	if (!Array.isArray(children) || !wantsButton(channelId)) return drawn
+	state.toggles++
+	return cloneElement(drawn, {
+		children: [
+			<SilentToggle
+				key="better-calls:silent-call-toggle"
+				channelId={channelId}
+				choice={choice}
+				onChoose={setChoice}
+			/>,
+			...children,
+		],
+	} as never)
+}
+
+/**
+ * Adds the silent call button to DM headers.
  *
  * In the originals the buttons were inside a fragment in the header. Discord 354 draws the header as a row of the call, video
  * and search buttons, so the new button goes in front of them.
  *
- * @returns What takes the patches off again.
+ * The header is found by watching for `PrivateChannelButtons` to be drawn (see `jsxFind.ts`), not by searching Discord's
+ * modules, which only finds modules Discord has already loaded. For each header the element is given the plugin's component,
+ * which draws Discord's own header and adds the button.
+ *
+ * @returns What takes the patch off again.
  */
 export function installSilentCall(): () => void {
-	const undo: Array<() => void> = []
-	let buttons = false
-	let ring = false
+	const undo: Array<() => unknown> = []
+	const stand = new WeakMap<
+		object,
+		(props: HeaderProps) => ReactElement | null
+	>()
 
-	undo.push(
-		getModules(typeNameFilter('PrivateChannelButtons'), (exports: unknown) => {
-			if (buttons) return
-			const memo = memoOf<(props: HeaderProps) => ReactElement | null>(exports)
-			if (!memo || typeof memo.type !== 'function') {
-				diag.log(
-					'find',
-					'PrivateChannelButtons: found, but it is not a function component',
-					'warn',
-				)
-				return
-			}
-			buttons = true
-			state.buttons = true
-			undo.push(
-				diag.apply('PrivateChannelButtons', () =>
-					valenced.patcher.instead(memo, 'type', ((
-						args: [HeaderProps],
-						original: (props: HeaderProps) => ReactElement | null,
-					) => {
-						const channelId = args[0]?.channelId
-						// Hooks must run on every draw, so this comes before anything that might return early.
-						const [choice, setChoice] = useState<Choice>(() =>
-							channelId ? silentFor(channelId) : undefined,
-						)
-						const header = original(...args)
-						if (!header || !channelId) return header
-						const children = (header.props as { children?: unknown }).children
-						// Only a row of buttons has a list of children. A single button (the changelog) does not.
-						if (!Array.isArray(children) || !wantsButton(channelId))
-							return header
-						state.toggles++
-						return cloneElement(header, {
-							children: [
-								<SilentToggle
-									key="better-calls:silent-call-toggle"
-									channelId={channelId}
-									choice={choice}
-									onChoose={setChoice}
-								/>,
-								...children,
-							],
-						} as never)
-					}) as never),
-				),
-			)
-		}),
-	)
-
-	undo.push(
-		getModules(
-			propsFilter('call', 'ring', 'stopRinging'),
-			(exports: unknown) => {
-				if (ring) return
-				const found = exports as { default?: unknown } | null
-				const callModule = [exports, found?.default].find(
-					candidate =>
-						!!candidate &&
-						typeof (candidate as { ring?: unknown }).ring === 'function',
-				) as { ring(...args: unknown[]): unknown } | undefined
-				if (!callModule) return
-				ring = true
-				state.ring = true
-				undo.push(
-					diag.apply('CallActionCreators.ring', () =>
-						valenced.patcher.instead(callModule, 'ring', ((
-							args: [string, ...unknown[]],
-							original: (...passed: unknown[]) => unknown,
-						) => {
-							if (!shouldBeSilent(String(args[0]))) {
-								state.rang++
-								return original(...args)
-							}
-							state.silenced++
-							return undefined
-						}) as never),
-					),
-				)
+	state.jsxButtons = installJsxFinder(
+		(...fns) => {
+			undo.push(...fns)
+		},
+		[
+			{
+				name: 'PrivateChannelButtons',
+				seen: () => {
+					state.buttons = true
+					diag.log('found', 'PrivateChannelButtons was drawn')
+				},
+				replace: type => {
+					const own = innerFunction<HeaderProps>(type)
+					if (!own) return undefined
+					let made = stand.get(type as object)
+					if (!made) {
+						made = function SilentCallHeader(props) {
+							return header(props, own)
+						}
+						stand.set(type as object, made)
+					}
+					return made
+				},
 			},
-		),
+		],
 	)
 
 	return () => {
@@ -232,7 +218,7 @@ export function installSilentCall(): () => void {
 			}
 		}
 		state.buttons = false
-		state.ring = false
+		state.jsxButtons = false
 	}
 }
 

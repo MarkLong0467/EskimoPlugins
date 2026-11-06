@@ -15,6 +15,7 @@ export const diag = createDiagnostics('Better Chat Buttons', {
 		collapse: store.get('collapse'),
 	}),
 	extra: () => [
+		`Watching the JSX runtime: ${state.jsx ? 'yes' : 'no'}`,
 		`Send button drawn: ${state.hasText ? 'yes' : 'no (collapsed)'}`,
 		`Send button's own state wrapped: ${state.sendWrapped} time(s)`,
 		`Action buttons' own dismiss wrapped: ${state.actionsWrapped} time(s)`,
@@ -36,5 +37,5 @@ export const diag = createDiagnostics('Better Chat Buttons', {
 			detail: state.rightActions ? undefined : 'Open a chat to load them',
 		},
 	],
-	consolePrefixes: ['[better-chat-buttons'],
+	consolePrefixes: ['[better-chat-buttons', '[jsxFind'],
 })

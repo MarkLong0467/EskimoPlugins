@@ -1,4 +1,8 @@
-import { lookupModule, lookupModules } from '@valenced/modules/finders'
+import {
+	getModules,
+	lookupModule,
+	lookupModules,
+} from '@valenced/modules/finders'
 import { propsFilter } from '../../../shared/palmdevs/finders'
 import type { AudioDevice, SimpleAudioDeviceType } from './config'
 
@@ -7,6 +11,43 @@ import type { AudioDevice, SimpleAudioDeviceType } from './config'
  * the store that lists the phone's devices (`getAudioDevices`), the action that chooses one (`setAudioOutputDevice`), and
  * the call helpers that have the icons and the names (`audioDeviceToIconMap`, `getAudioDeviceToDisplayText`).
  */
+
+/**
+ * What was found, kept as soon as Discord loads each part. Discord loads these modules late, the first time a call is
+ * used, so a search at the start of the plugin or when the settings open may come too early. Each part is looked for with a
+ * search now and again whenever Discord loads a matching module.
+ */
+const cache: { store?: unknown; action?: unknown; helpers?: unknown } = {}
+
+/** Registers a function to run when the plugin stops. */
+type Cleanup = (...fns: Array<() => unknown>) => unknown
+
+/** Starts keeping the audio parts as Discord loads them. */
+export function watchAudio(cleanup: Cleanup): void {
+	for (const [part, prop] of [
+		['store', 'getAudioDevices'],
+		['action', 'setAudioOutputDevice'],
+		['helpers', 'audioDeviceToIconMap'],
+	] as const) {
+		cleanup(
+			getModules(propsFilter(prop), (exports: unknown) => {
+				// A store with a method of the same name as the action is not the action.
+				const isStore =
+					part === 'action' &&
+					(typeof (exports as { getName?: unknown } | null)?.getName ===
+						'function' ||
+						typeof (exports as { emitChange?: unknown } | null)?.emitChange ===
+							'function')
+				if (!isStore) cache[part] ??= exports
+			}),
+		)
+	}
+	cleanup(() => {
+		cache.store = undefined
+		cache.action = undefined
+		cache.helpers = undefined
+	})
+}
 
 /** Something the exports of a module might be: the exports themselves or a default export. */
 function pick<T extends object>(
@@ -23,7 +64,7 @@ function pick<T extends object>(
 /** The store that knows the phone's audio devices (Android only). */
 function deviceStore(): { getAudioDevices(): AudioDevice[] } | undefined {
 	return pick(
-		lookupModule(propsFilter('getAudioDevices'))[0],
+		cache.store ?? lookupModule(propsFilter('getAudioDevices'))[0],
 		v => typeof v.getAudioDevices === 'function',
 	)
 }
@@ -35,9 +76,9 @@ function deviceStore(): { getAudioDevices(): AudioDevice[] } | undefined {
 function deviceAction():
 	| { setAudioOutputDevice(device: AudioDevice): void }
 	| undefined {
-	for (const [exports] of lookupModules(propsFilter('setAudioOutputDevice')) ??
-		[]) {
-		const found = pick<{ setAudioOutputDevice(device: AudioDevice): void }>(
+	type Action = { setAudioOutputDevice(device: AudioDevice): void }
+	const isAction = (exports: unknown): Action | undefined => {
+		const found = pick<Action>(
 			exports,
 			v => typeof v.setAudioOutputDevice === 'function',
 		)
@@ -45,7 +86,14 @@ function deviceAction():
 			!!found &&
 			(typeof (found as { getName?: unknown }).getName === 'function' ||
 				typeof (found as { emitChange?: unknown }).emitChange === 'function')
-		if (found && !isStore) return found
+		return found && !isStore ? found : undefined
+	}
+	const cached = isAction(cache.action)
+	if (cached) return cached
+	for (const [exports] of lookupModules(propsFilter('setAudioOutputDevice')) ??
+		[]) {
+		const found = isAction(exports)
+		if (found) return found
 	}
 	return undefined
 }
@@ -60,7 +108,7 @@ function callHelpers():
 	  }
 	| undefined {
 	return pick(
-		lookupModule(propsFilter('audioDeviceToIconMap'))[0],
+		cache.helpers ?? lookupModule(propsFilter('audioDeviceToIconMap'))[0],
 		v =>
 			!!v.audioDeviceToIconMap &&
 			typeof v.getAudioDeviceToDisplayText === 'function',
