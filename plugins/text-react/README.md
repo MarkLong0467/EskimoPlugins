@@ -29,7 +29,7 @@ In the settings you can:
   replaces your mappings.
 
 Letters with accents are read as their plain letter (`é` is `e`) unless you map the accented letter itself. Text React is
-also found in the message menu in other languages, by the icons in it.
+also found in the message menu in other languages: by its labels or icons, or, when those cannot be read, by being the box right after Reply and Forward.
 
 ## How it works
 

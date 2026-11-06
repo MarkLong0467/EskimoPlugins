@@ -359,6 +359,22 @@ async function setup({ saved = {}, answer = () => undefined, token = null, withH
 		await s.running.stop()
 	}
 
+
+	// --- Another language with nothing readable: the box after Reply and Forward is the copy box
+	{
+		const s = await setup()
+		const row = label => ({ type: 'MenuRow', props: { label, onPress() {}, icon: { type: { name: 'Icon' }, props: {} } } })
+		s.jsx.jsx('MessageActionsSheet', { message: MESSAGE })
+		const pair = s.jsx.jsx('Group', { children: [row('Répondre'), row('Transférer')] })
+		const copy = s.jsx.jsx('Group', { children: [row('Copier le texte'), row('Message'), row('Mentionner'), row('Copier le lien')] })
+		const danger = s.jsx.jsx('Group', { children: [row('Supprimer'), row('Signaler'), row('Autre')] })
+		check('the box after Reply and Forward gets the row in any language', copy.props.children.length === 5 && copy.props.children.at(-1).props.label === 'Text React', copy.props.children.map(r => r.props.label))
+		check('the box of Reply and Forward and later boxes do not', pair.props.children.length === 2 && danger.props.children.length === 3)
+		const alone = s.jsx.jsx('Group', { children: [row('A'), row('B'), row('C')] })
+		check('a box with three rows and no Reply and Forward box before it is left alone', alone.props.children.length === 3)
+		await s.running.stop()
+	}
+
 	// --- Opening animation
 	{
 		const s = await setup({ saved: { animate: false } })

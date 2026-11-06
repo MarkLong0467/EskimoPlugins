@@ -25,6 +25,12 @@ import type { MenuItem, Target } from './types'
 /** Registers a function to run when the plugin stops. */
 type Cleanup = (...fns: Array<() => unknown>) => unknown
 
+/** When a box of exactly two rows (Reply and Forward) was last drawn, in milliseconds. */
+let pairSeenAt = 0
+
+/** How soon after the Reply and Forward box the box of copy rows is drawn. A menu is drawn in one go. */
+const POSITION_WINDOW_MS = 400
+
 /** The message the menu on screen is for, as last noticed. */
 let target: Target | null = null
 
@@ -268,19 +274,23 @@ function decorateRows(
 	const rows = (Array.isArray(children) ? children.flat() : [children]).filter(
 		isRow,
 	)
-	if (
-		rows.length < 2 ||
-		rows.some(row => row.props.label === MENU_LABEL) ||
-		!rows.some(isCopyRow) ||
-		!rows.every(
-			row =>
-				typeof row.props.onPress === 'function' ||
-				row.props.onPress === undefined,
-		)
+	const pressable = rows.every(
+		row =>
+			typeof row.props.onPress === 'function' ||
+			row.props.onPress === undefined,
 	)
+	if (!pressable || rows.some(row => row.props.label === MENU_LABEL))
 		return group
 
-	const template = rows.find(isCopyRow) as Row
+	// The Reply and Forward box comes just before the box of copy rows, in every language. Seeing it makes the next box with
+	// three or more rows the copy box, even when its labels and icons cannot be read.
+	if (rows.length === 2) pairSeenAt = Date.now()
+	const byPosition =
+		rows.length >= 3 && Date.now() - pairSeenAt < POSITION_WINDOW_MS
+	if (rows.length < 2 || !(rows.some(isCopyRow) || byPosition)) return group
+	if (byPosition) pairSeenAt = 0
+
+	const template = (rows.find(isCopyRow) ?? rows[0]) as Row
 	const iconId = MENU_ICONS.map(asset).find(id => id != null)
 	const row = createElement(template.type as never, {
 		...template.props,
