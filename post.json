@@ -96,13 +96,6 @@
       "suffix": "(beta)"
     },
     {
-      "id": "marklong.custom-rpc-test",
-      "name": "CustomRPC Test",
-      "version": "0.1.0",
-      "short": "a test of Rich Presence that shows several presences at once, each profile on its own switch",
-      "suffix": ""
-    },
-    {
       "id": "marklong.force-timestamp-locale",
       "name": "Force Timestamp Locale",
       "version": "1.0.1",
@@ -219,13 +212,6 @@
       "name": "Slowmode Extended",
       "version": "1.0.1",
       "short": "more slowmode choices, from every second up to 6 hours",
-      "suffix": ""
-    },
-    {
-      "id": "marklong.soundcloud-presence",
-      "name": "SoundCloud Presence",
-      "version": "0.4.1",
-      "short": "show your SoundCloud track on your profile (works with Last.fm)",
       "suffix": ""
     },
     {

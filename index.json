@@ -2109,95 +2109,6 @@
         "latest": "1.3.1"
       }
     },
-    "marklong.soundcloud-presence": {
-      "versions": {
-        "0.1.0": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.soundcloud-presence@0.1.0.zip",
-          "sha256": "c3bf7953209fb0cb94b96e43ac6ee81c45041ced3015094f252ef1c430ad24a7",
-          "size": 8155,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        },
-        "0.2.0": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.soundcloud-presence@0.2.0.zip",
-          "sha256": "1faeac5d05f7d3f04888420d8a54bad10195ecf44d0fcc2f85a0c153281230bd",
-          "size": 10811,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        },
-        "0.3.0": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.soundcloud-presence@0.3.0.zip",
-          "sha256": "9f0bad7e9aa11096327637c1ee7fe96f034a58d9c85ad1a0bd4e724c02c847cd",
-          "size": 12128,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        },
-        "0.3.1": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.soundcloud-presence@0.3.1.zip",
-          "sha256": "6dc945cf9808ac2c86eafe603f5a07bda143e8ac934928dabc5e9d1ce35992dc",
-          "size": 12893,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        },
-        "0.4.0": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.soundcloud-presence@0.4.0.zip",
-          "sha256": "028d0592e7cab1a0a75e8e5a774a8ab2cb8328e793d40dd349db1da66de5aefc",
-          "size": 14067,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        },
-        "0.4.1": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.soundcloud-presence@0.4.1.zip",
-          "sha256": "e8cca97de80863f680ce1f3339c510bb68e3f1104ea6bd63bfb0698ec0647db6",
-          "size": 10019,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        }
-      },
-      "name": "SoundCloud Presence",
-      "description": "Show the SoundCloud track you are listening to on your Discord profile, with artwork, a progress bar and a button. It follows your Last.fm now playing automatically (with a scrobbler such as Pano Scrobbler), or takes a pasted link, and can hand the track to your Rich Presence plugin.",
-      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-      "contributors": [],
-      "channels": {
-        "latest": "0.4.1"
-      }
-    },
     "marklong.text-react": {
       "name": "Text React",
       "description": "Hold a message, tap Text React, type some text and it is added to the message as reactions: letters become emoji letters, digits become keycaps, and words like ok, cool and 100 have an emoji of their own.",
@@ -3192,29 +3103,6 @@
       "contributors": [
         "Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
       ]
-    },
-    "marklong.custom-rpc-test": {
-      "name": "CustomRPC Test",
-      "description": "A test version of Rich Presence that can show several presences at once. Each profile you switch on is its own activity on your profile. Shows nothing until you set it up. Runs next to Rich Presence.",
-      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-      "channels": {
-        "latest": "0.1.0"
-      },
-      "versions": {
-        "0.1.0": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.custom-rpc-test@0.1.0.zip",
-          "sha256": "97513727632feaf5e4aad224f524cb7ddba2de0272fe7b48d2a1ded96dd30d22",
-          "size": 10505,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        }
-      }
     }
   }
 }
