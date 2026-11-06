@@ -12,7 +12,7 @@ This plugin was NEF Viewer. It keeps the same id (`marklong.nef-viewer`), so it 
   (`dng`), Olympus (`orf`), Panasonic and Leica (`rw2` `rwl`), Fujifilm (`raf`), Pentax (`pef`), Samsung (`srw`),
   Hasselblad (`3fr`), Epson (`erf`), Kodak (`kdc` `dcr`), Minolta (`mrw`), Mamiya (`mef`), Phase One (`iiq`) and Sigma
   (`x3f`) files are drawn as images with the right shape and orientation.
-- **Picture info.** Open any picture in the viewer. An `i` button and a handle at the bottom appear. Tap the button or
+- **Picture info.** Open any picture in the viewer. Tap the three dots and choose **Photo info**, or use the `i` button and the handle at the bottom: tap the button or
   swipe up on the handle to open the info:
   - when it was taken (as the camera wrote it, with the time zone if it has one),
   - where, with a map. Tap the map or the coordinates to open **Google Maps**,

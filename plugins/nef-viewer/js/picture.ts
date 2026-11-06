@@ -56,8 +56,13 @@ export function pictureFile(
 		return null
 
 	const shown = typeof source.uri === 'string' ? source.uri : ''
-	const link =
-		(typeof source.sourceURI === 'string' && source.sourceURI) || shown
+	const link = [
+		source.sourceURI,
+		shown,
+		source.url,
+		source.proxyURL,
+		source.proxyUrl,
+	].find(value => typeof value === 'string' && value) as string | undefined
 	if (!link) return null
 
 	const made = previewAt(shown) ?? previewAt(link)

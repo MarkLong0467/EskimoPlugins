@@ -33,7 +33,7 @@ import { patchMessage } from './patch'
 import { clearPictures } from './picture'
 import { startQueue } from './queue'
 import Settings from './Settings'
-import { installViewer } from './viewer'
+import { installMenuItem, installViewer } from './viewer'
 import type { DiscordMessage, RawViewerSettings } from './types'
 
 export default plugin<{ jsonStorage: RawViewerSettings }>({
@@ -55,6 +55,12 @@ export default plugin<{ jsonStorage: RawViewerSettings }>({
 			installViewer(cleanup)
 		} catch (error) {
 			console.warn(`${TAG} viewer patch failed:`, String(error))
+		}
+
+		try {
+			installMenuItem(cleanup)
+		} catch (error) {
+			console.warn(`${TAG} viewer menu patch failed:`, String(error))
 		}
 
 		try {

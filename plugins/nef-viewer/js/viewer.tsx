@@ -1,11 +1,11 @@
 import { getModules } from '@valenced/modules/finders'
-import { withName } from '@valenced/modules/finders/filters'
+import { withName, withProps } from '@valenced/modules/finders/filters'
 import { instead } from '@valenced/patcher'
 import { useMemo, useRef } from 'react'
 import { PanResponder, Pressable, Text, View } from 'react-native'
 import { setting } from './config'
 import { SHEET_KEY } from './constants'
-import { sheets } from './discord'
+import { findByProps, sheets } from './discord'
 import MetadataSheet from './MetadataSheet'
 import { pictureFile } from './picture'
 import type { ReactElement } from 'react'
@@ -160,5 +160,85 @@ export function installViewer(
 			},
 			{ returnNamespace: true },
 		),
+	)
+}
+
+/** The text of the viewer's menu entry. */
+const MENU_LABEL = 'Photo info'
+
+/** One entry of the viewer's menu (the three dots). Discord's own have more fields. */
+interface ShareItem {
+	label?: string
+	IconComponent?: unknown
+	action?: () => void
+	[field: string]: unknown
+}
+
+/** The info icon, or nothing if Discord has no such icon. */
+function infoIcon(): unknown {
+	try {
+		return (
+			findByProps<{ CircleInformationIcon?: unknown; InfoIcon?: unknown }>(
+				'CircleInformationIcon',
+			)?.CircleInformationIcon ??
+			findByProps<{ InfoIcon?: unknown }>('InfoIcon')?.InfoIcon
+		)
+	} catch {
+		return undefined
+	}
+}
+
+/**
+ * Adds Photo info to the menu behind the three dots of Discord's picture viewer, for pictures.
+ *
+ * The menu is made by , which gets the picture () and returns a list of items. The new item
+ * is a copy of the first one (so it looks like the others), with its label and action replaced and the info icon if there is one.
+ */
+export function installMenuItem(
+	cleanup: (...fns: Array<() => unknown>) => unknown,
+): void {
+	cleanup(
+		getModules(withProps('useMediaShareActions'), module => {
+			const target = module as
+				| { useMediaShareActions?: unknown }
+				| null
+				| undefined
+			if (!target || typeof target.useMediaShareActions !== 'function') return
+			cleanup(
+				instead(
+					target as { useMediaShareActions: (...args: unknown[]) => unknown },
+					'useMediaShareActions',
+					function (args, original) {
+						const result = Reflect.apply(original, this, args)
+						try {
+							if (!setting('infoButton') || !Array.isArray(result))
+								return result
+							const input = args[0] as { source?: ViewerSource } | undefined
+							const source =
+								input?.source ?? (input as ViewerSource | undefined)
+							if (!source || !pictureFile(source)) return result
+							const items = result as ShareItem[]
+							if (items.some(item => item?.label === MENU_LABEL)) return result
+							const template = items.find(
+								item => item && typeof item.label === 'string',
+							)
+							if (!template) return result
+							const icon = infoIcon()
+							return [
+								...items,
+								{
+									...template,
+									label: MENU_LABEL,
+									IconComponent: icon ?? template.IconComponent,
+									action: () => openInfo(source),
+								},
+							]
+						} catch {
+							return result
+						}
+					},
+				),
+			)
+		}),
 	)
 }

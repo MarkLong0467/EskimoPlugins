@@ -121,6 +121,8 @@ async function setup(saved, messages = new Map()) {
 	const overlay = function MediaModalOverlay(props) {
 		return runtime.React.createElement('Overlay', { source: props.source })
 	}
+	const shareModule = { useMediaShareActions: () => [{ label: 'Save', IconComponent: 1, action() {} }] }
+	runtime.finders.loadModule(shareModule)
 	const viewer = { default: overlay }
 	runtime.finders.loadModule(viewer)
 	const { definition } = loadPlugin('nef-viewer')
@@ -132,7 +134,7 @@ async function setup(saved, messages = new Map()) {
 		return view
 	}
 	const opened = () => runtime.log.actions.filter(a => a.label === 'actionSheet' && a.name === 'openLazy' && a.args[1] === 'marklong.raw-viewer.info')
-	return { runtime, running, definition, storage, draw, opened, writes, jsx: globalThis.valenced.react.ReactJSXRuntime }
+	return { runtime, running, definition, storage, draw, opened, writes, shareModule, jsx: globalThis.valenced.react.ReactJSXRuntime }
 }
 
 const source = { uri: 'https://media.discordapp.net/attachments/1/2/photo.jpg?width=800&height=600', sourceURI: 'https://cdn.test/photo.jpg?ex=1&hm=2', filename: 'photo.jpg', width: 8256, height: 5504, contentType: 'image/jpeg' }
@@ -229,6 +231,18 @@ const source = { uri: 'https://media.discordapp.net/attachments/1/2/photo.jpg?wi
 		const photo = id => s.writes.find(w => w.r === 'nef-viewer/' + id + '.jpg')
 		check('a Fujifilm RAF is turned into its preview', photo('f') && Buffer.from(photo('f').data, 'base64').equals(Buffer.from(jpeg)), s.writes.map(w => w.r))
 		check('a Canon CR3 is turned into its largest preview', photo('c') && Buffer.from(photo('c').data, 'base64').equals(Buffer.from(jpeg)), s.writes.map(w => w.r))
+	}
+
+
+	// --- The viewer's three dots menu
+	{
+		installServer(new Map())
+		const s = await setup()
+		const items = s.shareModule.useMediaShareActions({ source })
+		check('the viewer menu gets Photo info after its own items', items.map(i => i.label).join('|') === 'Save|Photo info', items.map(i => i.label))
+		items.at(-1).action()
+		check('choosing it opens the info sheet', s.opened().length === 1)
+		check('a video gets no menu item', s.shareModule.useMediaShareActions({ source: { ...source, contentType: 'video/mp4' } }).length === 1)
 	}
 
 	// --- Render only when asked
