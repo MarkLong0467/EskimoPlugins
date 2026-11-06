@@ -110,7 +110,7 @@ function draw(s, source, extra = {}) {
 		check(`"${ASSETS[id]}" is drawn as ${baseName} with the ${overlayName} mark`, ok, base && [base.props.source.uri === IMAGES[baseName], overlay?.props.source.uri === IMAGES[overlayName]])
 		if (!ok) continue
 		check(`"${ASSETS[id]}": the mark is tinted with the theme color ${token}`, overlay.props.style.tintColor === `#${token}`, overlay.props.style)
-		check(`"${ASSETS[id]}": the mark sits in the bottom right corner`, overlayBox.props.style.position === 'absolute' && overlayBox.props.style.right === 0 && overlayBox.props.style.bottom === 0)
+		check(`"${ASSETS[id]}": the mark covers its picture from the top left, so the icon's margin does not push it right`, overlayBox.props.style.position === 'absolute' && overlayBox.props.style.left === 0 && overlayBox.props.style.top === 0 && overlayBox.props.style.right === undefined)
 	}
 
 	// --- Size and style
@@ -179,6 +179,19 @@ function draw(s, source, extra = {}) {
 	{
 		const s = await setup({ saved: { colorIcons: undefined, nsfwTag: undefined } })
 		check('a setting that is saved as undefined falls back to its default (on)', draw(s, 1).base !== undefined)
+	}
+
+	// --- Following the icon pack: the symbol sits in the icon's own corner, whatever its margins
+	{
+		const s = await setup({ saved: { followPack: true } })
+		let last = 0
+		while (ASSETS[last + 1]) last++ // the registry is read up to the first id that is missing
+		const registry = s.runtime.valenced.assets.AssetsRegistry
+		const original = registry.getAssetByID
+		registry.getAssetByID = id => (id === last + 1 ? { name: 'HashtagIcon' } : id === last + 2 ? { name: 'LockIcon' } : original(id))
+		const element = s.icons.BaseChannelIcon({ source: 1, style: { marginLeft: 6, marginRight: 40, width: 18 } })
+		const box = element?.props?.children?.[1]
+		check('with icon packs the symbol is placed from the left of the icon, not from the right of its margin box', box && box.props.style.position === 'absolute' && box.props.style.right === undefined && box.props.style.left === 6 + 18 - 11 + 2 && box.props.style.top === -2, box && box.props.style)
 	}
 
 	// --- The NSFW tag

@@ -228,6 +228,18 @@
 		return 18
 	}
 
+	/** How far the icon is pushed from the left edge of its box by its own margin. */
+	function leftMargin(props, ret) {
+		var RN = valenced.react.ReactNative
+		try {
+			var style = RN.StyleSheet.flatten([props.style, ret && ret.props && ret.props.style]) || {}
+			var m = style.marginLeft !== undefined ? style.marginLeft : style.marginHorizontal
+			return typeof m === 'number' ? m : 0
+		} catch (e) {
+			return 0
+		}
+	}
+
 	/** The icon with its colored symbol, built from the pack's own pictures. */
 	function decoratePack(props, ret, glyph, badge) {
 		var RN = valenced.react.ReactNative
@@ -235,7 +247,10 @@
 		var tint = setting('colorIconsFallback') ? kind.fallback : resolveColor(kind.token) || kind.fallback
 		var size = sizeOf(props, ret)
 		var side = Math.max(8, Math.round(size * 0.6))
-		var place = glyph.bottom || glyph.kind === 'Controller' ? { bottom: -2, right: -2 } : { top: -2, right: -2 }
+		// The symbol sits in the icon's own top right (or bottom right) corner. It is placed from the left edge of the icon,
+		// so the icon's right margin does not move it into the channel name.
+		var left = leftMargin(props, ret) + size - side + 2
+		var place = glyph.bottom || glyph.kind === 'Controller' ? { bottom: -2, left: left } : { top: -2, left: left }
 		return h(
 			RN.View,
 			{},
@@ -262,7 +277,9 @@
 			h(RN.Image, { style: styled, source: { uri: IMAGES[glyph.base] } }),
 			h(
 				RN.View,
-				{ style: { position: 'absolute', right: 0, bottom: 0 } },
+				// Over the picture it belongs to, from its top left corner. (Anchoring it to the bottom right of the box would
+				// include the icon's margin and push the symbol right, into the channel name.)
+				{ style: { position: 'absolute', left: 0, top: 0 } },
 				h(RN.Image, { style: Object.assign({}, styled, { tintColor: tint }), source: { uri: overlay } }),
 			),
 		)
