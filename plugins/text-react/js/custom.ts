@@ -52,9 +52,12 @@ export function splitEmoji(text: string): string[] {
 	return out
 }
 
-/** Whether a piece of text looks like an emoji: it is not made of letters, digits or plain punctuation. */
+/** Whether a piece of text looks like an emoji: its first character is not a letter, digit or plain punctuation. */
 export function looksLikeEmoji(piece: string): boolean {
-	return !/^[\p{L}\p{N}\p{P}\p{Z}]+$/u.test(piece) || /^[\d#*]️?⃣$/u.test(piece)
+	if (/^[d#*]️?⃣/.test(piece)) return true
+	const code = piece.codePointAt(0) ?? 0
+	// Latin letters, digits and punctuation end before U+2000. © and ® are symbols that sit inside.
+	return code === 0xa9 || code === 0xae || code >= 0x2100
 }
 
 /**

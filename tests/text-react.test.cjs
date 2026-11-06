@@ -412,6 +412,13 @@ async function setup({ saved = {}, answer = () => undefined, token = null, withH
 		}
 		const sameAs = (urls, list) => JSON.stringify(urls) === JSON.stringify(list.map(e => put('chan1', 'msg1', e)))
 		check('an accented letter is its plain letter', sameAs(await run({}, 'É'), ['🇪']))
+		check('À is A, in capitals too', sameAs(await run({}, 'À'), ['🇦']))
+		check('letters typed as a letter and a separate accent mark work', sameAs(await run({}, 'à'), ['🇦']))
+		const normalize = String.prototype.normalize
+		delete String.prototype.normalize
+		const without = await run({}, 'Àé', 900)
+		String.prototype.normalize = normalize
+		check('accents work on a phone without normalize', sameAs(without, ['🇦', '🇪']), without)
 		check('so are other accents and look-alikes', sameAs(await run({}, 'ñß', 900), ['🇳', '🇸']))
 		check('your own word gives all its emoji', sameAs(await run({ customWords: [{ word: 'fuck', emoji: '🍆🍑' }] }, 'Fuck', 900), ['🍆', '🍑']))
 		const inside = await run({ customWords: [{ word: 'fuck', emoji: '🍆🍑' }] }, 'fucks', 400)

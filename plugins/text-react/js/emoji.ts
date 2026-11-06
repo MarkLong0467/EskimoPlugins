@@ -3,40 +3,62 @@ import { MULTIPLE, SINGLE } from './emoji-table'
 import type { EmojiTable } from './emoji-table'
 import type { CustomWord, EmojiResult } from './types'
 
-/** Whether a character is part of a word (a letter or a digit). */
-const isWordCharacter = (character: string | undefined) =>
-	!!character && /[\p{L}\p{N}]/u.test(character)
-
-/** Letters that have no accent to take off but still stand for a plain letter. */
-const LOOK_ALIKES: Record<string, string> = {
-	ß: 's',
-	ø: 'o',
-	æ: 'a',
-	œ: 'o',
-	ł: 'l',
-	đ: 'd',
-	ð: 'd',
-	þ: 't',
-	ı: 'i',
+/**
+ * Plain letters and the accented letters that stand for them. Written out so nothing depends on the phone's Unicode support
+ * (`normalize` and `\p{L}` are not always there).
+ */
+const ACCENTS: Record<string, string> = {
+	a: 'àáâãäåāăąǎǻ',
+	c: 'çćĉċč',
+	d: 'ďđð',
+	e: 'èéêëēĕėęěǝ',
+	g: 'ĝğġģ',
+	h: 'ĥħ',
+	i: 'ìíîïĩīĭįıǐ',
+	j: 'ĵ',
+	k: 'ķ',
+	l: 'ĺļľŀł',
+	n: 'ñńņňŉ',
+	o: 'òóôõöøōŏőǒǿ',
+	r: 'ŕŗř',
+	s: 'śŝşšșß',
+	t: 'ţťŧțþ',
+	u: 'ùúûüũūŭůűųǔ',
+	w: 'ŵ',
+	y: 'ýÿŷ',
+	z: 'źżž',
 }
 
+/** Each accented letter and the plain letter it stands for. `æ` and `œ` are two letters but are kept as one. */
+const LOOK_ALIKES: Record<string, string> = { æ: 'a', œ: 'o' }
+for (const base of Object.keys(ACCENTS))
+	for (const accented of ACCENTS[base]) LOOK_ALIKES[accented] = base
+
+/** Whether a character is part of a word: a letter (also one with an accent or from another alphabet) or a digit. */
+const isWordCharacter = (character: string | undefined) =>
+	!!character &&
+	(/[0-9a-z]/i.test(character) || (character.codePointAt(0) ?? 0) >= 0xc0)
+
 /**
- * The text without accents, with every character kept as one character (so `é` is `e`, `ñ` is `n`, `ß` is `s`), so both texts
- * can be read with the same positions. Characters that are not letters with an accent are left as they are.
+ * The text without accents, with every character kept as one character (so `é` is `e`, `ñ` is `n`, `ß` is `s`), so both
+ * texts can be read with the same positions. Other characters are left as they are.
  */
 export function plain(text: string): string {
 	let out = ''
-	for (const character of Array.from(text)) {
-		const mapped = LOOK_ALIKES[character]
-		if (mapped) {
-			out += mapped
-			continue
-		}
-		const base = character.normalize('NFD')[0] ?? character
-		// Only letters are folded: a base that is a different kind of character (a symbol, a digit) is not what was typed.
-		out += /\p{L}/u.test(character) && /\p{L}/u.test(base) ? base : character
-	}
+	for (const character of Array.from(text))
+		out += LOOK_ALIKES[character] ?? character
 	return out
+}
+
+/** The text in small letters, with an accent written as a separate mark joined to its letter, and any other mark dropped. */
+function tidy(text: string): string {
+	let value = text.toLowerCase()
+	try {
+		value = value.normalize('NFC')
+	} catch {
+		// Without `normalize` letters typed already joined with their accent still work.
+	}
+	return value.replace(/[̀-ͯ]/g, '')
 }
 
 /** A copy of a table, so the emoji used for one text are not gone for the next. */
@@ -80,7 +102,7 @@ export function generateEmojiArray(
 	const hidden = new Set((options.hidden ?? []).map(key => key.toLowerCase()))
 	const custom = new Map<string, string[]>()
 	for (const entry of options.custom ?? []) {
-		const key = entry.word.toLowerCase().normalize('NFC')
+		const key = tidy(entry.word)
 		if (key) custom.set(key, splitEmoji(entry.emoji))
 	}
 	const customKeys = [...custom.keys()].sort((a, b) => b.length - a.length)
@@ -90,7 +112,7 @@ export function generateEmojiArray(
 	const used = new Set<string>()
 	const emoji: string[] = []
 	let incomplete = false
-	let exact = input.toLowerCase().normalize('NFC')
+	let exact = tidy(input)
 	let folded = plain(exact)
 	let before: string | undefined
 
