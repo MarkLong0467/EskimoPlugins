@@ -15,6 +15,7 @@ Hold a message and tap **Text React**. Type some text and it is added to the mes
 A message holds at most 20 different reactions, so longer text is refused. If part of the text has no emoji, the sheet asks
 before leaving it out (this can be switched off). Reactions are added one second apart by default, because Discord limits how
 fast they can be added; you can pick a different pause in the settings.
+The sheet slides in when it opens. If that lags on your phone, turn off **Opening animation** in the settings and it pops up at once.
 
 ## How it works
 

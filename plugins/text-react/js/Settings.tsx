@@ -46,6 +46,13 @@ export default function Settings({ api }: Props) {
 						onValueChange={(value: boolean) => json.set({ menu: value })}
 					/>
 					<Design.TableSwitchRow
+						key="animate"
+						label="Opening animation"
+						subLabel="Turn off to make the sheet pop up at once, which helps if it lags"
+						value={settings.animate !== false}
+						onValueChange={(value: boolean) => json.set({ animate: value })}
+					/>
+					<Design.TableSwitchRow
 						key="warn"
 						label="Warn about missing emoji"
 						subLabel="Ask first when part of the text has no emoji"

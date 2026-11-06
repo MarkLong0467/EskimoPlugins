@@ -1,13 +1,17 @@
 import { ActionSheetActionCreators } from '@valenced/discord/actions'
 import { Design } from '@valenced/discord/design'
-import { useState } from 'react'
+import { createContext, createElement, useContext, useState } from 'react'
 import { View } from 'react-native'
 import { setting } from './config'
 import { MAX_REACTIONS, SHEET_KEY } from './constants'
-import { toast } from './discord'
+import { motionContext, toast } from './discord'
 import { generateEmojiArray } from './emoji'
 import { addReactions } from './reactions'
+import type { MotionValue } from './discord'
 import type { Target } from './types'
+
+/** Stands in for the accessibility context when Discord's cannot be found, so the hook is always called. */
+const FALLBACK_CONTEXT = createContext<MotionValue>(undefined)
 
 /** Texts as constants because React Native text must be passed as an expression. */
 const TITLE = 'Text React'
@@ -38,6 +42,8 @@ function close(): void {
  */
 export default function TextReactSheet({ target }: { target: Target }) {
 	const [text, setText] = useState('')
+	const Motion = motionContext()
+	const accessibility = useContext(Motion ?? FALLBACK_CONTEXT)
 	const [confirm, setConfirm] = useState<string[] | null>(null)
 
 	/** Closes the sheet and adds the reactions in the background. */
@@ -58,7 +64,7 @@ export default function TextReactSheet({ target }: { target: Target }) {
 		go(emoji)
 	}
 
-	return (
+	const sheet = (
 		<Design.ActionSheet>
 			<View style={{ padding: 16, gap: 12 }}>
 				<Design.Text variant="heading-lg/bold">{TITLE}</Design.Text>
@@ -108,4 +114,18 @@ export default function TextReactSheet({ target }: { target: Target }) {
 			</View>
 		</Design.ActionSheet>
 	)
+
+	// With the animation off the sheet is told that reduced motion is on, which makes it appear at once.
+	if (setting('animate') === false && Motion)
+		return createElement(
+			Motion.Provider,
+			{
+				value: {
+					...accessibility,
+					reducedMotion: { ...accessibility?.reducedMotion, enabled: true },
+				},
+			},
+			sheet,
+		)
+	return sheet
 }

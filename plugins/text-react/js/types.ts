@@ -4,6 +4,8 @@ export interface TextReactSettings {
 	menu: boolean
 	/** Ask before reacting when part of the text has no emoji. */
 	warn: boolean
+	/** Slide the sheet in. Off: it pops up at once, which is lighter on slow phones. */
+	animate: boolean
 	/** How many seconds to wait between two reactions, as text. */
 	delaySeconds: string
 }

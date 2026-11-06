@@ -13,6 +13,7 @@ export const MENU_LABEL = 'Text React'
 export const DEFAULT_SETTINGS: TextReactSettings = {
 	menu: true,
 	warn: true,
+	animate: true,
 	delaySeconds: '1',
 }
 

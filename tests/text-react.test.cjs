@@ -346,13 +346,37 @@ async function setup({ saved = {}, answer = () => undefined, token = null, withH
 		check('stopping the plugin stops the reactions', s.urls.length === 1, s.urls)
 	}
 
+
+	// --- Opening animation
+	{
+		const s = await setup({ saved: { animate: false } })
+		s.runtime.finders.loadModule({ AccessibilityPreferencesContext: { _value: { reducedMotion: { enabled: false }, other: 1 }, Provider: 'Motion.Provider' } })
+		const { view } = await s.openSheet()
+		const provider = findNode(view.tree, n => n.type === 'Motion.Provider')
+		check('with the animation off the sheet is told reduced motion is on', !!provider && provider.props.value.reducedMotion.enabled === true && provider.props.value.other === 1, provider && provider.props)
+		await s.running.stop()
+	}
+	{
+		const s = await setup()
+		s.runtime.finders.loadModule({ AccessibilityPreferencesContext: { _value: { reducedMotion: { enabled: false } }, Provider: 'Motion.Provider' } })
+		const { view } = await s.openSheet()
+		check('with the animation on the sheet is drawn as before', !findNode(view.tree, n => n.type === 'Motion.Provider') && !!findNode(view.tree, n => n.type === 'Design.ActionSheet'))
+		await s.running.stop()
+	}
+	{
+		const s = await setup({ saved: { animate: false } })
+		const { view } = await s.openSheet()
+		check('without the Discord context the sheet still opens', !!findNode(view.tree, n => n.type === 'Design.ActionSheet'))
+		await s.running.stop()
+	}
+
 	// --- The settings screen
 	{
 		const s = await setup({ saved: { warn: false } })
 		const view = s.runtime.mount(s.runtime.React.createElement(s.definition.SettingsComponent, { api: { jsonStorage: s.storage } }))
 		await view.settle()
 		const rows = view.tree && require('./lib/harness.cjs').findNodes(view.tree, n => n.type === 'Design.TableSwitchRow')
-		check('there are two switches, showing what is saved', rows.length === 2 && rows[0].props.value === true && rows[1].props.value === false, rows.map(r => r.props.value))
+		check('there are three switches, showing what is saved', rows.length === 3 && rows[0].props.value === true && rows[1].props.value === true && rows[2].props.value === false, rows.map(r => r.props.value))
 		rows[0].props.onValueChange(false)
 		check('a switch is saved', s.storage.cache.menu === false, s.storage.cache)
 		const group = findNode(view.tree, n => n.type === 'Design.TableRadioGroup')

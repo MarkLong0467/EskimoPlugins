@@ -4,6 +4,11 @@ import { Stores } from '@valenced/discord/flux'
 import { lookupModule } from '@valenced/modules/finders'
 import { withProps } from '@valenced/modules/finders/filters'
 import { TOAST_KEY } from './constants'
+import type { Context } from 'react'
+
+/** What Discord's accessibility context holds, as far as used here. */
+export type MotionValue = { reducedMotion?: { enabled?: boolean } } | undefined
+
 import type { ApiError, Http } from './types'
 
 /** One of Discord's Flux stores by name, described by the type the caller gives. Nothing if Discord has no such store. */
@@ -80,4 +85,11 @@ export async function apiPut(path: string): Promise<void> {
 		}
 		throw error
 	}
+}
+
+/** Discord's accessibility context: its  makes sheets open without their slide animation. */
+export function motionContext(): Context<MotionValue> | undefined {
+	return findByProps<{
+		AccessibilityPreferencesContext?: Context<MotionValue>
+	}>('AccessibilityPreferencesContext')?.AccessibilityPreferencesContext
 }
