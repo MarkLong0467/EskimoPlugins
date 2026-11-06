@@ -282,13 +282,19 @@ function decorateRows(
 	if (!pressable || rows.some(row => row.props.label === MENU_LABEL))
 		return group
 
-	// The Reply and Forward box comes just before the box of copy rows, in every language. Seeing it makes the next box with
-	// three or more rows the copy box, even when its labels and icons cannot be read.
-	if (rows.length === 2) pairSeenAt = Date.now()
+	// The Reply and Forward box comes just before the box of copy rows, in every language. Seeing it makes the box right after
+	// it the copy box, even when its labels and icons cannot be read. Only boxes whose rows all have a tap action count (not
+	// switches or radio buttons of a settings screen), and only while the message the menu is for is known.
+	const tappable = rows.every(row => typeof row.props.onPress === 'function')
+	const known = messageForMenu() !== null
 	const byPosition =
-		rows.length >= 3 && Date.now() - pairSeenAt < POSITION_WINDOW_MS
+		tappable &&
+		known &&
+		rows.length >= 3 &&
+		pairSeenAt > 0 &&
+		Date.now() - pairSeenAt < POSITION_WINDOW_MS
+	pairSeenAt = tappable && known && rows.length === 2 ? Date.now() : 0
 	if (rows.length < 2 || !(rows.some(isCopyRow) || byPosition)) return group
-	if (byPosition) pairSeenAt = 0
 
 	const template = (rows.find(isCopyRow) ?? rows[0]) as Row
 	const iconId = MENU_ICONS.map(asset).find(id => id != null)

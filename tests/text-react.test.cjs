@@ -375,6 +375,24 @@ async function setup({ saved = {}, answer = () => undefined, token = null, withH
 		await s.running.stop()
 	}
 
+
+	// --- Screens that are not the message menu never get the row
+	{
+		const s = await setup()
+		const switchRow = label => ({ type: 'Design.TableSwitchRow', props: { label, value: true, onValueChange() {} } })
+		const radioRow = label => ({ type: 'Design.TableRadioRow', props: { label, value: label } })
+		const tapRow = label => ({ type: 'MenuRow', props: { label, onPress() {} } })
+		s.jsx.jsx('Group', { children: [switchRow('Update automatically'), switchRow('Skip on metered')] })
+		const radios = s.jsx.jsx('Group', { children: [radioRow('0.5'), radioRow('1'), radioRow('2'), radioRow('3')] })
+		check('switches and radio buttons never get the row', radios.props.children.length === 4)
+		const taps = s.jsx.jsx('Group', { children: [tapRow('Check for updates'), tapRow('Install'), tapRow('Restore')] })
+		check('tappable rows after switches do not either', taps.props.children.length === 3)
+		s.jsx.jsx('Group', { children: [tapRow('A'), tapRow('B')] })
+		const unknown = s.jsx.jsx('Group', { children: [tapRow('C'), tapRow('D'), tapRow('E')] })
+		check('with no message known the row is not added by position', unknown.props.children.length === 3)
+		await s.running.stop()
+	}
+
 	// --- Opening animation
 	{
 		const s = await setup({ saved: { animate: false } })
