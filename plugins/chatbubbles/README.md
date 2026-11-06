@@ -8,7 +8,7 @@ Adds customizable chat bubbles to the chat, similar to Flowercord.
 
 ## Native part
 
-The bubble styling is done by this plugin's own native part (Kotlin), which is ported but not built yet. Until it is, the settings work but chat looks unchanged.
+The bubbles are drawn by this plugin's own native part (Kotlin, in `src/main/kotlin`, built by the `kmmiio native build` workflow into `plugin.jar`). Restart Discord after installing or updating so the native part loads.
 
 ## Debugging
 

@@ -15,7 +15,8 @@
  * 1. reads `plugins/<name>/manifest.json`,
  * 2. takes the script from `build/js/index.js` (the output of `bun run build`), or from the manifest's `dist.script`
  *    for a plugin that ships a ready-made bundle,
- * 3. writes `pool/<id>@<version>.zip` with `manifest.json` and `index.js` (the same layout the Valenced packaging
+ * 3. writes `pool/<id>@<version>.zip` with `manifest.json`, `index.js` and, for a plugin with a native part, the jar named by
+ *    `dist.android.path` (the same layout the Valenced packaging
  *    produces),
  * 4. adds the version to `index.json` and makes it the `latest` channel.
  *
@@ -126,10 +127,22 @@ for (const folder of wanted) {
 	const manifestRaw = fs.readFileSync(manifestPath)
 	const manifest = JSON.parse(manifestRaw)
 	const script = readScript(dir, manifest)
-	const archive = zip([
+	const files = [
 		['manifest.json', manifestRaw],
 		['index.js', script],
-	])
+	]
+	// A plugin with a native part ships its jar in the zip, at the path the manifest gives.
+	const jar = manifest.dist?.android?.path
+	if (jar) {
+		const jarFile = path.join(dir, jar)
+		if (!fs.existsSync(jarFile)) {
+			console.error(`${folder}: the manifest names ${jar} but it is not in the plugin folder.`)
+			failed = true
+			continue
+		}
+		files.push([jar, fs.readFileSync(jarFile)])
+	}
+	const archive = zip(files)
 
 	const file = `${manifest.id}@${manifest.version}.zip`
 	const target = path.join(indexDir, 'pool', file)
