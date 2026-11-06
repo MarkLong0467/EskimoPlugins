@@ -2399,13 +2399,29 @@
       "description": "Check linked alt accounts, report a new alt, and appeal false positives — right from the user profile context menu.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.0.1"
+        "latest": "1.0.2"
       },
       "versions": {
         "1.0.1": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.altmaster@1.0.1.zip",
           "sha256": "694ef3ea6e0836c05c0ae0d396c6fca7147c9c71618319191d296c0c10d2dbe1",
           "size": 9662,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            },
+            "marklong.kmmiio-lib": {
+              "version": ">=1.2.17"
+            }
+          }
+        },
+        "1.0.2": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.altmaster@1.0.2.zip",
+          "sha256": "efccdfd86ec1f49d4125d98175851eb798920ffdd6f0bc51274d1e135eb75d32",
+          "size": 9244,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -2428,13 +2444,26 @@
       "description": "Remove untrusted link confirmation.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.0.0"
+        "latest": "1.0.1"
       },
       "versions": {
         "1.0.0": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.alwaystrust@1.0.0.zip",
           "sha256": "dce5d0aaa56bd8587dbec7ebfd3eae5806cf5ee64acce26c95d708b8b9c81a2c",
           "size": 4797,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.0.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.alwaystrust@1.0.1.zip",
+          "sha256": "03b19bb4289ceb11e060c40b627f470a597bc6b54a76eb408c286744cb1f5c14",
+          "size": 4345,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -2454,13 +2483,29 @@
       "description": "Better session control: multi-select logout, new-device alerts, and clearer device details.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.0.1"
+        "latest": "1.0.2"
       },
       "versions": {
         "1.0.1": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.better-devices@1.0.1.zip",
           "sha256": "26b2101839d210df8aa837d034b8d68e239d1dba189cf29e9b84cfb88b774320",
           "size": 9511,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            },
+            "marklong.kmmiio-lib": {
+              "version": ">=1.2.17"
+            }
+          }
+        },
+        "1.0.2": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.better-devices@1.0.2.zip",
+          "sha256": "9d080046789256bf4ba0e6f261b21419b7562156d5d81c59152bae0e06970cd8",
+          "size": 9084,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -2483,13 +2528,29 @@
       "description": "Quickly view your profile from the chatbox.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.2.3"
+        "latest": "1.2.4"
       },
       "versions": {
         "1.2.3": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.chatbox-avatar@1.2.3.zip",
           "sha256": "5a99988257e04cd4d75fb53d78200d1f513903c9d81b20535a3878bd753abc6c",
           "size": 6490,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            },
+            "marklong.kmmiio-lib": {
+              "version": ">=1.2.17"
+            }
+          }
+        },
+        "1.2.4": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.chatbox-avatar@1.2.4.zip",
+          "sha256": "dc6792fb51568a5c104b62932facb08fa60bd356019dbce728cd7797801c3942",
+          "size": 6056,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -2512,13 +2573,29 @@
       "description": "Adds customizable chat bubbles to the chat, similar to Flowercord.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.1.1"
+        "latest": "1.1.2"
       },
       "versions": {
         "1.1.1": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.chatbubbles@1.1.1.zip",
           "sha256": "37ea67b1f8463a33889249aafd30298eb7b7dae836ce88bea16c3fd4c0cad2c2",
           "size": 6387,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            },
+            "marklong.kmmiio-lib": {
+              "version": ">=1.2.17"
+            }
+          }
+        },
+        "1.1.2": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.chatbubbles@1.1.2.zip",
+          "sha256": "dc9fd47e0f8b2200fc39f4f3afba080b6e747fd02d318319d5496d98c9b192cf",
+          "size": 5972,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -2541,13 +2618,29 @@
       "description": "Hide profile clutter: avatar decorations, nameplates, profile effects, profile frames, server tags, and badges. Aswell as Nitro/Payment settings.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.2.1"
+        "latest": "1.2.2"
       },
       "versions": {
         "1.2.1": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.declutter@1.2.1.zip",
           "sha256": "62e58c3af5e2592ed4dba14eac7ce17ae29a90481cdec4e863dbf8d32566989b",
           "size": 8865,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            },
+            "marklong.kmmiio-lib": {
+              "version": ">=1.2.17"
+            }
+          }
+        },
+        "1.2.2": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.declutter@1.2.2.zip",
+          "sha256": "ef00ff9ef0d833fb4d798493100d79e12f7f0b6f49d75c40a695dcf6c4d7e5a8",
+          "size": 8422,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -2571,13 +2664,26 @@
       "description": "Shared utility modules and native hooks for kmmiio99o plugins.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.3.1"
+        "latest": "1.3.2"
       },
       "versions": {
         "1.3.1": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.kmmiio-lib@1.3.1.zip",
           "sha256": "da63fe6648afd73923566c7b3f141449a97895548360e1c9535912e3de84195a",
           "size": 10974,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.3.2": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.kmmiio-lib@1.3.2.zip",
+          "sha256": "d6d2e038c28841a30d79e5f3a868ced757682f5066ff79caf622a1b004867d9f",
+          "size": 10609,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -2597,13 +2703,29 @@
       "description": "Floating markdown formatting bar under chat input.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.2.0"
+        "latest": "1.2.1"
       },
       "versions": {
         "1.2.0": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.markdown-toolbar@1.2.0.zip",
           "sha256": "b85aa5331620638df223086961417fc0d78760ec2a82b39579cb1c5627d33467",
           "size": 6482,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            },
+            "marklong.kmmiio-lib": {
+              "version": ">=1.2.17"
+            }
+          }
+        },
+        "1.2.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.markdown-toolbar@1.2.1.zip",
+          "sha256": "dc751251e22e36b0d9594ec0b11a2ad054ceea0e0b4ebc6388d113dc4800d870",
+          "size": 6041,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -2626,13 +2748,26 @@
       "description": "Material theming for Discord, put exactly where themes for Discord belongs.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "0.1.1"
+        "latest": "0.1.2"
       },
       "versions": {
         "0.1.1": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.materialcord@0.1.1.zip",
           "sha256": "f7be88c12139fa915190e69105b900093151c04edcbd5e3e62b775821e91c94a",
           "size": 15012,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "0.1.2": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.materialcord@0.1.2.zip",
+          "sha256": "b4fa8f6ab2d4ef4a1dde29a3f309caf9a9e62118773f479f098666110bdcca85",
+          "size": 14534,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -2652,13 +2787,32 @@
       "description": "Show off your music status from Last.fm, Libre.fm, or ListenBrainz on your Discord profile with comprehensive console logging.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.2.3"
+        "latest": "1.2.4"
       },
       "versions": {
         "1.2.3": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.multi-scrobbler@1.2.3.zip",
           "sha256": "4ce2fdf657b958dbb96ceba8c43dccb45de4a0c076e590bdc1ef184d89e4b889",
           "size": 19352,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            },
+            "marklong.kmmiio-lib": {
+              "version": ">=1.2.17"
+            },
+            "marklong.toast-api": {
+              "version": ">=1.0.1"
+            }
+          }
+        },
+        "1.2.4": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.multi-scrobbler@1.2.4.zip",
+          "sha256": "e6f36eb7c587340006a39ec48a37a337a573b9e70a459d006e64f16ea9b50a63",
+          "size": 18897,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -2684,13 +2838,29 @@
       "description": "Manage your Discord servers from a drawer above the YouBar.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.1.5"
+        "latest": "1.1.6"
       },
       "versions": {
         "1.1.5": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.server-drawer@1.1.5.zip",
           "sha256": "ac0d026e4db328d2cb677e0cd386c75e218f1cecd91f7752c39f6d613f89d567",
           "size": 16658,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            },
+            "marklong.kmmiio-lib": {
+              "version": ">=1.2.17"
+            }
+          }
+        },
+        "1.1.6": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.server-drawer@1.1.6.zip",
+          "sha256": "a9d59a3e998fd55c825ca28370d5acf239bebef88625ed4e45ec8215e6c2bf9e",
+          "size": 16168,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
@@ -2713,13 +2883,26 @@
       "description": "Provides API for custom toast notifications used by other plugins.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.0.1"
+        "latest": "1.0.2"
       },
       "versions": {
         "1.0.1": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.toast-api@1.0.1.zip",
           "sha256": "7463e6c0971cb22ae1a76f4d2d2cac1ae141d012fe7064fd71c4bb6acfb76564",
           "size": 16489,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.0.2": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.toast-api@1.0.2.zip",
+          "sha256": "4e930b67440c3d988efe02241155ed0320cc212c5eefaf9bcce4e18409e181d5",
+          "size": 16064,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
