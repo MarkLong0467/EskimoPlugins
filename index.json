@@ -12,7 +12,7 @@
         "Duckie (Discord ID 772390964471791630, helped make this version)"
       ],
       "channels": {
-        "latest": "1.1.4"
+        "latest": "1.1.5"
       },
       "versions": {
         "1.0.0": {
@@ -123,6 +123,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.colorful-channels@1.1.4.zip",
           "sha256": "d4fa88a09993a64b6887fc1bd14d02f552fffeab331aa9a09e256ae93ba4e925",
           "size": 19669,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.1.5": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.colorful-channels@1.1.5.zip",
+          "sha256": "7543a233d42e6eee90d22b4eb1d1350a0379b18e1059207311fc60b7dd348921",
+          "size": 19915,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
