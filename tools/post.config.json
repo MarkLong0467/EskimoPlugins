@@ -1,0 +1,48 @@
+{
+	"header": [
+		"**EskimoPlugins**",
+		"Add this in Settings > Plugins > Advanced > Repository URL:",
+		"`https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/index.json`",
+		"",
+		"https://github.com/MarkLong0467/EskimoPlugins/",
+		"",
+		"**Plugins**"
+	],
+	"footer": [],
+	"short": {
+		"marklong.altmaster": "check linked alt accounts, report a new alt, and appeal false positives from a profile menu",
+		"marklong.always-animate": "animates profile pictures, banners, server icons, decorations, emoji, stickers and GIFs",
+		"marklong.alwaystrust": "removes the untrusted link confirmation",
+		"marklong.better-devices": "multi-select logout, new-device alerts and clearer device details",
+		"marklong.bypass-status": "get notifications from chosen people (or everyone) while on Do Not Disturb",
+		"marklong.chatbubbles": "customizable chat bubbles with rounded corners and your own color",
+		"marklong.chatbox-avatar": "a button in the chatbox to view your profile or open your account sheet",
+		"marklong.colorful-channels": "colored channel icons for locked and NSFW channels, plus a red NSFW tag",
+		"marklong.crop-plus": "crop pictures much smaller than Discord allows by cropping the result again",
+		"marklong.custom-sounds": "replace any Discord sound with your own link, with seasonal packs",
+		"marklong.haptics": "turn Discord's buzzing on or off, with a log of what buzzed",
+		"marklong.hypesquad": "change your HypeSquad house, or leave it, in one tap",
+		"marklong.markdown-toolbar": "a floating formatting bar under the chat input that pops up with the keyboard",
+		"marklong.message-preview": "preview your message before sending it",
+		"marklong.message-reminders": "hold a message, tap Remind Me, and get a Jump / Snooze / Done sheet when it's due",
+		"marklong.minecraft-servers": "see if your servers are online, who is playing, and the ping",
+		"marklong.nef-viewer": "shows RAW photos (Nikon, Canon, Sony, Fujifilm and more) in chat, with a photo info sheet",
+		"marklong.pin-dms": "pin DMs and group chats to the top, in sections you can fold",
+		"marklong.quiet-hours": "switches your status to Do Not Disturb on a schedule and puts it back, with one-tap skip tonight",
+		"marklong.repo-post": "keeps your repository thread post up to date with the plugin list and versions",
+		"marklong.rich-presence": "fully custom rich presence with profiles, images, timers and buttons",
+		"marklong.role-options": "copy a role's name, color or icon from the role menu",
+		"marklong.server-drawer": "manage your servers from a drawer above the YouBar",
+		"marklong.server-info": "members, roles, channels, boosts, owner and friends for any server",
+		"marklong.slowmode-extended": "more slowmode choices, from every second up to 6 hours",
+		"marklong.soundcloud-presence": "show your SoundCloud track on your profile (works with Last.fm)",
+		"marklong.split-large-messages": "automatically splits messages over the character limit",
+		"marklong.spotify-tools": "Listen Along button, plus send your song or album from the + menu",
+		"marklong.status-presets": "save statuses as presets and switch with one tap, with Undo",
+		"marklong.text-react": "hold a message and add text as reactions, like letters, numbers and words such as \"ok\"",
+		"marklong.valid-user": "resolves @unknown-user mentions automatically"
+	},
+	"suffix": {
+		"marklong.custom-sounds": "(beta)"
+	}
+}

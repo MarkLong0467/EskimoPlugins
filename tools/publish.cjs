@@ -18,7 +18,8 @@
  * 3. writes `pool/<id>@<version>.zip` with `manifest.json`, `index.js` and, for a plugin with a native part, the jar named by
  *    `dist.android.path` (the same layout the Valenced packaging
  *    produces),
- * 4. adds the version to `index.json` and makes it the `latest` channel.
+ * 4. adds the version to `index.json` and makes it the `latest` channel,
+ * 5. writes `post.json`, the plugin list for the repository thread post (see `tools/post.cjs`).
  *
  * Rules that keep a release safe:
  * - Nothing is ever deleted from `pool/`, and older versions stay in the index, so a plugin can be rolled back.
@@ -178,3 +179,6 @@ if (failed) process.exit(1)
 
 const text = `${JSON.stringify(index, null, 2)}\n`
 fs.writeFileSync(indexPath, crlf ? text.replace(/\n/g, '\r\n') : text)
+
+// The list for the repository thread post is made from the index every time, so it never falls behind.
+console.log(`post.json: ${require('./post.cjs').writePost(indexDir)} plugins`)

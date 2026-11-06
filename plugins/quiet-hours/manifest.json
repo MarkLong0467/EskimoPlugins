@@ -1,0 +1,22 @@
+{
+	"format": 1,
+	"id": "marklong.quiet-hours",
+	"name": "Quiet Hours",
+	"description": "Switches your status to Do Not Disturb (or Idle, or Invisible) on a schedule you set, such as weeknights from 11 PM to 7 AM, and puts your old status back afterwards. One tap skips tonight. Works whenever Discord is open.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [
+		"Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
+	],
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
