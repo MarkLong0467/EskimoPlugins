@@ -1,0 +1,26 @@
+{
+	"format": 1,
+	"id": "marklong.better-devices",
+	"name": "Better Devices",
+	"description": "Better session control: multi-select logout, new-device alerts, and clearer device details.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [
+		"kmmiio99o <879393496627306587> (https://kmmiio99o.dev \"Original author\") (https://github.com/kmmiio99o \"GitHub\")"
+	],
+	"icon": "LaptopPhoneIcon",
+	"version": "1.0.1",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		},
+		"marklong.kmmiio-lib": {
+			"version": ">=1.2.17"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}

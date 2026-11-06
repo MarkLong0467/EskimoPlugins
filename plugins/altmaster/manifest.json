@@ -1,0 +1,26 @@
+{
+	"format": 1,
+	"id": "marklong.altmaster",
+	"name": "AltMaster",
+	"description": "Check linked alt accounts, report a new alt, and appeal false positives — right from the user profile context menu.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [
+		"kmmiio99o <879393496627306587> (https://kmmiio99o.dev \"Original author\") (https://github.com/kmmiio99o \"GitHub\")"
+	],
+	"icon": "ShieldIcon",
+	"version": "1.0.1",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		},
+		"marklong.kmmiio-lib": {
+			"version": ">=1.2.17"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}

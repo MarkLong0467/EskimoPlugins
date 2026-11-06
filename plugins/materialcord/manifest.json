@@ -1,0 +1,23 @@
+{
+	"format": 1,
+	"id": "marklong.materialcord",
+	"name": "MaterialCord",
+	"description": "Material theming for Discord, put exactly where themes for Discord belongs.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [
+		"kmmiio99o <879393496627306587> (https://kmmiio99o.dev \"Original author\") (https://github.com/kmmiio99o \"GitHub\")"
+	],
+	"icon": "PaintPaletteIcon",
+	"version": "0.1.1",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}

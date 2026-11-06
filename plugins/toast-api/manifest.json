@@ -1,0 +1,23 @@
+{
+	"format": 1,
+	"id": "marklong.toast-api",
+	"name": "Toast API",
+	"description": "Provides API for custom toast notifications used by other plugins.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [
+		"kmmiio99o <879393496627306587> (https://kmmiio99o.dev \"Original author\") (https://github.com/kmmiio99o \"GitHub\")"
+	],
+	"icon": "PollsIcon",
+	"version": "1.0.1",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
