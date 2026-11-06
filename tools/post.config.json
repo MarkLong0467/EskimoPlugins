@@ -11,6 +11,7 @@
 	"footer": [],
 	"short": {
 		"marklong.altmaster": "check linked alt accounts, report a new alt, and appeal false positives from a profile menu",
+		"marklong.auto-show-all-channels": "turns on Show All Channels by itself in every server you join",
 		"marklong.always-animate": "animates profile pictures, banners, server icons, decorations, emoji, stickers and GIFs",
 		"marklong.alwaystrust": "removes the untrusted link confirmation",
 		"marklong.better-devices": "multi-select logout, new-device alerts and clearer device details",

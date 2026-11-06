@@ -10,12 +10,16 @@ const { check, done } = createReporter('No Suggestions')
 /** A fake Discord: the file that defines the section, the file that re-exports it and the clear function. */
 function fake() {
 	const cleared = []
-	const originalA = props => ({ drew: 'A', props })
+	const calls = []
+	const originalA = props => {
+		calls.push(props)
+		return { drew: 'A', props }
+	}
 	const originalB = props => ({ drew: 'B', props })
 	const categories = { SuggestedCategory: originalA, CategoryChannel: () => null }
 	const items = { SuggestedCategory: originalB, other: 1 }
 	const utils = { clearRecentChannels: (guildId, ids) => cleared.push([guildId, ids]) }
-	return { cleared, originalA, originalB, categories, items, utils }
+	return { cleared, calls, originalA, originalB, categories, items, utils }
 }
 
 ;(async () => {
@@ -34,6 +38,7 @@ function fake() {
 		check('the file that re-exports it is patched too (it was a default export)', f.items.SuggestedCategory !== f.originalB)
 
 		check('with no suggestions it draws nothing', f.categories.SuggestedCategory({ guildId: 'g', channelIds: [] }) === null)
+		check('but Discord’s own component still ran, so its hooks run on every draw', f.calls.length === 1 && f.calls[0].channelIds.length === 0, f.calls)
 		check('with channelIds missing it draws nothing', f.categories.SuggestedCategory({ guildId: 'g', channelIds: null }) === null && f.items.SuggestedCategory({ guildId: 'g' }) === null)
 		check('and asks Discord to clear nothing', f.cleared.length === 0, f.cleared)
 

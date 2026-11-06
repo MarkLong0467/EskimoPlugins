@@ -73,6 +73,9 @@ export default plugin({
 								// There is no need to send an unnecessary request to clear the recent channels.
 								if (!props?.channelIds?.length) {
 									state.empty++
+									// Discord's own component is run first, and its result thrown away, so that its hooks run on
+									// every draw (a component that skips them on one draw makes React fail).
+									original(props)
 									return null
 								}
 								state.cleared++

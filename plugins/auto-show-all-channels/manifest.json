@@ -1,0 +1,23 @@
+{
+	"format": 1,
+	"id": "marklong.auto-show-all-channels",
+	"name": "Auto Show All Channels",
+	"description": "Turns on \"Show All Channels\" by itself in every server you join, so community servers never hide channels from you. Has a button to do the same for the servers you are already in.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [
+		"Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
+	],
+	"icon": "EyeIcon",
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
