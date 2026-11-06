@@ -2742,58 +2742,6 @@
         "kmmiio99o <879393496627306587> (https://kmmiio99o.dev \"Original author\") (https://github.com/kmmiio99o \"GitHub\")"
       ]
     },
-    "marklong.materialcord": {
-      "name": "MaterialCord",
-      "description": "Material theming for Discord, put exactly where themes for Discord belongs.",
-      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-      "channels": {
-        "latest": "0.1.3"
-      },
-      "versions": {
-        "0.1.1": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.materialcord@0.1.1.zip",
-          "sha256": "f7be88c12139fa915190e69105b900093151c04edcbd5e3e62b775821e91c94a",
-          "size": 15012,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        },
-        "0.1.2": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.materialcord@0.1.2.zip",
-          "sha256": "b4fa8f6ab2d4ef4a1dde29a3f309caf9a9e62118773f479f098666110bdcca85",
-          "size": 14534,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        },
-        "0.1.3": {
-          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.materialcord@0.1.3.zip",
-          "sha256": "f0284656901f0735f7db275baecefa88627c6d54537b3e9d30fe30b3750cfb73",
-          "size": 14528,
-          "dependencies": {
-            "valenced.api": {
-              "version": ">=1 <2"
-            },
-            "discord": {
-              "version": "*"
-            }
-          }
-        }
-      },
-      "contributors": [
-        "kmmiio99o <879393496627306587> (https://kmmiio99o.dev \"Original author\") (https://github.com/kmmiio99o \"GitHub\")"
-      ]
-    },
     "marklong.multi-scrobbler": {
       "name": "Multi Scrobbler",
       "description": "Show off your music status from Last.fm, Libre.fm, or ListenBrainz on your Discord profile with comprehensive console logging.",
