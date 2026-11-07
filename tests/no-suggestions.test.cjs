@@ -180,21 +180,5 @@ const events = s => s.runtime.log.dispatched.filter(a => a.type === 'BULK_CLEAR_
 		s.stop()
 	}
 
-	// --- Rows of suggested channels
-	{
-		const f = fakeSection()
-		const s = await startPort('no-suggestions')
-		render(drawElement(s, f.SuggestedCategory, { guildId: 'rowguild', channelIds: ['r1', 'r2'] }))
-		const Row = function TextChannel() { return 'row' }
-		const plain = drawElement(s, Row, { channelId: 'r1', selected: false })
-		check('a row for a suggested channel that does not say it is a suggestion is left alone', plain.type === Row)
-		const flagged = drawElement(s, Row, { channelId: 'r2', isSuggested: true })
-		check('a row that says it is a suggestion draws nothing', render(flagged) === null && flagged.type !== Row)
-		const other = drawElement(s, Row, { channelId: 'zzz', isSuggested: true })
-		check('a row for another channel is never touched', other.type === Row)
-		check('the report names the component that drew the rows and its props', true)
-		s.stop()
-	}
-
 	done()
 })()

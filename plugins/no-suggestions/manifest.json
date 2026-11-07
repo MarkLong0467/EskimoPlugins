@@ -8,7 +8,7 @@
 		"PalmDevs <629368283354628116> (https://github.com/PalmDevs \"Original author\") (https://github.com/PalmDevs/revenge-plugins \"Source\")"
 	],
 	"icon": "CircleXIcon",
-	"version": "1.2.0",
+	"version": "1.2.1",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"
