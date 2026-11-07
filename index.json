@@ -3044,7 +3044,7 @@
       "description": "Removes annoying channel suggestions that reappear even if you already removed them.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.2.0"
+        "latest": "1.2.1"
       },
       "versions": {
         "1.0.0": {
@@ -3090,6 +3090,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.no-suggestions@1.2.0.zip",
           "sha256": "db1caef1b3c6dd525c666288c91be5a18d11dfd08356a5d69ce686b7e65703ff",
           "size": 6569,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.2.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.no-suggestions@1.2.1.zip",
+          "sha256": "1c293335e46370825dc14208fff6bc9d9c5cc7912c06d953ac4383c88ba2876e",
+          "size": 5924,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
