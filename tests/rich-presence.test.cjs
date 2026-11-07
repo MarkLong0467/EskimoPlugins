@@ -136,17 +136,20 @@ const switchOf = (view, label) => findNode(view.tree, n => n.type === 'Design.Ta
 const rowOf = (view, label) => findNode(view.tree, n => n.type === 'Design.TableRow' && n.props.label === label)
 const inputOf = (view, label) => findNode(view.tree, n => n.type === 'Design.TextInput' && n.props.label === label)
 const groupOf = (view, title) => findNode(view.tree, n => n.type === 'Design.TableRadioGroup' && n.props.title === title)
-const sectionOf = (view, start) => findNode(view.tree, n => n.type === 'Design.TableRowGroup' && String(n.props.title).startsWith(start))
+/** A part of a screen: a titled group, or a block that starts with a big heading (the Stack whose first child is the heading). */
+const sectionOf = (view, start) =>
+	findNode(view.tree, n => n.type === 'Design.TableRowGroup' && String(n.props.title).startsWith(start)) ??
+	findNodes(view.tree, n => n.type === 'Design.Stack').find(s => {
+		const first = [s.children].flat(Infinity).filter(Boolean)[0]
+		return first && typeof first === 'object' && first.type === 'View' && textOf(first).startsWith(start)
+	}) ??
+	null
 const buttonOf = (view, text) => findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === text)
 
 /** Opens a presence's editor from the list and picks a page. */
-async function openEditor(view, label, page) {
+async function openEditor(view, label) {
 	findNode(view.tree, n => n.type === 'Design.TableRow' && n.props.label === label && n.props.arrow).props.onPress()
 	await view.settle()
-	if (page) {
-		buttonOf(view, page).props.onPress()
-		await view.settle()
-	}
 }
 
 /** Types into a text box the way a person does, and waits for it to be saved and sent. */
@@ -479,7 +482,7 @@ async function type(view, label, value, wait = 1000) {
 		await view.settle()
 		const added = s.storage.cache.profiles.at(-1)
 		check('a new profile is added at the end and starts off', s.storage.cache.profiles.length === 3 && added.enabled === false && added.kind === 'custom')
-		check('it is opened for editing', !!inputOf(view, 'Activity name') && buttonOf(view, 'Basics') !== null)
+		check('it is opened for editing', !!inputOf(view, 'Activity name') && !!sectionOf(view, 'Basics'))
 		check('and nothing new is sent for it', s.sent(added.id).length === 0 && s.live().sort().join() === 'a,b', s.live())
 		rowOf(view, 'Duplicate').props.onPress()
 		await sleep(900)
@@ -591,22 +594,16 @@ async function type(view, label, value, wait = 1000) {
 		const s = await setup({ profiles: [prof('a', { name: 'Edit me' })] })
 		const view = await s.settingsView()
 		await openEditor(view, 'A')
-		check('the editor has a button for each page and one to go back', ['Basics', 'Text', 'Images', 'Timer', 'Buttons', 'When'].every(t => !!buttonOf(view, t)) && !!buttonOf(view, '‹ All presences'))
-		check('the open page is the filled button', buttonOf(view, 'Basics').props.variant === 'primary' && buttonOf(view, 'Timer').props.variant === 'secondary')
+		const headings = ['Basics', 'Text', 'Group size', 'Images', 'Timer', 'Buttons', 'Schedule', 'Application ID', 'Variables', 'Manage']
+		check('the editor is one page with a big heading for each part, and a button to go back', headings.every(h => !!sectionOf(view, h)) && !!buttonOf(view, '‹ All presences'), headings.filter(h => !sectionOf(view, h)))
+		check('there are no page buttons', ['Basics', 'Text', 'Images', 'Timer', 'Buttons', 'When'].every(t => buttonOf(view, t) === null))
 		check('Basics has the names, the kind and the Application ID with its explanation', !!inputOf(view, 'Activity name') && !!inputOf(view, 'Name in the list') && !!inputOf(view, 'Application ID') && !!groupOf(view, 'Kind of activity') && /different one/i.test(textOf(view.tree)))
 		check('the preview shows it', textOf(view.tree).includes('Playing Edit me'))
-		buttonOf(view, 'Text').props.onPress()
-		await view.settle()
-		check('Text has the lines, their links and the group size', ['Top line', 'Bottom line', 'Top line link', 'Bottom line link', 'In the group now', 'Group size'].every(l => !!inputOf(view, l)))
-		buttonOf(view, 'Images').props.onPress()
-		await view.settle()
-		check('Images has the large and small image fields', ['Image', 'Text when pressed', 'Link when tapped'].every(l => findNodes(view.tree, n => n.type === 'Design.TextInput' && n.props.label === l).length === 2))
-		buttonOf(view, 'Buttons').props.onPress()
-		await view.settle()
-		check('Buttons has two buttons', ['Label', 'Link'].every(l => findNodes(view.tree, n => n.type === 'Design.TextInput' && n.props.label === l).length === 2))
-		buttonOf(view, 'When').props.onPress()
-		await view.settle()
-		check('When has the schedule switch and "show only when"', !!switchOf(view, 'Use a schedule') && !!inputOf(view, 'This text has to have something in it'))
+		check('the lines, their links and the group size are all on the page', ['Top line', 'Bottom line', 'Top line link', 'Bottom line link', 'In the group now', 'Group size'].every(l => !!inputOf(view, l)))
+		check('the large and small image fields are on the page', ['Large image', 'Large image text', 'Large image link', 'Small image', 'Small image text', 'Small image link'].every(l => !!inputOf(view, l)))
+		check('the two buttons are on the page', ['Button 1 label', 'Button 1 link', 'Button 2 label', 'Button 2 link'].every(l => !!inputOf(view, l)))
+		check('the parts come in order, like Kizzy', headings.every((h, i) => i === 0 || textOf(view.tree).indexOf(h) >= 0))
+		check('the schedule switch and "show only when" are on the page', !!switchOf(view, 'Use a schedule') && !!inputOf(view, 'Show only when this has text'))
 		check('the days appear only once a schedule is on', buttonOf(view, 'Mon') === null)
 		switchOf(view, 'Use a schedule').props.onValueChange(true)
 		await sleep(400)
@@ -635,22 +632,22 @@ async function type(view, label, value, wait = 1000) {
 	{
 		const s = await setup({ profiles: [prof('a')] })
 		const view = await s.settingsView()
-		await openEditor(view, 'A', 'Timer')
+		await openEditor(view, 'A')
 		const modes = groupOf(view, 'What the timer does')
 		const labels = findNodes(modes, n => n.type === 'Design.TableRadioRow').map(n => n.props.label)
 		check('the timer page lists every kind of timer', labels.join() === 'No timer,Since switched on,Since Discord opened,Since a date,Until a date,Countdown,Until midnight,Time of day,Between two times each day,Start and end,From the SoundCloud track', labels)
 		check('each says what it does', findNodes(modes, n => n.type === 'Design.TableRadioRow').every(n => typeof n.props.subLabel === 'string' && n.props.subLabel.length > 10))
-		check('a timer with no settings shows no extra fields', !inputOf(view, 'Date and time') && !inputOf(view, 'Minutes'))
+		check('a timer with no settings shows no extra fields', !inputOf(view, 'Count up from') && !inputOf(view, 'Count down to') && !inputOf(view, 'Minutes'))
 		modes.props.onChange('until')
 		await sleep(400)
 		await view.settle()
-		check('"Until a date" shows the date field and how it repeats', !!inputOf(view, 'Date and time') && !!groupOf(view, 'When the date has passed'))
+		check('"Until a date" shows the date field and how it repeats', !!inputOf(view, 'Count down to') && !!groupOf(view, 'When the date has passed'))
 		check('the repeats are never, daily, weekly, monthly and yearly', findNodes(groupOf(view, 'When the date has passed'), n => n.type === 'Design.TableRadioRow').map(n => n.props.label).join() === 'Never,Every day,Every week,Every month,Every year')
-		await type(view, 'Date and time', '2099-12-25 18:30', 600)
-		check('the date field says how it read the date', /Reads as .*Dec 25 2099, 6:30 PM/.test(inputOf(view, 'Date and time').props.description), inputOf(view, 'Date and time').props.description)
-		await type(view, 'Date and time', '2099-02-31', 600)
-		check('a date that does not exist is not accepted', /Not a date/.test(inputOf(view, 'Date and time').props.description), inputOf(view, 'Date and time').props.description)
-		await type(view, 'Date and time', '2099-12-25 18:30', 600)
+		await type(view, 'Count down to', '2099-12-25 18:30', 600)
+		check('the date field says how it read the date', /Reads as .*Dec 25 2099, 6:30 PM/.test(inputOf(view, 'Count down to').props.description), inputOf(view, 'Count down to').props.description)
+		await type(view, 'Count down to', '2099-02-31', 600)
+		check('a date that does not exist is not accepted', /Not a date/.test(inputOf(view, 'Count down to').props.description), inputOf(view, 'Count down to').props.description)
+		await type(view, 'Count down to', '2099-12-25 18:30', 600)
 		check('the date is saved and sent', s.storage.cache.profiles[0].timerDate === '2099-12-25 18:30' && s.lastOf('a').activity.timestamps.end === new Date(2099, 11, 25, 18, 30).getTime(), s.lastOf('a').activity.timestamps)
 		check('and the preview says how long is left', /left/.test(textOf(view.tree)))
 		groupOf(view, 'When the date has passed').props.onChange('yearly')
@@ -666,7 +663,7 @@ async function type(view, label, value, wait = 1000) {
 		groupOf(view, 'What the timer does').props.onChange('daily')
 		await sleep(400)
 		await view.settle()
-		check('"Between two times each day" shows From and To', !!inputOf(view, 'From') && !!inputOf(view, 'To'))
+		check('"Between two times each day" shows From and To', !!inputOf(view, 'Every day from') && !!inputOf(view, 'Every day to'))
 		groupOf(view, 'What the timer does').props.onChange('custom')
 		await sleep(400)
 		await view.settle()
@@ -674,7 +671,7 @@ async function type(view, label, value, wait = 1000) {
 		groupOf(view, 'What the timer does').props.onChange('since')
 		await sleep(400)
 		await view.settle()
-		check('"Since a date" shows the date field but no repeat', !!inputOf(view, 'Date and time') && groupOf(view, 'When the date has passed') === null)
+		check('"Since a date" shows the date field but no repeat', !!inputOf(view, 'Count up from') && groupOf(view, 'When the date has passed') === null)
 		view.unmount()
 		await s.restore()
 	}
@@ -865,6 +862,59 @@ async function type(view, label, value, wait = 1000) {
 		view.unmount()
 		await running.stop()
 	}
+
+	// --- The group size takes big numbers, like Kizzy (999999999 of 999999999)
+	{
+		const partyOf = async fields => {
+			const s = await setup({ profiles: [prof('a', { name: 'Game', state: 'In a match', ...fields })] })
+			const party = s.lastOf('a')?.activity?.party
+			await s.restore()
+			return party
+		}
+		const party = async (cur, max) => JSON.stringify((await partyOf({ partyCurrent: cur, partyMax: max }))?.size ?? null)
+		check('999999999 of 999999999 is sent as it is', (await party('999999999', '999999999')) === '[999999999,999999999]')
+		check('the biggest size Discord takes (2147483647) is sent', (await party('2147483647', '2147483647')) === '[2147483647,2147483647]')
+		check('one more than that is left out', (await party('1', '2147483648')) === 'null')
+		check('a small group still works', (await party('1', '4')) === '[1,4]')
+		check('a number in the group bigger than the size is cut to the size', (await party('9', '4')) === '[4,4]')
+		check('0 in the group is left out, like Kizzy', (await party('0', '4')) === 'null')
+		check('a size of 0 is left out', (await party('1', '0')) === 'null')
+		check('letters or decimals are left out, not half read', (await party('4x', '9')) === 'null' && (await party('1.5', '9')) === 'null' && (await party('-1', '9')) === 'null')
+		check('only one of the two numbers is left out', (await party('3', '')) === 'null' && (await party('', '3')) === 'null')
+		check('spaces around the numbers are fine', (await party(' 2 ', ' 5 ')) === '[2,5]')
+
+		const s = await setup({ profiles: [prof('a', { name: 'Edit me', state: 'In a match' })] })
+		const view = await s.settingsView()
+		await openEditor(view, 'A')
+		check('the boxes take ten digits', inputOf(view, 'In the group now').props.maxLength === 10 && inputOf(view, 'Group size').props.maxLength === 10)
+		await type(view, 'In the group now', '999999999', 600)
+		await type(view, 'Group size', '999999999', 600)
+		check('the preview says 999999999 of 999999999', textOf(view.tree).includes('In a match (999999999 of 999999999)'), textOf(view.tree).slice(0, 200))
+		check('the saved presence is sent with it', JSON.stringify(s.lastOf('a').activity.party.size) === '[999999999,999999999]')
+		await type(view, 'In the group now', 'abc', 600)
+		check('letters get a note, like Kizzy', /Not a number/.test(inputOf(view, 'In the group now').props.description), inputOf(view, 'In the group now').props.description)
+		await type(view, 'In the group now', '0', 600)
+		check('0 gets a note', /more than 0/.test(inputOf(view, 'In the group now').props.description))
+		await type(view, 'In the group now', '999999999999', 600)
+		check('too big gets a note with the most', /2147483647/.test(inputOf(view, 'In the group now').props.description))
+		await type(view, 'Group size', '3', 600)
+		await type(view, 'In the group now', '5', 600)
+		check('a number in the group over the size is explained on both boxes', /more than the group size/.test(inputOf(view, 'In the group now').props.description) && /less than the number in the group/.test(inputOf(view, 'Group size').props.description))
+		await type(view, 'In the group now', '2', 600)
+		check('and the notes go away when it is right', !/Cannot/.test(inputOf(view, 'In the group now').props.description) && !/Cannot/.test(inputOf(view, 'Group size').props.description))
+		await type(view, 'Group size', '', 600)
+		check('a size left empty while the group is filled in is pointed out', /cannot be empty/.test(inputOf(view, 'Group size').props.description))
+		view.unmount()
+		await s.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('a', { name: 'Game', partyCurrent: '4x', partyMax: '9' })] })
+		const view = await s.settingsView()
+		check('a group size that cannot be read shows under Fix this', /group size is left out/i.test(textOf(sectionOf(view, 'Fix this') ?? { children: [] })), textOf(view.tree).slice(0, 300))
+		view.unmount()
+		await s.restore()
+	}
+
 
 	globalThis.setTimeout = realSetTimeout
 	Date.now = realNow

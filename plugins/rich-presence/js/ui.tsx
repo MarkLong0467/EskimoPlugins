@@ -90,27 +90,38 @@ export const Back = ({
 	</View>
 )
 
-/** A row of buttons that picks one page. The page that is open is the filled button. */
-export function Tabs<V extends string>({
-	tabs,
-	value,
-	onChange,
-}: {
-	tabs: Choice<V>[]
-	value: V
-	onChange: (value: V) => void
-}) {
-	return (
-		<View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-			{tabs.map(tab => (
-				<Design.Button
-					key={tab.v}
-					text={tab.l}
-					variant={tab.v === value ? 'primary' : 'secondary'}
-					size="sm"
-					onPress={() => onChange(tab.v)}
-				/>
-			))}
-		</View>
-	)
-}
+/** A big title with one short line under it, which starts each part of the editor. */
+export const Heading = ({ title, hint }: { title: string; hint?: string }) => (
+	<View style={{ paddingHorizontal: 4, gap: 4 }}>
+		<Design.Text variant="heading-lg/bold">{title}</Design.Text>
+		{hint ? (
+			<Design.Text variant="text-sm/medium" color="text-muted">
+				{hint}
+			</Design.Text>
+		) : null}
+	</View>
+)
+
+/** One part of the editor: a big title, one short line, and what belongs to it. Empty entries are left out. */
+export const block = (
+	title: string,
+	hint: string | undefined,
+	...kids: ReactNode[]
+) => (
+	<Design.Stack key={title} spacing={12}>
+		<Heading title={title} hint={hint} />
+		{kids.filter(Boolean)}
+	</Design.Stack>
+)
+
+/** A card of rows or text boxes with no title of its own (the title is the block's). `id` keeps it apart from its siblings. */
+export const group = (id: string, ...kids: ReactNode[]) => (
+	<Design.TableRowGroup key={id}>{kids.filter(Boolean)}</Design.TableRowGroup>
+)
+
+/** A part of a screen with one card of rows: a big title, one short line, and the rows. */
+export const part = (
+	title: string,
+	hint: string | undefined,
+	...kids: ReactNode[]
+) => block(title, hint, group(title, ...kids))

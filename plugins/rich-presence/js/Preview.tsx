@@ -21,7 +21,7 @@ import {
 	relativeText,
 	startOfDay,
 } from './timers'
-import { num, text } from './variables'
+import { num, partySize, text } from './variables'
 import type { PreviewInfo, Profile, SoundCloudSettings } from './types'
 
 /** The styles are made the first time the preview is drawn (they need Discord's color tokens), then kept. */
@@ -96,9 +96,9 @@ export function timerLine(p: Profile, now = Date.now()): string | undefined {
 export function describe(p: Profile): PreviewInfo {
 	const name = text(p.name)
 	let state = text(p.state)
-	const cur = num(p.partyCurrent)
-	const max = num(p.partyMax)
-	if (state && cur !== undefined && max !== undefined && max > 0)
+	const cur = partySize(p.partyCurrent)
+	const max = partySize(p.partyMax)
+	if (state && cur !== undefined && max !== undefined)
 		state += ` (${Math.min(cur, max)} of ${max})`
 
 	const timer = timerLine(p)

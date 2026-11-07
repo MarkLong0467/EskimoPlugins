@@ -1,6 +1,6 @@
 import { planNow } from './apply'
 import { nextOccurrence, parseClock, parseDate } from './timers'
-import { num } from './variables'
+import { num, partyProblem } from './variables'
 import type { Profile, RichPresenceSettings } from './types'
 
 /** Something the person is doing that will not work, and which presence it is about. */
@@ -97,8 +97,13 @@ export function warnings(settings: RichPresenceSettings): Warning[] {
 		if (filled(p.partyCurrent) !== filled(p.partyMax))
 			add(
 				p,
-				'The group size needs both numbers (Text page), or it is left out.',
+				'The group size needs both numbers (Group size section), or it is left out.',
 			)
+		const partyNote =
+			partyProblem('current', p.partyCurrent, p.partyMax) ||
+			partyProblem('max', p.partyCurrent, p.partyMax)
+		if (partyNote && filled(p.partyCurrent) === filled(p.partyMax))
+			add(p, `The group size is left out: ${partyNote}`)
 		const mode = p.timestampMode
 		const date = parseDate(p.timerDate)
 		if ((mode === 'since' || mode === 'until') && date === undefined)

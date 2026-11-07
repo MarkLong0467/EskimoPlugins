@@ -25,7 +25,7 @@ import {
 } from './profiles'
 import SoundCloudEditor from './SoundCloudEditor'
 import { setStorage, toast } from './state'
-import { radio, row, section, toggleRow } from './ui'
+import { block, group, part, radio, row, section, toggleRow } from './ui'
 import { warnings } from './warnings'
 import type { PluginSettingsComponent } from '@valenced/plugins/types'
 import type { ComponentProps } from 'react'
@@ -104,7 +104,7 @@ export default function Settings({ api }: Props) {
 					),
 				)
 			: null,
-		section(
+		part(
 			`Show on my profile (${shown.length} of up to ${limit} showing)`,
 			'Switch on the ones you want. Each one is its own card on your profile.',
 			...settings.profiles.map(p =>
@@ -117,7 +117,7 @@ export default function Settings({ api }: Props) {
 			),
 			row('Using more than one?', DIFFERENT_IDS_NOTE),
 		),
-		section(
+		part(
 			'Change a presence',
 			'Tap one to set up its text, images, timer and more.',
 			...settings.profiles.map(p => (
@@ -130,7 +130,7 @@ export default function Settings({ api }: Props) {
 				/>
 			)),
 		),
-		section(
+		part(
 			'Add a presence',
 			undefined,
 			row(
@@ -164,7 +164,7 @@ export default function Settings({ api }: Props) {
 				},
 			),
 		),
-		section(
+		part(
 			'General',
 			undefined,
 			toggleRow(
@@ -180,30 +180,37 @@ export default function Settings({ api }: Props) {
 				applyOnStart => commit({ applyOnStart }),
 			),
 		),
-		radio(
-			'Most presences at once',
-			limit,
-			Array.from({ length: MAX_ACTIVE_LIMIT }, (_, i) => ({
-				v: i + 1,
-				l: `${i + 1}`,
-				s:
-					i + 1 === MAX_ACTIVE_LIMIT
-						? 'About as many as Discord shows'
-						: undefined,
-			})),
-			value => commit({ maxActive: String(value) }),
-			'If more are on than this, the first ones in the list show.',
+		block(
+			'Limits',
+			'How many show at once, and how often they refresh.',
+			radio(
+				'Most presences at once',
+				limit,
+				Array.from({ length: MAX_ACTIVE_LIMIT }, (_, i) => ({
+					v: i + 1,
+					l: `${i + 1}`,
+					s:
+						i + 1 === MAX_ACTIVE_LIMIT
+							? 'About as many as Discord shows'
+							: undefined,
+				})),
+				value => commit({ maxActive: String(value) }),
+				'If more are on than this, the first ones in the list show.',
+			),
+			group(
+				'refresh',
+				<Field
+					key="refresh"
+					label="Refresh every (seconds)"
+					description="Updates {time}, {uptime} and other variables. 0 turns it off, minimum 15."
+					placeholder="0"
+					maxLength={5}
+					value={settings.refreshSeconds}
+					onCommit={refreshSeconds => commit({ refreshSeconds })}
+				/>,
+			),
 		),
-		<Field
-			key="refresh"
-			label="Refresh every (seconds)"
-			description="Updates {time}, {uptime} and other variables. 0 turns it off, minimum 15."
-			placeholder="0"
-			maxLength={5}
-			value={settings.refreshSeconds}
-			onCommit={refreshSeconds => commit({ refreshSeconds })}
-		/>,
-		section(
+		part(
 			'Actions',
 			undefined,
 			row(
@@ -223,7 +230,7 @@ export default function Settings({ api }: Props) {
 				},
 			),
 		),
-		section(
+		part(
 			'Good to know',
 			undefined,
 			row(

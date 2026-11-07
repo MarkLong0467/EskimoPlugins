@@ -27,21 +27,13 @@ import {
 	parseDate,
 	relativeText,
 } from './timers'
-import { Back, radio, row, section, Tabs, toggleRow } from './ui'
+import { Back, block, group, radio, row, section, toggleRow } from './ui'
+import { PARTY_MAX_SIZE, partyProblem } from './variables'
 import { warnings } from './warnings'
-import type { Choice, Profile, RichPresenceSettings } from './types'
+import type { Profile, RichPresenceSettings } from './types'
 
-type TabId = 'basics' | 'text' | 'images' | 'timer' | 'buttons' | 'when'
-
-/** The pages of the editor. */
-const TABS: Choice<TabId>[] = [
-	{ v: 'basics', l: 'Basics' },
-	{ v: 'text', l: 'Text' },
-	{ v: 'images', l: 'Images' },
-	{ v: 'timer', l: 'Timer' },
-	{ v: 'buttons', l: 'Buttons' },
-	{ v: 'when', l: 'When' },
-]
+/** The longest a group size can be typed: the digits of the biggest size Discord takes. */
+const PARTY_DIGITS = String(PARTY_MAX_SIZE).length
 
 /** What a date field says it understood, so a mistake is clear before anything is sent. */
 export function readsDate(value: unknown): string {
@@ -63,9 +55,10 @@ export function readsClock(value: unknown): string {
 }
 
 /**
- * The editor of one custom presence. The top shows how it will look; below are six pages picked with the buttons: Basics
- * (name, kind, application), Text, Images, Timer, Buttons and When (schedule and "show only when"). Every text box saves a
- * moment after typing stops.
+ * The editor of one custom presence, on one page you scroll down, like Kizzy's. The top shows how it will look. Below it each
+ * part has a big title and one short line: Basics, Text, Group size, Images, Timer, Buttons, Schedule, Application ID,
+ * Variables and Manage. Parts that only matter for a choice (the dates of a timer, the days of a schedule) appear when that
+ * choice is made. Every text box saves a moment after typing stops.
  *
  * @param profile The presence being edited.
  * @param settings The settings, for the reasons it is or is not shown.
@@ -80,7 +73,6 @@ export default function EditProfile({
 	settings: RichPresenceSettings
 	onBack: () => void
 }) {
-	const [tab, setTab] = useState<TabId>('basics')
 	const [draft, setDraft] = useState<{ id: string; values: Partial<Profile> }>({
 		id: '',
 		values: {},
@@ -133,14 +125,30 @@ export default function EditProfile({
 	)
 
 	const mine = warnings(settings).filter(w => w.id === profile.id)
+	const mode = profile.timestampMode
+	const days =
+		Array.isArray(profile.scheduleDays) && profile.scheduleDays.length === 7
+			? profile.scheduleDays
+			: [true, true, true, true, true, true, true]
 
-	/** The page for the chosen button. */
-	let page: React.ReactNode[]
-	if (tab === 'basics') {
-		page = [
-			section(
-				'This presence',
-				STANDING_TEXT[standingOf(settings, profile)],
+	/** The group size notes follow what is typed, like Kizzy's red lines under its boxes. */
+	const partyNow = partyProblem('current', live.partyCurrent, live.partyMax)
+	const partyMaxNote = partyProblem('max', live.partyCurrent, live.partyMax)
+
+	const parts = [
+		mine.length
+			? section(
+					'Fix this',
+					undefined,
+					...mine.map((w, i) => row(`⚠ Problem ${i + 1}`, w.text)),
+				)
+			: null,
+
+		block(
+			'Basics',
+			STANDING_TEXT[standingOf(settings, profile)],
+			group(
+				'basics',
 				field(
 					'label',
 					'Name in the list',
@@ -152,7 +160,7 @@ export default function EditProfile({
 					'name',
 					'Activity name',
 					'e.g. My game',
-					'Required. It is the big title of the card. Nothing shows until you set it. Supports variables.',
+					'Required. The big title of the card. Nothing shows until you set it. Supports variables.',
 					128,
 				),
 			),
@@ -164,57 +172,24 @@ export default function EditProfile({
 				'Discord shows only one Playing at a time. Make the others Listening to, Watching or Competing in so they can show together.',
 			),
 			profile.type === 1
-				? field(
-						'streamUrl',
-						'Stream link',
-						'https://twitch.tv/name',
-						'A Twitch or YouTube link.',
-						300,
+				? group(
+						'stream',
+						field(
+							'streamUrl',
+							'Stream link',
+							'https://twitch.tv/name',
+							'A Twitch or YouTube link.',
+							300,
+						),
 					)
 				: null,
-			section(
-				'Application ID',
-				'Needed to show more than one presence at once. Each presence needs a different one. Leave it empty and one is made up for you. Typing the same ID into two presences makes Discord show them as one.',
-				field(
-					'applicationId',
-					'Application ID',
-					'Leave empty for a made-up one',
-					'Only needed for image asset keys: create an application at discord.com/developers and paste its ID.',
-					24,
-				),
-			),
-			section(
-				'Manage',
-				undefined,
-				row('Show this now', 'Send it again and restart its timer', () => {
-					applySome([profile.id], true)
-					toast('Presence applied')
-				}),
-				row('Duplicate', 'Make a copy of this presence', () => {
-					addProfile(copyOf(profile))
-					toast('Copy added')
-				}),
-				row(
-					'Copy as text',
-					'Copy it so it can be pasted on another phone',
-					() => {
-						Clipboard.setString(profileToJson(profile))
-						toast('Presence copied')
-					},
-				),
-				row('Delete', 'Remove this presence for good', () => {
-					deleteProfile(profile.id).then(ok => {
-						if (ok) onBack()
-						else toast('Keep at least one presence')
-					})
-				}),
-			),
-		]
-	} else if (tab === 'text') {
-		page = [
-			section(
-				'Lines',
-				'The two lines under the title. Supports variables.',
+		),
+
+		block(
+			'Text',
+			'The two lines under the title. They support variables.',
+			group(
+				'lines',
 				field(
 					'details',
 					'Top line',
@@ -224,83 +199,129 @@ export default function EditProfile({
 				),
 				field('state', 'Bottom line', '', 'The second line.', 128),
 			),
-			section(
-				'Make a line a link',
-				'Optional. Makes the line tappable.',
-				field('detailsUrl', 'Top line link', 'https://', '', 300),
-				field('stateUrl', 'Bottom line link', 'https://', '', 300),
-			),
-			section(
-				'Group size',
-				'Shows "(1 of 4)" after the bottom line. Fill in both.',
-				field('partyCurrent', 'In the group now', '1', '', 4),
-				field('partyMax', 'Group size', '4', '', 4),
-			),
-			section(
-				'Variables',
-				'Use these in any text box. They update on the refresh interval.',
-				row(
-					'{time} {time12} {seconds} {date} {day} {month} {year} {user} {username} {uptime}',
-					'SoundCloud: {sc_title} {sc_artist} {sc_url} {sc_art} {sc_button}',
-				),
-			),
-		]
-	} else if (tab === 'images') {
-		page = [
-			section(
-				'Large image',
-				'The square picture. Paste any link you could post in chat, or an asset key from your application.',
+			group(
+				'line-links',
 				field(
-					'largeImage',
-					'Image',
-					'https://… or asset key',
-					'Imgur links and pages with a picture work too. If one fails, try a smaller image.',
+					'detailsUrl',
+					'Top line link',
+					'https://',
+					'Optional. Makes the top line tappable.',
 					300,
 				),
-				field('largeText', 'Text when pressed', '', '', 128),
-				field('largeUrl', 'Link when tapped', 'https://', 'Optional.', 300),
+				field(
+					'stateUrl',
+					'Bottom line link',
+					'https://',
+					'Optional. Makes the bottom line tappable.',
+					300,
+				),
 			),
-			section(
-				'Small image',
-				'A small picture in the corner of the large one.',
-				field('smallImage', 'Image', 'https://… or asset key', '', 300),
-				field('smallText', 'Text when pressed', '', '', 128),
-				field('smallUrl', 'Link when tapped', 'https://', 'Optional.', 300),
+		),
+
+		block(
+			'Group size',
+			`Shows "1 of 4" on the card. Fill in both. Any whole number up to ${PARTY_MAX_SIZE}.`,
+			group(
+				'party',
+				field(
+					'partyCurrent',
+					'In the group now',
+					'1',
+					partyNow ?? 'How many are in the group.',
+					PARTY_DIGITS,
+				),
+				field(
+					'partyMax',
+					'Group size',
+					'4',
+					partyMaxNote ?? 'How many fit in the group.',
+					PARTY_DIGITS,
+				),
 			),
-			section(
-				'Good to know',
-				undefined,
+		),
+
+		block(
+			'Images',
+			'Paste any link you could post in chat, or an asset key from your application.',
+			group(
+				'large',
+				field(
+					'largeImage',
+					'Large image',
+					'https://… or asset key',
+					'The square picture. Imgur links and pages with a picture work too. If one fails, try a smaller image.',
+					300,
+				),
+				field(
+					'largeText',
+					'Large image text',
+					'',
+					'Shown when the picture is pressed.',
+					128,
+				),
+				field(
+					'largeUrl',
+					'Large image link',
+					'https://',
+					'Optional. Opened when the picture is tapped.',
+					300,
+				),
+			),
+			group(
+				'small',
+				field(
+					'smallImage',
+					'Small image',
+					'https://… or asset key',
+					'A small picture in the corner of the large one.',
+					300,
+				),
+				field(
+					'smallText',
+					'Small image text',
+					'',
+					'Shown when the picture is pressed.',
+					128,
+				),
+				field(
+					'smallUrl',
+					'Small image link',
+					'https://',
+					'Optional. Opened when the picture is tapped.',
+					300,
+				),
+			),
+			group(
+				'image-tips',
 				row(
 					'Photos from your phone',
-					'Upload the photo to catbox.moe or imgur.com, copy the link and paste it in Image. Discord attachment links stop working after about a day.',
+					'Upload the photo to catbox.moe or imgur.com, copy the link and paste it in Large image. Discord attachment links stop working after about a day.',
 				),
 				row(
 					'Asset keys',
-					'Upload art in your application on discord.com/developers under Rich Presence, type its name in Image and set the Application ID.',
+					'Upload art in your application on discord.com/developers under Rich Presence, type its name in the image box and set the Application ID.',
 				),
 			),
-		]
-	} else if (tab === 'timer') {
-		const mode = profile.timestampMode
-		page = [
-			radio(
-				'What the timer does',
-				mode,
-				TIME_MODES,
-				timestampMode => update({ timestampMode }, true),
-				'The timer shows under the lines on the card.',
+		),
+
+		block(
+			'Timer',
+			'The timer shows under the lines on the card.',
+			radio('What the timer does', mode, TIME_MODES, timestampMode =>
+				update({ timestampMode }, true),
 			),
 			mode === 'since' || mode === 'until'
-				? section(
-						mode === 'since' ? 'Count up from' : 'Count down to',
-						mode === 'since'
-							? 'A date in the past. The card counts how long it has been.'
-							: 'A date in the future. The card counts down to it.',
+				? group(
+						'timer-date',
 						field(
 							'timerDate',
-							'Date and time',
+							mode === 'since' ? 'Count up from' : 'Count down to',
 							'2026-12-25 18:30',
-							readsDate(live.timerDate),
+							`${
+								mode === 'since'
+									? 'A date in the past.'
+									: 'A date in the future.'
+							} ${readsDate(live.timerDate)}`,
 							40,
 						),
 					)
@@ -314,9 +335,8 @@ export default function EditProfile({
 					)
 				: null,
 			mode === 'countdown'
-				? section(
-						'Countdown',
-						undefined,
+				? group(
+						'countdown',
 						field(
 							'countdownMinutes',
 							'Minutes',
@@ -333,52 +353,65 @@ export default function EditProfile({
 					)
 				: null,
 			mode === 'daily'
-				? section(
-						'Every day',
-						'A progress bar from the first time to the second. It shows while it is in that range. A second time earlier than the first runs past midnight.',
-						field('dailyFrom', 'From', '9:00', readsClock(live.dailyFrom), 8),
-						field('dailyTo', 'To', '17:00', readsClock(live.dailyTo), 8),
+				? group(
+						'daily',
+						field(
+							'dailyFrom',
+							'Every day from',
+							'9:00',
+							`A progress bar that shows while it is in range. ${readsClock(live.dailyFrom)}`,
+							8,
+						),
+						field(
+							'dailyTo',
+							'Every day to',
+							'17:00',
+							`${readsClock(live.dailyTo)} A time earlier than the first runs past midnight.`,
+							8,
+						),
 					)
 				: null,
 			mode === 'custom'
-				? section(
-						'Your own timer',
-						'A start counts up, an end counts down. Set both and the same length starts over again and again.',
+				? group(
+						'custom',
 						field(
 							'customStart',
 							'Start',
 							'2026-01-01 12:00',
-							readsDate(live.customStart),
+							`A start counts up. ${readsDate(live.customStart)}`,
 							40,
 						),
-						field('customEnd', 'End', '', readsDate(live.customEnd), 40),
+						field(
+							'customEnd',
+							'End',
+							'',
+							`An end counts down. Set both and the same length starts over again and again. ${readsDate(live.customEnd)}`,
+							40,
+						),
 					)
 				: null,
-		]
-	} else if (tab === 'buttons') {
-		page = [
-			section(
-				'Button 1',
-				'A button needs a label and a link. Other people see it; Discord does not show it on your own profile.',
-				field('button1Label', 'Label', 'Listen along', '', 32),
-				field('button1Url', 'Link', 'https://', '', 300),
+		),
+
+		block(
+			'Buttons',
+			'A button needs a label and a link. Other people see them; Discord does not show them on your own profile.',
+			group(
+				'button1',
+				field('button1Label', 'Button 1 label', 'Listen along', '', 32),
+				field('button1Url', 'Button 1 link', 'https://', '', 300),
 			),
-			section(
-				'Button 2',
-				undefined,
-				field('button2Label', 'Label', '', '', 32),
-				field('button2Url', 'Link', 'https://', '', 300),
+			group(
+				'button2',
+				field('button2Label', 'Button 2 label', '', '', 32),
+				field('button2Url', 'Button 2 link', 'https://', '', 300),
 			),
-		]
-	} else {
-		const days =
-			Array.isArray(profile.scheduleDays) && profile.scheduleDays.length === 7
-				? profile.scheduleDays
-				: [true, true, true, true, true, true, true]
-		page = [
-			section(
-				'Schedule',
-				'Show this presence only on some days and between some times. Outside them it is taken off your profile by itself.',
+		),
+
+		block(
+			'Schedule',
+			'Show this presence only on some days and between some times. Outside them it is taken off your profile by itself.',
+			group(
+				'schedule-on',
 				toggleRow(
 					'Use a schedule',
 					'Off means it shows whenever it is switched on',
@@ -387,9 +420,8 @@ export default function EditProfile({
 				),
 			),
 			profile.scheduleOn
-				? section(
-						'Days',
-						'Tap a day to turn it on or off.',
+				? group(
+						'schedule',
 						<View
 							key="days"
 							style={{
@@ -429,19 +461,75 @@ export default function EditProfile({
 						),
 					)
 				: null,
-			section(
-				'Show only when',
-				'Optional. Hides this presence while the text comes out empty. Example: {sc_title} hides it when no SoundCloud track is playing.',
+			group(
+				'only-when',
 				field(
 					'showOnlyWhen',
-					'This text has to have something in it',
+					'Show only when this has text',
 					'{sc_title}',
-					'',
+					'Optional. Hides this presence while the text comes out empty. {sc_title} hides it when no SoundCloud track is playing.',
 					128,
 				),
 			),
-		]
-	}
+		),
+
+		block(
+			'Application ID',
+			'Needed to show more than one presence at once. Each presence needs a different one.',
+			group(
+				'app-id',
+				field(
+					'applicationId',
+					'Application ID',
+					'Leave empty for a made-up one',
+					'Leave it empty and one is made up for you. Only type one for image asset keys: create an application at discord.com/developers and paste its ID. The same ID in two presences makes Discord show them as one.',
+					24,
+				),
+			),
+		),
+
+		block(
+			'Variables',
+			'Use these in any text box. They update on the refresh interval.',
+			group(
+				'variables',
+				row(
+					'{time} {time12} {seconds} {date} {day} {month} {year} {user} {username} {uptime}',
+					'SoundCloud: {sc_title} {sc_artist} {sc_url} {sc_art} {sc_button}',
+				),
+			),
+		),
+
+		block(
+			'Manage',
+			undefined,
+			group(
+				'manage',
+				row('Show this now', 'Send it again and restart its timer', () => {
+					applySome([profile.id], true)
+					toast('Presence applied')
+				}),
+				row('Duplicate', 'Make a copy of this presence', () => {
+					addProfile(copyOf(profile))
+					toast('Copy added')
+				}),
+				row(
+					'Copy as text',
+					'Copy it so it can be pasted on another phone',
+					() => {
+						Clipboard.setString(profileToJson(profile))
+						toast('Presence copied')
+					},
+				),
+				row('Delete', 'Remove this presence for good', () => {
+					deleteProfile(profile.id).then(ok => {
+						if (ok) onBack()
+						else toast('Keep at least one presence')
+					})
+				}),
+			),
+		),
+	]
 
 	return (
 		<ScrollView
@@ -453,18 +541,10 @@ export default function EditProfile({
 			<Preview info={describe(live)} profileId={profile.id} />
 			<Design.Stack
 				style={{ paddingVertical: 24, paddingHorizontal: 12 }}
-				spacing={24}
+				spacing={32}
 			>
 				<Back title="All presences" onPress={onBack} />
-				<Tabs tabs={TABS} value={tab} onChange={setTab} />
-				{mine.length
-					? section(
-							'Fix this',
-							undefined,
-							...mine.map((w, i) => row(`⚠ Problem ${i + 1}`, w.text)),
-						)
-					: null}
-				{page}
+				{parts}
 			</Design.Stack>
 		</ScrollView>
 	)

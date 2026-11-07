@@ -22,7 +22,7 @@ import {
 	stopShowing,
 } from './soundcloud'
 import { read, saveSoundCloud, toast } from './state'
-import { Back, radio, row, section, toggleRow } from './ui'
+import { Back, part, radio, row, section, toggleRow } from './ui'
 import { warnings } from './warnings'
 import type { Profile, RichPresenceSettings, SoundCloudSettings } from './types'
 
@@ -95,7 +95,7 @@ export default function SoundCloudEditor({
 					...mine.map((w, i) => row(`⚠ Problem ${i + 1}`, w.text)),
 				)
 			: null,
-		section(
+		part(
 			'SoundCloud',
 			STANDING_TEXT[standingOf(settings, profile)],
 			toggleRow(
@@ -105,7 +105,7 @@ export default function SoundCloudEditor({
 				on => toggleProfile(profile.id, on),
 			),
 		),
-		section(
+		part(
 			'Automatic (Last.fm)',
 			'Follows your Last.fm now playing, so the card changes by itself with each song.',
 			toggle(
@@ -143,7 +143,7 @@ export default function SoundCloudEditor({
 		s.autoEnabled
 			? choose<string>('Check how often', 'pollSeconds', SC_POLLS)
 			: null,
-		section(
+		part(
 			'Or show a track by link',
 			'Automatic mode wins while a song is playing.',
 			<Design.TextInput
@@ -161,7 +161,7 @@ export default function SoundCloudEditor({
 			}),
 		),
 		s.recents.length
-			? section(
+			? part(
 					'Recent',
 					undefined,
 					s.recents.map((r, i) => (
@@ -177,7 +177,7 @@ export default function SoundCloudEditor({
 					}),
 				)
 			: null,
-		section(
+		part(
 			'Behaviour',
 			undefined,
 			toggle(
@@ -196,7 +196,7 @@ export default function SoundCloudEditor({
 				'clipboardOnOpen',
 			),
 		),
-		section(
+		part(
 			'Look',
 			undefined,
 			toggle(
@@ -243,7 +243,7 @@ export default function SoundCloudEditor({
 		/>,
 		choose<string>('Timer', 'timerMode', SC_TIMER_MODES),
 		choose<number>('Text after "Listening to"', 'statusText', SC_STATUS_TEXTS),
-		section(
+		part(
 			'Actions',
 			undefined,
 			row('Restart the timer', 'Start counting from now', () => {
@@ -263,7 +263,7 @@ export default function SoundCloudEditor({
 				toast('Presence cleared')
 			}),
 		),
-		section(
+		part(
 			'How it works',
 			undefined,
 			row(

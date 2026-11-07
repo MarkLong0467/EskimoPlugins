@@ -12,7 +12,7 @@ import {
 	parseDate,
 	startOfDay,
 } from './timers'
-import { text as fillText, num } from './variables'
+import { text as fillText, num, partySize } from './variables'
 import type { Activity, Profile, Runtime } from './types'
 
 /** Whether a text is a web link. */
@@ -206,9 +206,9 @@ export async function buildActivity(
 	const timestamps = timestampsFor(p, rt)
 	if (timestamps) activity.timestamps = timestamps
 
-	const cur = num(p.partyCurrent)
-	const max = num(p.partyMax)
-	if (cur !== undefined && max !== undefined && max > 0)
+	const cur = partySize(p.partyCurrent)
+	const max = partySize(p.partyMax)
+	if (cur !== undefined && max !== undefined)
 		activity.party = { size: [Math.min(cur, max), max] }
 
 	const assets: Record<string, string> = {}

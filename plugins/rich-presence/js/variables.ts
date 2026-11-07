@@ -70,6 +70,52 @@ export function num(value: unknown): number | undefined {
 	return Number.isNaN(n) || n < 0 ? undefined : n
 }
 
+/** The biggest group size Discord takes: the largest 32-bit whole number, which is also what Kizzy allows. */
+export const PARTY_MAX_SIZE = 2147483647
+
+/**
+ * A group size typed as text: digits only, a whole number from 1 up to {@link PARTY_MAX_SIZE}. Nothing if it is not one.
+ * Spaces around it are ignored; anything else in it (a minus, a dot, letters) makes it invalid.
+ */
+export function partySize(value: unknown): number | undefined {
+	const raw = String(value == null ? '' : value).trim()
+	if (!/^\d{1,10}$/.test(raw)) return undefined
+	const n = Number(raw)
+	return n >= 1 && n <= PARTY_MAX_SIZE ? n : undefined
+}
+
+/**
+ * What is wrong with a group size field, in plain words, or nothing if it is fine or empty. These are the checks Kizzy makes:
+ * it has to be a whole number above 0, and the number in the group cannot be bigger than the group size.
+ *
+ * @param field Which of the two boxes this is about.
+ * @param current What is typed in the "In the group now" box.
+ * @param max What is typed in the "Group size" box.
+ */
+export function partyProblem(
+	field: 'current' | 'max',
+	current: unknown,
+	max: unknown,
+): string | undefined {
+	const own = String((field === 'current' ? current : max) ?? '').trim()
+	if (!own) {
+		return field === 'max' && String(current ?? '').trim()
+			? 'Needed: the group size cannot be empty when the number in the group is filled in.'
+			: undefined
+	}
+	if (!/^\d+$/.test(own)) return 'Not a number. Use digits only, such as 4.'
+	const n = Number(own)
+	if (n < 1) return 'Must be more than 0.'
+	if (n > PARTY_MAX_SIZE) return `Too big. The most is ${PARTY_MAX_SIZE}.`
+	const a = partySize(current)
+	const b = partySize(max)
+	if (a !== undefined && b !== undefined && a > b)
+		return field === 'current'
+			? 'Cannot be more than the group size.'
+			: 'Cannot be less than the number in the group.'
+	return undefined
+}
+
 /** A text with its variables filled in, or nothing if it comes out empty. */
 export function text(value: unknown, appliedAt?: number): string | undefined {
 	const s = fill(value, appliedAt)

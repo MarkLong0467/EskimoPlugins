@@ -6,8 +6,12 @@ Show up to three presences at once on your Discord profile, and the SoundCloud t
 
 - **Several at once.** Switch on up to 3 presences. Each is its own card. Discord keeps only one "Playing", so make the others
   Listening to, Watching, Competing in or Streaming. Each needs its own Application ID (left empty, one is made up).
-- **Easy settings.** A list with a switch for each presence; tap one to open its editor with pages: Basics, Text, Images,
-  Timer, Buttons and When. Add, duplicate, delete, copy and paste presences.
+- **Easy settings.** A list with a switch for each presence; tap one to open its editor. The editor is one page you scroll
+  down, like Kizzy's, with a big heading for each part: Basics, Text, Group size, Images, Timer, Buttons, Schedule,
+  Application ID, Variables and Manage. Options that depend on a choice (the dates of a timer, the days of a schedule)
+  appear when you choose it. Add, duplicate, delete, copy and paste presences.
+- **Big group sizes.** Any whole number up to 2147483647, such as `999999999 of 999999999`, with Kizzy's checks under the
+  boxes (digits only, more than 0, and the number in the group cannot be more than the size).
 - **SoundCloud built in.** Add a SoundCloud presence; its editor shows only the SoundCloud settings (Last.fm now playing via
   Pano Scrobbler, a pasted or copied link, cover lookup, progress bar, Spotify hiding, button).
 - **Many timers.** Since switched on, since Discord opened, since a date, until a date (repeating daily, weekly, monthly or
