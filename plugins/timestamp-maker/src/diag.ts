@@ -53,6 +53,7 @@ export const diag = createDiagnostics('Timestamp Maker', {
 		`/timestamp was run ${state.commandRuns} time(s); last options: ${state.lastRunOptions || 'none yet'}`,
 		`Message module (sendMessage): ${state.sendModule ? 'found' : 'not found yet'}; patch ${hookText(state.sendHook)}`,
 		`Watching the JSX runtime: ${state.jsx ? 'yes' : 'no'}; chat box seen: ${state.inputSeen ? 'yes' : 'no'}; chat box ref known: ${state.inputRefKnown ? 'yes' : 'no'}`,
+		`Popup scroll view: ${state.sheetScroller || 'popup not opened yet'}`,
 		`Popups opened: ${state.popups}; sent: ${state.sent}; put in the message: ${state.inserted}; copied: ${state.copied}`,
 		`Put in the message by: chat box ${state.insertWays.box}, draft ${state.insertWays.draft}, copy instead ${state.insertWays.copy}`,
 		`@time: messages looked at ${state.atSeen}; converted ${state.atConverted}; left as typed because the time was not understood ${state.atUnreadable}`,
@@ -97,6 +98,12 @@ export const diag = createDiagnostics('Timestamp Maker', {
 			detail: state.inputRefKnown
 				? undefined
 				: 'Open a chat. Without it, Add to message falls back to the saved draft',
+		},
+		{
+			ok: state.sheetScroller !== 'plain scroll view',
+			label: 'The popup can scroll inside the sheet',
+			detail:
+				'Discord’s bottom-sheet scroll view was not found, so the popup may not scroll. Send the report',
 		},
 		{
 			ok: state.commandRuns === 0 || state.popups > 0 || setting('skipPopup'),

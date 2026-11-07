@@ -512,6 +512,42 @@ async function say(s, content) {
 		s.stop()
 	}
 
+	// --- The popup scrolls inside the sheet
+	{
+		const s = await start({ zone: 0 })
+		const BottomSheetScrollView = function BottomSheetScrollView(props) { return { type: 'BottomSheetScrollView', props } }
+		s.runtime.valenced.modules.finders.loadModule({ BottomSheetScrollView })
+		const cmd = timestampOf(s.builtIns.getBuiltInCommands([1], true, false))
+		cmd.execute([], { channel: { id: 'c' } })
+		await sleep(5)
+		const popup = await s.mountSheet(SHEET)
+		const sheet = findNode(popup.tree, n => n.type === 'Design.ActionSheet')
+		check('the sheet is marked scrollable', sheet?.props.scrollable === true)
+		const scroller = findNode(popup.tree, n => n.type === 'BottomSheetScrollView')
+		check('the popup scrolls with the bottom sheet’s own scroll view, which the sheet’s drag does not take', scroller !== null && scroller.props.nestedScrollEnabled === true && scroller.props.keyboardShouldPersistTaps === 'handled', scroller)
+		check('and has no fixed height, the sheet decides', scroller.props.style === undefined)
+		check('every part of the popup is inside it', !!findNode(scroller, n => n.type === 'Design.Button' && n.props.text === 'Cancel'))
+		const view = await s.mountSettings()
+		button(view, 'Copy logs').props.onPress()
+		check('the report says which scroll view was used', /Popup scroll view: bottom sheet scroll view/.test(s.copied.at(-1) ?? ''), s.copied.at(-1))
+		s.stop()
+	}
+	{
+		// Not found: the plain scroll view, and the report says so
+		const s = await start({ zone: 0 })
+		const cmd = timestampOf(s.builtIns.getBuiltInCommands([1], true, false))
+		cmd.execute([], { channel: { id: 'c' } })
+		await sleep(5)
+		const popup = await s.mountSheet(SHEET)
+		check('without it the plain scroll view is used, capped to the screen', findNode(popup.tree, n => n.type === 'ScrollView')?.props.style?.maxHeight === 624)
+		const view = await s.mountSettings()
+		button(view, 'Run self-check').props.onPress()
+		await view.settle()
+		const failed = findNodes(view.tree, n => n.type === 'Design.TableRow' && /^✗/.test(n.props.label ?? '')).map(n => n.props.label)
+		check('and the self-check says the popup may not scroll', failed.some(c => /popup can scroll/.test(c)), failed)
+		s.stop()
+	}
+
 	// --- @time can be switched off
 	{
 		const s = await start({ atTime: false })

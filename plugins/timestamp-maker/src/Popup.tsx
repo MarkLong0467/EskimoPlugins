@@ -1,5 +1,7 @@
 import { ActionSheetActionCreators } from '@valenced/discord/actions'
 import { Design } from '@valenced/discord/design'
+import { lookupModule } from '@valenced/modules/finders'
+import { withProps } from '@valenced/modules/finders/filters'
 import { useEffect, useMemo, useState } from 'react'
 import { ScrollView, useWindowDimensions, View } from 'react-native'
 import { openToast } from '../../../shared/kmmiio/toast'
@@ -24,6 +26,7 @@ import {
 	tag,
 	zoneName,
 } from './time'
+import type { ComponentType } from 'react'
 import type { Action } from './store'
 import type { Jump, Style, Zone } from './time'
 
@@ -56,6 +59,29 @@ const ZONE_HINT =
 const ZONE_TITLE = 'Time zone'
 const CHECK = '✓'
 const RECENT = 'Recent'
+
+/**
+ * The scroll view that works inside a bottom sheet. A plain `ScrollView` in a sheet loses the drag to the sheet's own gesture, so
+ * the list stops scrolling; Discord's sheets use the bottom-sheet library's `BottomSheetScrollView`, found here by name. Nothing
+ * when it is not found, and the plain one is used.
+ */
+function sheetScroller(): ComponentType<Record<string, unknown>> | undefined {
+	try {
+		const found = lookupModule(
+			withProps('BottomSheetScrollView'),
+		) as unknown as unknown[]
+		const exports = found[0] as { BottomSheetScrollView?: unknown } | undefined
+		const view = exports?.BottomSheetScrollView
+		state.sheetScroller = view
+			? 'bottom sheet scroll view'
+			: 'plain scroll view'
+		return view ? (view as ComponentType<Record<string, unknown>>) : undefined
+	} catch (error) {
+		state.sheetScroller = 'plain scroll view (lookup failed)'
+		diag.fail('find sheet scroll view', error)
+		return undefined
+	}
+}
 
 /** Closes the sheet. */
 function close(): void {
@@ -135,6 +161,8 @@ function Popup({ channelId, when: typed, style: startStyle }: PopupProps) {
 	const [words, setWords] = useState(typed ?? '')
 	const [bad, setBad] = useState(false)
 	const screen = useWindowDimensions()
+	const sheetScroll = useMemo(() => sheetScroller(), [])
+	const Scroller = sheetScroll ?? ScrollView
 	const [now, setNow] = useState(Date.now())
 	const [, redraw] = useState(0)
 
@@ -260,9 +288,14 @@ function Popup({ channelId, when: typed, style: startStyle }: PopupProps) {
 	}
 
 	return (
-		<Design.ActionSheet>
-			<ScrollView
-				style={{ maxHeight: Math.round(screen.height * 0.78) }}
+		<Design.ActionSheet scrollable>
+			<Scroller
+				style={
+					sheetScroll
+						? undefined
+						: { maxHeight: Math.round(screen.height * 0.78) }
+				}
+				nestedScrollEnabled
 				keyboardShouldPersistTaps="handled"
 				showsVerticalScrollIndicator={false}
 			>
@@ -532,7 +565,7 @@ function Popup({ channelId, when: typed, style: startStyle }: PopupProps) {
 						/>
 					</View>
 				</View>
-			</ScrollView>
+			</Scroller>
 		</Design.ActionSheet>
 	)
 }

@@ -35,6 +35,8 @@ export const state = {
 	atSeen: 0,
 	atConverted: 0,
 	atUnreadable: 0,
+	/** The scroll view the popup used: Discord's bottom sheet one, or the plain one. */
+	sheetScroller: '',
 	/** The last thing that happened, in words. */
 	last: '',
 }
@@ -62,5 +64,6 @@ export function resetState(): void {
 	state.atSeen = 0
 	state.atConverted = 0
 	state.atUnreadable = 0
+	state.sheetScroller = ''
 	state.last = ''
 }
