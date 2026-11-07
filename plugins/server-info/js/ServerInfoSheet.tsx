@@ -2,10 +2,10 @@ import { Dispatcher } from '@valenced/discord/common/flux'
 import { Design } from '@valenced/discord/design'
 import { Clipboard } from '@valenced/externals/react-native-clipboard'
 import { useEffect, useState } from 'react'
-import { Image, View } from 'react-native'
+import { Image, Pressable, View } from 'react-native'
 import ActionSheetBody from './ActionSheetBody'
 import { chevron } from './Chevron'
-import { FRIENDS_KEY, SHEET_KEY } from './constants'
+import { DISCORD_EPOCH, FRIENDS_KEY, SHEET_KEY } from './constants'
 import {
 	apiGet,
 	fetchUser,
@@ -16,42 +16,117 @@ import {
 	toast,
 } from './discord'
 import FriendsSheet from './FriendsSheet'
-import { assetUrl, avatarUrl, createdOn, formatNumber } from './format'
+import {
+	ago,
+	assetUrl,
+	avatarUrl,
+	boostCard,
+	formatNumber,
+	languageName,
+	longDate,
+	snowflake,
+	VERIFICATION,
+} from './format'
 import { getGuildFriends } from './friends'
 import { fetchOnline } from './online'
+import {
+	Card,
+	color,
+	Dot,
+	Glyph,
+	Line,
+	Pill,
+	ProgressBar,
+	SectionTitle,
+	Tile,
+} from './parts'
 import { ownerCache } from './state'
-import type { ReactNode } from 'react'
 import type {
 	ChangeStore,
 	ChannelStore,
 	CountStore,
+	EmojiStore,
 	Friend,
 	GuildStore,
 	MemberStore,
+	PresenceStore,
 	RoleStore,
+	StickersStore,
 	UserStore,
 } from './types'
 
 /** Texts as constants because React Native text must be passed as an expression. */
-const NO_FRIENDS_LOADING = 'Loading...'
-const NO_ONLINE_YET = 'Loading...'
-const CLOSE = 'Close'
-const OVERVIEW = 'Overview'
-const DETAILS = 'Server details'
+const TITLE = 'Server info'
+const LOADING = 'Loading...'
+const FRIENDS = 'Friends'
+const OWNER = 'Owner'
+const DETAILS = 'Details'
+const NO_FRIENDS = 'None of your friends are here'
+const COMMUNITY = 'Community'
+const VERIFIED = 'Verified'
+const PARTNERED = 'Partnered'
+const CHANNELS = 'Channels'
+const ROLES = 'Roles'
+const EMOJIS = 'Emojis'
+const STICKERS = 'Stickers'
+const CREATED = 'Created'
+const JOINED = 'You joined'
+const VERIFICATION_TITLE = 'Verification'
+const LANGUAGE = 'Language'
+const SERVER_ID = 'Server ID'
+const VANITY = 'Vanity URL'
+const CROWN = '👑'
 
-/** One row of a table. The label is also its key. */
-function Row({
-	label,
-	subLabel,
-	...extra
-}: {
-	label: string
-	subLabel: string
-	icon?: ReactNode
-	trailing?: ReactNode
-	onPress?: () => void
-}) {
-	return <Design.TableRow label={label} subLabel={subLabel} {...extra} />
+/** The colours of the dot on an avatar, by status. */
+const STATUS_COLOURS: Record<string, string> = {
+	online: '#23a55a',
+	idle: '#f0b232',
+	dnd: '#f23f43',
+	streaming: '#593695',
+	offline: '#80848e',
+	invisible: '#80848e',
+}
+
+/** What the channel store says a server has: how many channels, and how many of those are text and voice, when it says. */
+interface ChannelCounts {
+	total: number
+	text?: number
+	voice?: number
+}
+
+/**
+ * Counts the channels of a server. Discord's channel store sorts them into `SELECTABLE` (text) and `VOCAL` (voice) lists,
+ * next to the categories. A store that has no such lists is counted by its entries.
+ */
+function countChannels(
+	all: Record<string, unknown> | undefined,
+): ChannelCounts | null {
+	if (!all) return null
+	const text = Array.isArray(all.SELECTABLE) ? all.SELECTABLE.length : undefined
+	const voice = Array.isArray(all.VOCAL) ? all.VOCAL.length : undefined
+	if (text !== undefined || voice !== undefined)
+		return {
+			total: (text ?? 0) + (voice ?? 0),
+			text: text ?? 0,
+			voice: voice ?? 0,
+		}
+	return { total: Object.keys(all).length }
+}
+
+/** Whether a server has a feature. Discord keeps them in a Set, and a list is read too. */
+function hasFeature(
+	features: Set<string> | string[] | undefined,
+	name: string,
+): boolean {
+	if (!features) return false
+	return features instanceof Set ? features.has(name) : features.includes(name)
+}
+
+/** A moment from a date, a number of milliseconds or the text Discord saves, or nothing. */
+function momentOf(value: Date | number | string | null | undefined) {
+	if (value == null) return null
+	const ms = new Date(value).getTime()
+	return Number.isFinite(ms) ? ms : null
 }
 
 /** Opens the list of friends in a server in its own sheet. */
@@ -65,9 +140,60 @@ function openFriends(friends: Friend[], guildId: string): void {
 	)
 }
 
+/** Copies text and says so. */
+function copy(text: string, said: string): void {
+	try {
+		Clipboard.setString(text)
+		toast(said)
+	} catch {
+		// Nothing was copied, so nothing is announced.
+	}
+}
+
+/** A round picture, with a small dot for the status when there is one. */
+function Avatar({
+	uri,
+	size,
+	status,
+}: {
+	uri: string
+	size: number
+	status?: string
+}) {
+	return (
+		<View style={{ width: size, height: size }}>
+			<Image
+				source={{ uri }}
+				style={{
+					width: size,
+					height: size,
+					borderRadius: size / 2,
+					backgroundColor: color('BACKGROUND_SURFACE_HIGHEST', '#3a3c42'),
+				}}
+			/>
+			{status ? (
+				<View
+					accessibilityLabel={`Status: ${status}`}
+					style={{
+						position: 'absolute',
+						right: -2,
+						bottom: -2,
+						width: size * 0.34,
+						height: size * 0.34,
+						borderRadius: size * 0.17,
+						backgroundColor: STATUS_COLOURS[status] ?? STATUS_COLOURS.offline,
+						borderWidth: 3,
+						borderColor: color('BACKGROUND_SURFACE_HIGH', '#2b2d31'),
+					}}
+				/>
+			) : null}
+		</View>
+	)
+}
+
 /**
- * The Server Info sheet: the server's banner, icon, name and description, then how many members, friends, roles and
- * channels it has, its boosts, owner, vanity link, creation date and id.
+ * The Server Info sheet: the server's picture, name and badges, how many channels, roles, emojis and stickers it has, its
+ * boosts, your friends in it, its owner, and details such as when it was made and when you joined.
  *
  * The sheet draws again when Discord's stores change. The slow things are found in the background and filled in when
  * they arrive: your friends in the server, and the owner when the server data does not say who it is (asked from
@@ -84,6 +210,7 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 	const GuildRoleStore = store<RoleStore>('GuildRoleStore')
 	const GuildChannelStore = store<ChannelStore>('GuildChannelStore')
 	const GuildMemberStore = store<MemberStore>('GuildMemberStore')
+	const Presence = store<PresenceStore>('PresenceStore')
 	const counts =
 		store<CountStore>('GuildMemberCountStore') ||
 		findByProps<CountStore>('getMemberCount', 'getOnlineCount')
@@ -98,6 +225,7 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 			GuildChannelStore,
 			counts,
 			headerCounts,
+			Presence,
 		].filter(Boolean) as ChangeStore[]
 		for (const watch of watched) watch.addChangeListener?.(forceUpdate)
 		return () => {
@@ -133,6 +261,9 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 	const [ownerNameState, setOwnerName] = useState<string | null>(
 		cached?.name || null,
 	)
+	const [ownerHandle, setOwnerHandle] = useState<string | null>(
+		cached?.username || null,
+	)
 	// How many are online, when the stores do not know: asked from Discord's web API (with_counts gives a rounded count).
 	const [askedOnline, setAskedOnline] = useState<number | string | null>(null)
 	const [ownerAvatar, setOwnerAvatar] = useState<string | null>(
@@ -162,10 +293,12 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 		if (known?.username) {
 			const name = known.globalName || known.username
 			setOwnerName(name)
+			setOwnerHandle(known.username)
 			setOwnerAvatar(known.avatar || null)
 			ownerCache.set(guildId, {
 				id: ownerId,
 				name,
+				username: known.username,
 				avatar: known.avatar || null,
 			})
 			return
@@ -181,10 +314,12 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 					// The name is still shown from the lookup.
 				}
 				setOwnerName(name)
+				setOwnerHandle(user.username || null)
 				setOwnerAvatar(user.avatar || null)
 				ownerCache.set(guildId, {
 					id: ownerId,
 					name,
+					username: user.username || null,
 					avatar: user.avatar || null,
 				})
 				forceUpdate()
@@ -219,6 +354,7 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 
 	if (!guild) return null
 
+	const close = () => sheets().hideActionSheet(SHEET_KEY)
 	const bannerUrl = guild.banner
 		? assetUrl('banners', guildId, guild.banner, 512)
 		: null
@@ -242,8 +378,13 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 		? (GuildRoleStore.getSortedRoles(guildId) || []).length
 		: null
 	const channels = GuildChannelStore?.getChannels
-		? Object.keys(GuildChannelStore.getChannels(guildId) || {}).length
+		? countChannels(GuildChannelStore.getChannels(guildId))
 		: null
+	const emojiList = store<EmojiStore>('EmojiStore')?.getGuildEmoji?.(guildId)
+	const emojis = Array.isArray(emojiList) ? emojiList.length : null
+	const stickerList =
+		store<StickersStore>('StickersStore')?.getStickersByGuildId?.(guildId)
+	const stickers = Array.isArray(stickerList) ? stickerList.length : null
 
 	const ownerMember = ownerId
 		? GuildMemberStore?.getMember?.(guildId, ownerId)
@@ -251,131 +392,336 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 	const ownerName =
 		ownerMember?.nick ||
 		ownerNameState ||
-		(ownerId ? `User (${String(ownerId).slice(0, 6)})` : 'Loading...')
+		(ownerId ? `User (${String(ownerId).slice(0, 6)})` : LOADING)
+	const handleText = ownerHandle ? `@${ownerHandle}` : ''
+	const ownerStatus = ownerId ? Presence?.getStatus?.(ownerId) : undefined
 	const vanity = guild.vanityURLCode
 		? `discord.gg/${guild.vanityURLCode}`
 		: null
 
+	const made = snowflake(guildId) + DISCORD_EPOCH
+	const joined = momentOf(
+		GuildMemberStore?.getSelfMemberJoinedAt?.(guildId) ??
+			GuildMemberStore?.getSelfMember?.(guildId)?.joinedAt,
+	)
+	const boost = boostCard(
+		guild.premiumTier || 0,
+		guild.premiumSubscriberCount || 0,
+	)
+	const level = guild.verificationLevel ?? 0
+	const surface = color('BACKGROUND_SURFACE_HIGH', '#2b2d31')
+
+	const memberLine =
+		rawMembers == null
+			? null
+			: `${formatNumber(rawMembers)} member${rawMembers === 1 ? '' : 's'}`
+	const onlineLine =
+		rawOnline == null || typeof rawOnline === 'string'
+			? null
+			: `${formatNumber(rawOnline)} online`
+
 	return (
-		<ActionSheetBody>
+		<ActionSheetBody title={TITLE} onClose={close}>
 			{bannerUrl ? (
 				<Image
 					source={{ uri: bannerUrl }}
-					style={{ width: '100%', height: 120, borderRadius: 8 }}
+					style={{ width: '100%', height: 120, borderRadius: 16 }}
 					resizeMode="cover"
 				/>
 			) : null}
-			<View style={{ flexDirection: 'row', alignItems: 'center' }}>
+
+			<View style={{ gap: 12 }}>
 				{iconUrl ? (
 					<Image
 						source={{ uri: iconUrl }}
-						style={{ width: 64, height: 64, borderRadius: 12 }}
+						style={{ width: 88, height: 88, borderRadius: 22 }}
 					/>
 				) : (
 					<View
 						style={{
-							width: 64,
-							height: 64,
-							borderRadius: 12,
+							width: 88,
+							height: 88,
+							borderRadius: 22,
 							alignItems: 'center',
 							justifyContent: 'center',
+							backgroundColor: surface,
 						}}
 					>
-						<Design.Text variant="heading-lg/bold">
+						<Design.Text variant="heading-xl/bold">
 							{String(guild.name || '').slice(0, 2)}
 						</Design.Text>
 					</View>
 				)}
-				<View style={{ flex: 1, marginLeft: 14 }}>
-					<Design.Text variant="heading-lg/bold" numberOfLines={2}>
-						{guild.name}
+				<Design.Text variant="heading-xl/bold" numberOfLines={3}>
+					{guild.name}
+				</Design.Text>
+				{guild.description ? (
+					<Design.Text variant="text-md/medium" color="text-muted">
+						{guild.description}
 					</Design.Text>
+				) : null}
+				<View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+					{hasFeature(guild.features, 'COMMUNITY') ? (
+						<Pill
+							text={COMMUNITY}
+							icon={
+								<Glyph
+									names={['CircleCheckIcon', 'CheckmarkLargeIcon']}
+									fallback="✓"
+								/>
+							}
+						/>
+					) : null}
+					{hasFeature(guild.features, 'VERIFIED') ? (
+						<Pill text={VERIFIED} />
+					) : null}
+					{hasFeature(guild.features, 'PARTNERED') ? (
+						<Pill text={PARTNERED} />
+					) : null}
+				</View>
+				<View
+					style={{
+						flexDirection: 'row',
+						flexWrap: 'wrap',
+						alignItems: 'center',
+						gap: 14,
+					}}
+				>
+					{onlineLine ? (
+						<View
+							accessibilityLabel={onlineLine}
+							style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+						>
+							<Dot fill="#23a55a" />
+							<Design.Text variant="text-lg/medium" color="text-muted">
+								{onlineLine}
+							</Design.Text>
+						</View>
+					) : null}
+					<View
+						accessibilityLabel={memberLine ?? LOADING}
+						style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+					>
+						<Dot fill="#80848e" />
+						<Design.Text variant="text-lg/medium" color="text-muted">
+							{memberLine ?? LOADING}
+						</Design.Text>
+					</View>
 				</View>
 			</View>
-			{guild.description ? (
-				<Design.Text variant="text-sm/medium" color="text-muted">
-					{guild.description}
+
+			<View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+				{channels ? (
+					<Tile
+						icon={
+							<Glyph
+								names={['HashSmallIcon', 'PoundIcon', 'HashIcon']}
+								fallback="#"
+							/>
+						}
+						value={String(formatNumber(channels.total))}
+						label={CHANNELS}
+						detail={
+							channels.text !== undefined
+								? `${channels.text} text, ${channels.voice ?? 0} voice`
+								: undefined
+						}
+					/>
+				) : null}
+				{roles !== null ? (
+					<Tile
+						icon={
+							<Glyph names={['ShieldUserIcon', 'ShieldIcon']} fallback="🛡" />
+						}
+						value={String(formatNumber(roles))}
+						label={ROLES}
+					/>
+				) : null}
+				{emojis !== null ? (
+					<Tile
+						icon={
+							<Glyph names={['ReactionIcon', 'FaceSmileIcon']} fallback="🙂" />
+						}
+						value={String(formatNumber(emojis))}
+						label={EMOJIS}
+					/>
+				) : null}
+				{stickers !== null ? (
+					<Tile
+						icon={<Glyph names={['StickerIcon']} fallback="🏷" />}
+						value={String(formatNumber(stickers))}
+						label={STICKERS}
+					/>
+				) : null}
+			</View>
+
+			<Card style={{ padding: 18, gap: 14 }}>
+				<View
+					accessibilityLabel={`${boost.title}, ${boost.count}`}
+					style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}
+				>
+					<View style={{ width: 28, alignItems: 'center' }}>
+						<Glyph
+							names={['BoostGemOutlineIcon', 'BoostGemIcon', 'NitroWheelIcon']}
+							fallback="◆"
+						/>
+					</View>
+					<View style={{ flex: 1 }}>
+						<Design.Text variant="text-lg/semibold">{boost.title}</Design.Text>
+						<Design.Text variant="text-md/medium" color="text-muted">
+							{boost.count}
+						</Design.Text>
+					</View>
+				</View>
+				<ProgressBar fraction={boost.fraction} />
+				<Design.Text variant="text-md/medium" color="text-muted">
+					{boost.hint}
 				</Design.Text>
-			) : null}
-			<Design.TableRowGroup title={OVERVIEW}>
-				<Row
-					key="Members"
-					label="Members"
-					subLabel={String(formatNumber(rawMembers == null ? '—' : rawMembers))}
-				/>
-				<Row
-					key="Online"
-					label="Online"
-					subLabel={
-						rawOnline == null ? NO_ONLINE_YET : String(formatNumber(rawOnline))
-					}
-				/>
+			</Card>
+
+			<SectionTitle text={FRIENDS} />
+			<Card>
 				{friendsLoading ? (
-					<Row
-						key="Friends"
-						label="Friends in this server"
-						subLabel={NO_FRIENDS_LOADING}
+					<Line
+						icon={<Glyph names={['FriendsIcon', 'UserIcon']} fallback="👤" />}
+						title={LOADING}
+						label="Friends: loading"
+					/>
+				) : friends.length === 0 ? (
+					<Line
+						icon={<Glyph names={['FriendsIcon', 'UserIcon']} fallback="👤" />}
+						title={NO_FRIENDS}
+						label="Friends: none"
 					/>
 				) : (
-					<Row
-						key="Friends"
-						label="Friends in this server"
-						subLabel={`${friends.length} friend${friends.length === 1 ? '' : 's'}`}
-						trailing={chevron()}
+					<Line
+						icon={<Glyph names={['FriendsIcon', 'UserIcon']} fallback="👤" />}
+						title={`${friends.length} of your friends ${friends.length === 1 ? 'is' : 'are'} here`}
+						label={`Friends: ${friends.length}`}
+						end={
+							<View
+								style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+							>
+								<View style={{ flexDirection: 'row' }}>
+									{friends.slice(0, 4).map((friend, index) => (
+										<View
+											key={friend.id}
+											style={{ marginLeft: index === 0 ? 0 : -10 }}
+										>
+											<Avatar
+												uri={avatarUrl(
+													friend.id,
+													UserStore?.getUser(friend.id)?.avatar,
+												)}
+												size={30}
+											/>
+										</View>
+									))}
+								</View>
+								{chevron()}
+							</View>
+						}
 						onPress={() => openFriends(friends, guildId)}
 					/>
 				)}
-				{roles !== null ? (
-					<Row key="Roles" label="Roles" subLabel={String(roles)} />
-				) : null}
-				{channels !== null ? (
-					<Row key="Channels" label="Channels" subLabel={String(channels)} />
-				) : null}
-				<Row
-					key="Boost"
-					label="Boost status"
-					subLabel={`Level ${guild.premiumTier || 0} (${guild.premiumSubscriberCount || 0} boosts)`}
+			</Card>
+
+			{ownerId ? (
+				<>
+					<SectionTitle text={OWNER} />
+					<Card>
+						<Pressable
+							accessibilityRole="button"
+							accessibilityLabel={`Owner: ${ownerName}`}
+							onPress={() => openProfile(ownerId, guildId)}
+						>
+							<View
+								style={{
+									flexDirection: 'row',
+									alignItems: 'center',
+									gap: 14,
+									padding: 16,
+								}}
+							>
+								<Avatar
+									uri={avatarUrl(ownerId, ownerAvatar)}
+									size={52}
+									status={ownerStatus}
+								/>
+								<View style={{ flex: 1 }}>
+									<Design.Text variant="text-lg/semibold" numberOfLines={1}>
+										{ownerName}
+									</Design.Text>
+									{ownerHandle ? (
+										<Design.Text
+											variant="text-md/medium"
+											color="text-muted"
+											numberOfLines={1}
+										>
+											{handleText}
+										</Design.Text>
+									) : null}
+								</View>
+								<Design.Text variant="heading-lg/bold">{CROWN}</Design.Text>
+								{chevron()}
+							</View>
+						</Pressable>
+					</Card>
+				</>
+			) : null}
+
+			<SectionTitle text={DETAILS} />
+			<Card>
+				<Line
+					icon={<Glyph names={['CalendarIcon']} fallback="📅" />}
+					title={CREATED}
+					text={`${longDate(made)} · ${ago(made)}`}
 				/>
-			</Design.TableRowGroup>
-			<Design.TableRowGroup title={DETAILS}>
-				{ownerId ? (
-					<Row
-						key="Owner"
-						label="Owner"
-						subLabel={ownerName}
+				{joined !== null ? (
+					<Line
+						divider
 						icon={
-							<Image
-								source={{ uri: avatarUrl(ownerId, ownerAvatar) }}
-								style={{ width: 24, height: 24, borderRadius: 12 }}
-							/>
+							<Glyph names={['UserPlusIcon', 'CirclePlusIcon']} fallback="➕" />
 						}
-						trailing={chevron()}
-						onPress={() => openProfile(ownerId, guildId)}
+						title={JOINED}
+						text={`${longDate(joined)} · ${ago(joined)}`}
 					/>
 				) : null}
-				{vanity ? (
-					<Row key="Vanity" label="Vanity URL" subLabel={vanity} />
-				) : null}
-				<Row key="Created" label="Created on" subLabel={createdOn(guildId)} />
-				<Row
-					key="Id"
-					label="Server ID"
-					subLabel={guildId}
-					onPress={() => {
-						try {
-							Clipboard.setString(String(guildId))
-							toast('Server ID copied')
-						} catch {
-							// Nothing was copied, so nothing is announced.
-						}
-					}}
+				<Line
+					divider
+					icon={<Glyph names={['ShieldIcon', 'ShieldLockIcon']} fallback="🛡" />}
+					title={VERIFICATION_TITLE}
+					text={VERIFICATION[level] ?? String(level)}
 				/>
-			</Design.TableRowGroup>
-			<Design.Button
-				text={CLOSE}
-				variant="secondary"
-				onPress={() => sheets().hideActionSheet(SHEET_KEY)}
-			/>
+				<Line
+					divider
+					icon={
+						<Glyph names={['GlobeEarthIcon', 'LanguageIcon']} fallback="🌐" />
+					}
+					title={LANGUAGE}
+					text={languageName(guild.preferredLocale)}
+				/>
+				{vanity ? (
+					<Line
+						divider
+						icon={
+							<Glyph names={['LinkIcon', 'LinkExternalIcon']} fallback="🔗" />
+						}
+						title={VANITY}
+						text={vanity}
+						end={<Glyph names={['CopyIcon']} fallback="⧉" />}
+						onPress={() => copy(`https://${vanity}`, 'Link copied')}
+					/>
+				) : null}
+				<Line
+					divider
+					icon={<Glyph names={['IdIcon', 'IdCardIcon']} fallback="ID" />}
+					title={SERVER_ID}
+					text={guildId}
+					end={<Glyph names={['CopyIcon']} fallback="⧉" />}
+					onPress={() => copy(String(guildId), 'Server ID copied')}
+				/>
+			</Card>
 		</ActionSheetBody>
 	)
 }

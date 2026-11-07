@@ -1,8 +1,9 @@
 import { Design } from '@valenced/discord/design'
 import { BottomSheet } from '@valenced/externals/gorhom'
 import { Component, createElement } from 'react'
-import { ScrollView, useWindowDimensions } from 'react-native'
+import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native'
 import { findByProps } from './discord'
+import { Glyph } from './parts'
 import type { ComponentType, ReactNode } from 'react'
 
 /** What a scroll view is given. */
@@ -84,19 +85,50 @@ function scrollView(props: ScrollProps, children: ReactNode): ReactNode {
 	)
 }
 
+/** The word on the close button for screen readers. */
+const CLOSE_LABEL = 'Close'
+
 /**
- * The frame of both sheets: Discord's action sheet with a scrolling stack inside it. The scrolling part is at most
- * three quarters of the screen tall, and it can be scrolled with the sheet's own scrolling, so a long sheet can be read to
- * the end and pulled fully open.
+ * The frame of both sheets: Discord's action sheet with a title and a close button on top, and a scrolling stack under them.
+ * The scrolling part is at most three quarters of the screen tall, and it can be scrolled with the sheet's own scrolling,
+ * so a long sheet can be read to the end and pulled fully open.
+ *
+ * @param title The title in the middle of the top bar.
+ * @param onClose What the X at the end of the top bar does.
  */
 export default function ActionSheetBody({
+	title,
+	onClose,
 	children,
 }: {
+	title: string
+	onClose: () => void
 	children?: ReactNode
 }) {
 	const { height } = useWindowDimensions()
 	return (
 		<Design.ActionSheet>
+			<View
+				style={{
+					flexDirection: 'row',
+					alignItems: 'center',
+					justifyContent: 'center',
+					paddingTop: 8,
+					paddingBottom: 12,
+					minHeight: 52,
+				}}
+			>
+				<Design.Text variant="heading-lg/bold">{title}</Design.Text>
+				<Pressable
+					accessibilityRole="button"
+					accessibilityLabel={CLOSE_LABEL}
+					hitSlop={12}
+					onPress={onClose}
+					style={{ position: 'absolute', right: 16, top: 10, padding: 6 }}
+				>
+					<Glyph names={['XSmallIcon', 'CloseIcon', 'XIcon']} fallback="✕" />
+				</Pressable>
+			</View>
 			{scrollView(
 				{
 					style: { maxHeight: Math.round(height * 0.75) },

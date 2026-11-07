@@ -11,6 +11,10 @@ export interface Guild {
 	premiumSubscriberCount?: number
 	memberCount?: number | null
 	approximateMemberCount?: number | null
+	/** What the server is: a Set in Discord's store, but a list is read too. */
+	features?: Set<string> | string[]
+	verificationLevel?: number
+	preferredLocale?: string
 }
 
 /** A user, as Discord's user store keeps it. */
@@ -34,6 +38,8 @@ export interface Friend {
 export interface CachedOwner {
 	id: string
 	name: string | null
+	/** The name that starts with @. */
+	username?: string | null
 	avatar: string | null
 }
 
@@ -57,6 +63,12 @@ export interface ChannelStore extends ChangeStore {
 	getChannels?(guildId: string): Record<string, unknown> | undefined
 }
 export interface MemberStore {
+	getSelfMemberJoinedAt?(
+		guildId: string,
+	): Date | number | string | null | undefined
+	getSelfMember?(
+		guildId: string,
+	): { joinedAt?: Date | number | string | null } | undefined
 	getMembers?(
 		guildId: string,
 	): Record<string, { nick?: string | null }> | undefined
@@ -94,4 +106,17 @@ export interface MenuItem {
 	iconSource?: unknown
 	IconComponent?: unknown
 	[field: string]: unknown
+}
+
+/** The store of emojis. */
+export interface EmojiStore {
+	getGuildEmoji?(guildId: string): unknown[] | undefined
+}
+/** The store of stickers. */
+export interface StickersStore {
+	getStickersByGuildId?(guildId: string): unknown[] | undefined
+}
+/** The store of who is online. */
+export interface PresenceStore extends ChangeStore {
+	getStatus?(userId: string): string | undefined
 }
