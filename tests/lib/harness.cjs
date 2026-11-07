@@ -567,6 +567,18 @@ function createRuntime(options = {}) {
 				},
 				{ get: (target, name) => (name in target ? target[name] : String(name)) },
 			),
+			// Valenced's `beforeJSX(type, fn)`: `fn` gets `[type, props, key]` of every element of `type` and returns the args to use.
+			jsxRuntime: {
+				beforeJSX(type, fn) {
+					const runtime = globalThis.valenced.react.ReactJSXRuntime
+					const undo = ['jsx', 'jsxs'].map(name => {
+						const original = runtime[name]
+						runtime[name] = (t, p, k) => (t === type ? original(...(fn([t, p, k]) ?? [t, p, k])) : original(t, p, k))
+						return () => { runtime[name] = original }
+					})
+					return () => undo.reverse().forEach(fn => fn())
+				},
+			},
 			ReactJSXRuntime: {
 				Fragment: react.React.Fragment,
 				jsx: (type, props, key) => ({ type, props: props ?? {}, key }),

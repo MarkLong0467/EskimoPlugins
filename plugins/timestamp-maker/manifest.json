@@ -1,0 +1,20 @@
+{
+	"format": 1,
+	"id": "marklong.timestamp-maker",
+	"name": "Timestamp Maker",
+	"description": "A /timestamp command with a popup to build a Discord timestamp: pick the date and time, choose from all 7 styles, add text, then send, insert or copy it. Type @time in a message for a quick one.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"icon": "TimerIcon",
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}

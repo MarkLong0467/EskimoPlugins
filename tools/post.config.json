@@ -47,6 +47,7 @@
 		"marklong.spotify-tools": "Listen Along button, plus send your song or album from the + menu",
 		"marklong.status-presets": "save statuses as presets and switch with one tap, with Undo",
 		"marklong.text-react": "hold a message and add text as reactions, like letters, numbers and words such as \"ok\"",
+		"marklong.timestamp-maker": "a /timestamp command with a popup to build a Discord timestamp (all 7 styles, quick picks, time zones), plus @time in messages",
 		"marklong.valid-user": "resolves @unknown-user mentions automatically"
 	},
 	"suffix": {
