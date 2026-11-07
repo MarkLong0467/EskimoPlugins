@@ -29,7 +29,7 @@ Updates arrive through the same link.
 ## Plugins
 
 <!-- plugins:start -->
-39 plugins. Tap a name for what it does and how it works.
+40 plugins. Tap a name for what it does and how it works.
 
 | Plugin | Version | What it does |
 | ------ | ------- | ------------ |
@@ -65,6 +65,7 @@ Updates arrive through the same link.
 | [Role Options](plugins/role-options) | 1.0.2 | copy a role's name, color or icon from the role menu |
 | [Server Drawer](plugins/server-drawer) | 1.1.8 | manage your servers from a drawer above the YouBar |
 | [Server Info](plugins/server-info) | 1.2.1 | members, roles, channels, boosts, owner and friends for any server |
+| [Silence Users](plugins/silence-users) | 1.0.0 | silence pings and server badge counts from chosen people, or from everyone (port of SilenceUsers for Equicord) |
 | [Slowmode Extended](plugins/slowmode-extended) | 1.0.1 | more slowmode choices, from every second up to 6 hours |
 | [Split Large Messages](plugins/split-large-messages) | 1.0.2 | automatically splits messages over the character limit |
 | [Spotify Tools](plugins/spotify-tools) | 2.3.3 | Listen Along button, plus send your song or album from the + menu |
