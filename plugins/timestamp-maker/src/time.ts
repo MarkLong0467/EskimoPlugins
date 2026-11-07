@@ -316,19 +316,98 @@ const MONTH_KEYS = [
 	'dec',
 ]
 
-/** A unit of the typed offsets ("2h", "3 days"), in milliseconds, or the calendar unit for months and years. */
+/** A unit of the typed offsets ("2h", "3 days"), in milliseconds, or the calendar unit for months and years (`times` of them). */
 function unitOf(
 	word: string,
-): { ms?: number; unit?: 'month' | 'year' } | undefined {
+): { ms?: number; unit?: 'month' | 'year'; times?: number } | undefined {
 	const w = word.toLowerCase()
 	if (/^(s|sec|secs|second|seconds)$/.test(w)) return { ms: 1000 }
 	if (/^(m|min|mins|minute|minutes)$/.test(w)) return { ms: 60000 }
 	if (/^(h|hr|hrs|hour|hours)$/.test(w)) return { ms: 3600000 }
 	if (/^(d|day|days)$/.test(w)) return { ms: 86400000 }
 	if (/^(w|wk|wks|week|weeks)$/.test(w)) return { ms: 7 * 86400000 }
+	if (/^(fortnight|fortnights)$/.test(w)) return { ms: 14 * 86400000 }
 	if (/^(mo|mos|month|months)$/.test(w)) return { unit: 'month' }
+	if (/^(q|quarter|quarters)$/.test(w)) return { unit: 'month', times: 3 }
 	if (/^(y|yr|yrs|year|years)$/.test(w)) return { unit: 'year' }
+	if (/^(decade|decades)$/.test(w)) return { unit: 'year', times: 10 }
 	return undefined
+}
+
+const NUMBER_WORDS: Record<string, number> = {
+	a: 1,
+	an: 1,
+	one: 1,
+	two: 2,
+	three: 3,
+	four: 4,
+	five: 5,
+	six: 6,
+	seven: 7,
+	eight: 8,
+	nine: 9,
+	ten: 10,
+	eleven: 11,
+	twelve: 12,
+	fifteen: 15,
+	twenty: 20,
+	thirty: 30,
+	forty: 40,
+	fifty: 50,
+	sixty: 60,
+	ninety: 90,
+	couple: 2,
+	few: 3,
+	several: 4,
+}
+
+/** The words for a unit, as they follow a number. */
+const UNIT_WORDS =
+	'(?:seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|weeks?|fortnights?|months?|quarters?|years?|yrs?|decades?)'
+
+/** Days of the year that people name, as `[month from 0, day, hour or nothing for noon]`. */
+const HOLIDAYS: Array<[RegExp, number, number, number?]> = [
+	[/\bchristmas eve\b/, 11, 24],
+	[/\b(?:christmas|xmas)\b/, 11, 25],
+	[/\bnew years? eve\b/, 11, 31],
+	[/\bnew years?(?: day)?\b/, 0, 1, 0],
+	[/\bhalloween\b/, 9, 31],
+	[/\bvalentines?(?: day)?\b/, 1, 14],
+	[/\bindependence day\b/, 6, 4],
+	[/\bapril fools(?: day)?\b/, 3, 1],
+]
+
+/** Turns the words people say ("a couple of weeks", "half an hour", "an hour and a half") into numbers and units. */
+function plainNumbers(text: string): string {
+	let out = text
+		.replace(/\bhalf (?:an?|one) hour\b/g, ' 30 minutes ')
+		.replace(/\b(?:a )?quarter (?:of )?(?:an? )?hour\b/g, ' 15 minutes ')
+		.replace(/\bhalf (?:a |one )?day\b/g, ' 12 hours ')
+		.replace(/\bhalf (?:a |one )?month\b/g, ' 15 days ')
+		.replace(/\bhalf (?:a |one )?year\b/g, ' 6 months ')
+		.replace(/\ba couple of\b/g, ' two ')
+		.replace(/\bcouple of\b/g, ' two ')
+		.replace(/\ba few\b/g, ' three ')
+		.replace(
+			new RegExp(
+				`\\b(${Object.keys(NUMBER_WORDS).join('|')})\\b(?=(?: and a half)?\\s+${UNIT_WORDS}\\b)`,
+				'g',
+			),
+			(_, word: string) => ` ${NUMBER_WORDS[word] ?? 1} `,
+		)
+	out = out.replace(
+		new RegExp(
+			`(\\d+(?:\\.\\d+)?)\\s*(${UNIT_WORDS}|[a-z]{1,3}) and a half\\b`,
+			'g',
+		),
+		(_, n: string, unit: string) => ` ${Number(n) + 0.5} ${unit} `,
+	)
+	// "2 and a half hours"
+	out = out.replace(
+		new RegExp(`(\\d+) and a half\\s+(${UNIT_WORDS})\\b`, 'g'),
+		(_, n: string, unit: string) => ` ${Number(n) + 0.5} ${unit} `,
+	)
+	return out
 }
 
 /**
@@ -365,8 +444,6 @@ export function readTime(
 	if (unix?.[1])
 		return unix[1].length === 13 ? Number(unix[1]) : Number(unix[1]) * 1000
 
-	text = text.replace(/\b(at|on|the|of|from|after|around|about)\b/g, ' ')
-
 	const base = partsOf(now, zone)
 	let { year, month, day } = base
 	let hour: number | undefined
@@ -377,6 +454,74 @@ export function readTime(
 	let yearsAhead = 0
 	let sign = 1
 	let extraDays = 0
+	/** The clock to use when none was typed, for "end of the day" and the like. */
+	let fallbackClock: [number, number] | undefined
+	/** Whether the day is one that was named, so a clock-less time is noon and not now. */
+	let dayNamed = false
+
+	// Words first: these have words in them that the steps below would take for something else.
+	text = ` ${text
+		.replace(/['’]/g, '')
+		.replace(/\b(from now|hence|from today)\b/g, ' ')
+		.replace(/\bthis time (next|last) (week|month|year)\b/g, ' $1 $2 ')
+		.replace(/\beod\b/g, ' end of day ')
+		.replace(/\beow\b/g, ' end of week ')
+		.replace(/\beom\b/g, ' end of month ')
+		.replace(/\beoy\b/g, ' end of year ')} `
+	text = plainNumbers(text)
+
+	// "end of the month", "start of next week", "beginning of the year".
+	let m = take(
+		/\b(end|start|beginning) of (?:the )?(this |next |last )?(day|week|month|year)\b/,
+	)
+	if (m) {
+		const end = m[1] === 'end'
+		const step = m[2] === 'next ' ? 1 : m[2] === 'last ' ? -1 : 0
+		fallbackClock = end ? [23, 59] : [0, 0]
+		dayGiven = true
+		dayNamed = true
+		if (m[3] === 'day') {
+			extraDays += step
+		} else if (m[3] === 'week') {
+			// Weeks run Monday to Sunday.
+			const toMonday = -((base.weekday + 6) % 7) + 7 * step
+			extraDays += end ? toMonday + 6 : toMonday
+		} else if (m[3] === 'month') {
+			const target = new Date(Date.UTC(year, month + step, 1))
+			year = target.getUTCFullYear()
+			month = target.getUTCMonth()
+			day = end ? daysIn(year, month) : 1
+		} else {
+			year += step
+			month = end ? 11 : 0
+			day = end ? 31 : 1
+		}
+	}
+
+	// The weekend, and days people name.
+	m = take(/\b(this |next )?weekend\b/)
+	if (m) {
+		extraDays +=
+			(base.weekday === 0 ? 0 : 6 - base.weekday) + (m[1] === 'next ' ? 7 : 0)
+		dayGiven = true
+		dayNamed = true
+	}
+	for (const [pattern, holidayMonth, holidayDay, holidayHour] of HOLIDAYS) {
+		if (dayGiven || !take(pattern)) continue
+		const typedYear = take(/\b(20\d{2})\b/)
+		month = holidayMonth
+		day = holidayDay
+		year = typedYear?.[1]
+			? Number(typedYear[1])
+			: month < base.month || (month === base.month && day < base.day)
+				? base.year + 1
+				: base.year
+		if (holidayHour !== undefined) fallbackClock = [holidayHour, 0]
+		dayGiven = true
+		dayNamed = true
+	}
+
+	text = text.replace(/\b(at|on|the|of|from|after|around|about)\b/g, ' ')
 
 	if (take(/\bnow\b/)) return now
 
@@ -385,7 +530,7 @@ export function readTime(
 	take(/\bin\b/)
 
 	// Dates first, so their numbers are not mistaken for offsets or clocks.
-	let m = take(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/)
+	m = take(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/)
 	if (m) {
 		year = Number(m[1])
 		month = Number(m[2]) - 1
@@ -393,14 +538,20 @@ export function readTime(
 		dayGiven = true
 	}
 	if (!dayGiven) {
-		m = take(/\b(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2,4}))?\b/)
+		// Slashes (3/4, 3/4/2026) or dots with a year (3.4.2026): "1.5 years" is not a date.
+		m = take(
+			/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b|\b(\d{1,2})\.(\d{1,2})\.(\d{2,4})\b/,
+		)
 		if (m) {
-			const a = Number(m[1])
-			const b = Number(m[2])
-			const dayFirst = options.order === 'dmy' || a > 12
+			const a = Number(m[1] ?? m[4])
+			const b = Number(m[2] ?? m[5])
+			const typedYear = m[3] ?? m[6]
+			const dayFirst = options.order === 'dmy' || a > 12 || m[4] !== undefined
 			day = dayFirst ? a : b
 			month = (dayFirst ? b : a) - 1
-			if (m[3]) year = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3])
+			if (typedYear)
+				year =
+					typedYear.length === 2 ? 2000 + Number(typedYear) : Number(typedYear)
 			dayGiven = true
 		}
 	}
@@ -430,6 +581,17 @@ export function readTime(
 		}
 	}
 
+	// "the 15th": that day of this month, or of next month if it has passed.
+	if (!dayGiven) {
+		m = take(/\b(\d{1,2})(?:st|nd|rd|th)\b/)
+		if (m) {
+			day = Number(m[1])
+			if (day < base.day) monthsAhead += 1
+			dayGiven = true
+			dayNamed = true
+		}
+	}
+
 	// Clocks.
 	if (take(/\bnoon\b/)) hour = 12
 	else if (take(/\bmidnight\b/)) hour = 0
@@ -455,10 +617,17 @@ export function readTime(
 		if (!found) break
 		const unit = unitOf(found[3] ?? '')
 		if (!unit) return undefined
-		const amount = Number(found[2]) * (found[1] === '-' ? -1 : 1) * sign
+		const amount =
+			Number(found[2]) * (found[1] === '-' ? -1 : 1) * sign * (unit.times ?? 1)
 		if (unit.ms !== undefined) offset += amount * unit.ms
-		else if (unit.unit === 'month') monthsAhead += amount
-		else yearsAhead += amount
+		else {
+			// A part of a month or a year is counted in days.
+			const whole = Math.trunc(amount)
+			const days = (amount - whole) * (unit.unit === 'month' ? 30.4375 : 365.25)
+			if (unit.unit === 'month') monthsAhead += whole
+			else yearsAhead += whole
+			offset += days * 86400000
+		}
 	}
 
 	// Day words.
@@ -482,6 +651,12 @@ export function readTime(
 		dayGiven = true
 	} else if (take(/\bnext year\b/)) {
 		yearsAhead += 1
+		dayGiven = true
+	} else if (take(/\blast month\b/)) {
+		monthsAhead -= 1
+		dayGiven = true
+	} else if (take(/\blast year\b/)) {
+		yearsAhead -= 1
 		dayGiven = true
 	} else if (take(/\blast week\b/)) {
 		extraDays -= 7
@@ -509,7 +684,8 @@ export function readTime(
 		month !== base.month || day !== base.day || year !== base.year
 	let clockFromNow = false
 	if (hour === undefined) {
-		if (dayGiven && !keepClock) hour = 12
+		if (fallbackClock) [hour, minute] = fallbackClock
+		else if (dayNamed || (dayGiven && !keepClock)) hour = 12
 		else if (explicitDate && extraDays === 0) hour = 12
 		else {
 			hour = base.hour
@@ -554,12 +730,49 @@ export function readTime(
 export const QUICK_PICKS: Array<{ label: string; when: string }> = [
 	{ label: 'Now', when: 'now' },
 	{ label: 'In 15 min', when: 'in 15 minutes' },
+	{ label: 'In 30 min', when: 'in 30 minutes' },
 	{ label: 'In 1 hour', when: 'in 1 hour' },
+	{ label: 'In 2 hours', when: 'in 2 hours' },
 	{ label: 'Tonight 8 PM', when: 'tonight' },
 	{ label: 'Tomorrow 9 AM', when: 'tomorrow 9am' },
 	{ label: 'Tomorrow noon', when: 'tomorrow noon' },
-	{ label: 'Saturday noon', when: 'saturday noon' },
+	{ label: 'Tomorrow 6 PM', when: 'tomorrow 6pm' },
+	{ label: 'This weekend', when: 'this weekend' },
 	{ label: 'Next Monday 9 AM', when: 'next monday 9am' },
 	{ label: 'In a week', when: 'in 1 week' },
+	{ label: 'In 2 weeks', when: 'in 2 weeks' },
+	{ label: 'End of the month', when: 'end of the month' },
+	{ label: 'Start of next month', when: 'start of next month' },
 	{ label: 'In a month', when: 'in 1 month' },
+	{ label: 'In 3 months', when: 'in 3 months' },
+	{ label: 'In 6 months', when: 'in 6 months' },
+	{ label: 'In a year', when: 'in 1 year' },
+	{ label: 'Next year', when: 'next year' },
+	{ label: 'End of the year', when: 'end of the year' },
+	{ label: 'New Year', when: 'new years' },
+	{ label: 'Halloween', when: 'halloween' },
+	{ label: 'Christmas', when: 'christmas' },
+]
+
+/** One step of the Later and Earlier rows: how to move the chosen time. */
+export interface Jump {
+	label: string
+	unit: 'year' | 'month' | 'day' | 'hour' | 'minute'
+	amount: number
+}
+
+/** The steps for moving the chosen time later (and, negated, earlier). */
+export const JUMPS: Jump[] = [
+	{ label: '1 hour', unit: 'hour', amount: 1 },
+	{ label: '6 hours', unit: 'hour', amount: 6 },
+	{ label: '1 day', unit: 'day', amount: 1 },
+	{ label: '3 days', unit: 'day', amount: 3 },
+	{ label: '1 week', unit: 'day', amount: 7 },
+	{ label: '2 weeks', unit: 'day', amount: 14 },
+	{ label: '1 month', unit: 'month', amount: 1 },
+	{ label: '3 months', unit: 'month', amount: 3 },
+	{ label: '6 months', unit: 'month', amount: 6 },
+	{ label: '1 year', unit: 'year', amount: 1 },
+	{ label: '5 years', unit: 'year', amount: 5 },
+	{ label: '10 years', unit: 'year', amount: 10 },
 ]

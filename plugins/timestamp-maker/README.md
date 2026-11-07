@@ -9,8 +9,9 @@ A Discord timestamp (`<t:1794000000:F>`) is shown to every reader in **their own
 - **`/timestamp` in the `/` menu**, with Discord's own commands. It takes two optional pieces: `when` (for example `tomorrow 9am`) and `style`. With them the popup opens already filled in.
 - **A popup that is easy to use.**
   - A big preview of how it will look in chat, with the tag that will be sent under it.
-  - A **When** box that understands what you type (see below), and **quick picks**: Now, In 15 min, In 1 hour, Tonight 8 PM, Tomorrow 9 AM, Tomorrow noon, Saturday noon, Next Monday 9 AM, In a week, In a month.
+  - A **When** box that understands what you type (see below), and 24 **quick picks** that wrap onto as many lines as they need: minutes and hours from now, tonight, tomorrow, this weekend, next Monday, in 1 or 2 weeks, end or start of the month, in 1, 3 or 6 months, in a year, next year, end of the year, New Year, Halloween, Christmas.
   - **Fine tune** buttons for Year, Month, Day, Hour and Minute (the minute button moves 1, 5, 10, 15 or 30 minutes, you choose).
+  - **Jump ahead or back** buttons that move the time you have by 1 hour, 6 hours, 1 day, 3 days, 1 week, 2 weeks, 1 month, 3 months, 6 months, 1 year, 5 years or 10 years. Tap more than once to go further.
   - **All seven styles** with a live preview of each: date and time, full date and time, relative (live "in 2 hours"), time, time with seconds, short date, long date.
   - **Extras**: also add the relative time (`<t:…:F> (<t:…:R>)`), show the raw tag in backticks, and a **message** with `{time}` ("Meeting starts {time}").
   - A **time zone** control, for when you are working out a time in somebody else's zone.
@@ -31,7 +32,16 @@ In the **When** box, in `/timestamp when:…` and in `@time(…)`, in any mix:
 | `3 days ago`, `-2w` | that long before now |
 | `5pm`, `5:30 pm`, `17:30`, `noon`, `midnight` | that time today |
 | `tomorrow 9am`, `yesterday`, `tonight` (8 PM) | that day |
-| `friday 8pm`, `next monday 9am`, `next week`, `next month` | that day |
+| `friday 8pm`, `next monday 9am`, `next week`, `next month`, `next year`, `this weekend` | that day |
+| `in two weeks`, `a week from now`, `in a fortnight`, `in a couple of days`, `in a few hours` | number words work too |
+| `half an hour`, `an hour and a half`, `in 2 and a half hours`, `in 1.5 years` | parts of a unit |
+| `in a month`, `in 3 months`, `in a year`, `in 2 years`, `in a decade` | calendar months and years |
+| `a year ago`, `6 months ago`, `last month`, `last year` | before now |
+| `this time next week`, `this time next year` | the same time of day, a week or a year on |
+| `end of the day` (`eod`), `end of the week`, `end of the month`, `end of the year` | the last moment, 23:59 |
+| `start of next week`, `start of next month`, `start of next year` | the first moment, 00:00 |
+| `christmas`, `christmas eve`, `new years`, `new years eve`, `halloween`, `valentines day` | the next one (add a year: `christmas 2030 6pm`) |
+| `the 15th`, `the 15th at 5pm` | that day of this month, or of next month if it has passed |
 | `2026-12-25 18:00`, `dec 25 2026 6pm`, `25 december 6:30pm`, `12/25/2026` | that date |
 | `1794000000` | a Unix time |
 

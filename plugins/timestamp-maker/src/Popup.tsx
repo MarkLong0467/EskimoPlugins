@@ -1,7 +1,7 @@
 import { ActionSheetActionCreators } from '@valenced/discord/actions'
 import { Design } from '@valenced/discord/design'
 import { useEffect, useMemo, useState } from 'react'
-import { ScrollView, View } from 'react-native'
+import { ScrollView, useWindowDimensions, View } from 'react-native'
 import { openToast } from '../../../shared/kmmiio/toast'
 import { copyText, insertText, openChannelId, sendText } from './deliver'
 import { diag } from './diag'
@@ -10,6 +10,7 @@ import { addRecent, clearRecents, setting, update } from './store'
 import {
 	compose,
 	isStyle,
+	JUMPS,
 	offsetName,
 	partsOf,
 	preview,
@@ -24,7 +25,7 @@ import {
 	zoneName,
 } from './time'
 import type { Action } from './store'
-import type { Style, Zone } from './time'
+import type { Jump, Style, Zone } from './time'
 
 /** The key of the sheet, so it can be closed again. */
 const SHEET_KEY = 'MARKLONG_TIMESTAMP_MAKER'
@@ -45,6 +46,11 @@ const MESSAGE_HINT =
 	'Text around it, for example “Meeting starts {time}”. Without {time} the timestamp goes on the end.'
 const QUICK = 'Quick picks'
 const FINE_TUNE = 'Fine tune'
+const JUMP_TITLE = 'Jump ahead or back'
+const JUMP_HINT =
+	'Moves the time you have now by this much. Tap more than once to go further.'
+const LATER = 'LATER'
+const EARLIER = 'EARLIER'
 const ZONE_HINT =
 	'The clock you are typing in. The timestamp itself is the same moment for everybody.'
 const ZONE_TITLE = 'Time zone'
@@ -128,6 +134,7 @@ function Popup({ channelId, when: typed, style: startStyle }: PopupProps) {
 	const [message, setMessage] = useState(remember ? setting('message') : '')
 	const [words, setWords] = useState(typed ?? '')
 	const [bad, setBad] = useState(false)
+	const screen = useWindowDimensions()
 	const [now, setNow] = useState(Date.now())
 	const [, redraw] = useState(0)
 
@@ -246,14 +253,20 @@ function Popup({ channelId, when: typed, style: startStyle }: PopupProps) {
 	const sentLine =
 		alsoRelative && style !== 'R' ? `${big} (${relative(when, now)})` : big
 
+	const jump = (unit: Jump['unit'], amount: number) => {
+		setWhen(current => shift(current, zone, unit, amount))
+		setWords('')
+		setBad(false)
+	}
+
 	return (
 		<Design.ActionSheet>
 			<ScrollView
-				style={{ maxHeight: 640 }}
+				style={{ maxHeight: Math.round(screen.height * 0.78) }}
 				keyboardShouldPersistTaps="handled"
 				showsVerticalScrollIndicator={false}
 			>
-				<View style={{ padding: 16, gap: 16 }}>
+				<View style={{ padding: 16, paddingBottom: 40, gap: 16 }}>
 					<View style={{ gap: 2 }}>
 						<Design.Text variant="heading-lg/bold">{TITLE}</Design.Text>
 						<Design.Text variant="text-sm/medium" color="text-muted">
@@ -301,12 +314,7 @@ function Popup({ channelId, when: typed, style: startStyle }: PopupProps) {
 					{setting('quickPicks') ? (
 						<View style={{ gap: 8 }}>
 							<Design.Text variant="text-md/semibold">{QUICK}</Design.Text>
-							<ScrollView
-								horizontal
-								showsHorizontalScrollIndicator={false}
-								keyboardShouldPersistTaps="handled"
-								contentContainerStyle={{ gap: 8 }}
-							>
+							<View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
 								{QUICK_PICKS.map(item => (
 									<Design.Button
 										key={item.label}
@@ -316,7 +324,7 @@ function Popup({ channelId, when: typed, style: startStyle }: PopupProps) {
 										onPress={() => pick(item.when)}
 									/>
 								))}
-							</ScrollView>
+							</View>
 						</View>
 					) : null}
 
@@ -355,6 +363,41 @@ function Popup({ channelId, when: typed, style: startStyle }: PopupProps) {
 							onDown={() => move('minute', -step)}
 							onUp={() => move('minute', step)}
 						/>
+					</View>
+
+					<View style={{ gap: 8 }}>
+						<Design.Text variant="text-md/semibold">{JUMP_TITLE}</Design.Text>
+						<Design.Text variant="text-sm/medium" color="text-muted">
+							{JUMP_HINT}
+						</Design.Text>
+						<Design.Text variant="text-xs/bold" color="text-muted">
+							{LATER}
+						</Design.Text>
+						<View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+							{JUMPS.map(item => (
+								<Design.Button
+									key={`later-${item.label}`}
+									text={`+ ${item.label}`}
+									variant="secondary"
+									size="sm"
+									onPress={() => jump(item.unit, item.amount)}
+								/>
+							))}
+						</View>
+						<Design.Text variant="text-xs/bold" color="text-muted">
+							{EARLIER}
+						</Design.Text>
+						<View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+							{JUMPS.map(item => (
+								<Design.Button
+									key={`earlier-${item.label}`}
+									text={`− ${item.label}`}
+									variant="tertiary"
+									size="sm"
+									onPress={() => jump(item.unit, -item.amount)}
+								/>
+							))}
+						</View>
 					</View>
 
 					<View style={{ gap: 8 }}>
