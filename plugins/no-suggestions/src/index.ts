@@ -19,6 +19,7 @@ import { withProps } from '@valenced/modules/finders/filters'
 import { installJsxFinder } from '../../../shared/palmdevs/jsxFind'
 import { clearSuggestions, watchForClear } from './clear'
 import { diag } from './diag'
+import { installFluxWatch, installRowWatch, suggestedIds } from './discover'
 import Settings from './Settings'
 import { resetState, state } from './state'
 
@@ -61,6 +62,7 @@ function suggested(
 			return null
 		}
 		state.cleared++
+		for (const id of props.channelIds) suggestedIds.add(id)
 		state.channelsCleared += props.channelIds.length
 		clearSuggestions(props.guildId, props.channelIds)
 		// Discord's component is run with an empty list for its hooks, but what it draws is thrown away: on some versions it
@@ -94,6 +96,9 @@ export default plugin({
 		cleanup(diag.listen())
 		cleanup(resetState)
 		watchForClear(cleanup)
+		cleanup(() => suggestedIds.clear())
+		installRowWatch(cleanup)
+		installFluxWatch(cleanup)
 
 		// The main way: watch for the section being drawn.
 		state.jsx = installJsxFinder(cleanup, [

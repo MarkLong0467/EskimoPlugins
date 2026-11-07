@@ -17,6 +17,9 @@ export const diag = createDiagnostics('No Suggestions', {
 		`Section replaced: ${state.replaced} time(s), patched in its module: ${state.patched}`,
 		`Rendered while empty: ${state.empty}`,
 		`Cleared: ${state.cleared} time(s), ${state.channelsCleared} channel(s) (by Discord's function ${state.clearedByDiscord}, by the event ${state.clearedByEvent})`,
+		`Rows hidden because they said they were suggestions: ${state.rowsHidden}`,
+		...state.rows.map(row => `Row drawn for a suggested channel: ${row}`),
+		...state.events.map(event => `Event seen: ${event}`),
 	],
 	checks: () => [
 		{

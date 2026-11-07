@@ -14,6 +14,11 @@ export const state = {
 	/** How many of those went through Discord's own `clearRecentChannels`, and how many through the event alone. */
 	clearedByDiscord: 0,
 	clearedByEvent: 0,
+	/** The components that drew the rows of suggested channels, and the events about recent channels that were seen. */
+	rows: [] as string[],
+	events: [] as string[],
+	/** How many rows were hidden because they said they were suggestions. */
+	rowsHidden: 0,
 }
 
 /** Forgets the counts. Used when the plugin stops. */
@@ -26,4 +31,7 @@ export function resetState(): void {
 	state.channelsCleared = 0
 	state.clearedByDiscord = 0
 	state.clearedByEvent = 0
+	state.rows = []
+	state.events = []
+	state.rowsHidden = 0
 }
