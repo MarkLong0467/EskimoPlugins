@@ -257,6 +257,13 @@
       "suffix": ""
     },
     {
+      "id": "marklong.timestamp-maker",
+      "name": "Timestamp Maker",
+      "version": "1.0.0",
+      "short": "a /timestamp command with a popup to build a Discord timestamp (all 7 styles, quick picks, time zones), plus @time in messages",
+      "suffix": ""
+    },
+    {
       "id": "marklong.valid-user",
       "name": "Valid User",
       "version": "1.0.1",

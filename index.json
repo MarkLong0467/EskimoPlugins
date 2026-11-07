@@ -3282,6 +3282,29 @@
           }
         }
       }
+    },
+    "marklong.timestamp-maker": {
+      "name": "Timestamp Maker",
+      "description": "A /timestamp command with a popup to build a Discord timestamp: pick the date and time, choose from all 7 styles, add text, then send, insert or copy it. Type @time in a message for a quick one.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.timestamp-maker@1.0.0.zip",
+          "sha256": "15e63a3b8496f3f37ed35d68af8c8e1c582e9cdfd2db21b3bf81b1f030cfb7d5",
+          "size": 16170,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
     }
   }
 }
