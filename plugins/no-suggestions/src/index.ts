@@ -41,7 +41,7 @@ interface Datasource {
 let drawing = false
 
 /**
- * What the section draws: nothing with no suggestions, and with some, it clears them and draws the section with none.
+ * What the section draws: always nothing. With some suggestions it also clears them.
  *
  * Discord's own component is run in both cases, so that its hooks run on every draw (a component that skips them on one draw
  * makes React fail). With no suggestions its result is thrown away.
@@ -63,7 +63,10 @@ function suggested(
 		state.cleared++
 		state.channelsCleared += props.channelIds.length
 		clearSuggestions(props.guildId, props.channelIds)
-		return original({ ...props, channelIds: [] })
+		// Discord's component is run with an empty list for its hooks, but what it draws is thrown away: on some versions it
+		// reads the channels from its own stores and still shows them whatever list it is given.
+		original({ ...props, channelIds: [] })
+		return null
 	} finally {
 		drawing = false
 	}

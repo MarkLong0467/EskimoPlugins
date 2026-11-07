@@ -55,7 +55,7 @@ const events = s => s.runtime.log.dispatched.filter(a => a.type === 'BULK_CLEAR_
 		const s = await startPort('no-suggestions')
 		const element = drawElement(s, f.SuggestedCategory, { guildId: 'g1', channelIds: ['c1', 'c2'], withMarginTop: true })
 		const drawn = render(element)
-		check('with suggestions it draws the section with none in it', drawn.drew === 'section' && drawn.props.channelIds.length === 0 && drawn.props.withMarginTop === true && drawn.props.guildId === 'g1', drawn)
+		check('with suggestions it draws nothing at all, even if Discord shows channels from its own stores', drawn === null, drawn)
 		check('Discord’s component got the cleared list', f.calls.at(-1).channelIds.length === 0)
 		check('the clear is not done in the middle of drawing', events(s).length === 0)
 		await sleep(10)
@@ -108,7 +108,7 @@ const events = s => s.runtime.log.dispatched.filter(a => a.type === 'BULK_CLEAR_
 		const s = await startPort('no-suggestions', { before: runtime => runtime.valenced.modules.finders.loadModule(module) })
 		check('the module is patched when it is found', module.SuggestedCategory !== f.SuggestedCategory)
 		const direct = module.SuggestedCategory({ guildId: 'g1', channelIds: ['c1'] })
-		check('drawn through the module it clears and draws the section with none', direct.drew === 'section' && direct.props.channelIds.length === 0)
+		check('drawn through the module it clears and draws nothing', direct === null)
 		await sleep(10)
 		check('and clears once', events(s).length === 1, events(s))
 
@@ -176,7 +176,7 @@ const events = s => s.runtime.log.dispatched.filter(a => a.type === 'BULK_CLEAR_
 		})
 		const drawn = render(drawElement(s, f.SuggestedCategory, { guildId: 'g', channelIds: ['c1'] }))
 		await sleep(10)
-		check('a clear function that throws still gives the section with none in it', drawn.drew === 'section' && drawn.props.channelIds.length === 0 && s.errors.length === 0)
+		check('a clear function that throws still draws nothing and reports no error', drawn === null && s.errors.length === 0)
 		s.stop()
 	}
 

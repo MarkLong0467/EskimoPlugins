@@ -17,7 +17,7 @@ Removes the annoying "Suggested" channel section of a server's channel list, whi
 Discord draws the section with `SuggestedCategory({ guildId, channelIds, withMarginTop })`. The plugin replaces it:
 
 - with no suggestions, it draws nothing,
-- with some, it clears them and draws the section with none.
+- with some, it clears them and still draws nothing (on some Discord versions the section shows channels from Discord's own stores whatever list it is given).
 
 Clearing sends the same `BULK_CLEAR_RECENTS` event Discord's own "clear" option sends (the stores then drop the channels from the list), a moment after the draw rather than in the middle of it. Discord's own `clearRecentChannels`, which also saves that you dismissed them, is used too once Discord has loaded it.
 
