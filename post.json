@@ -231,7 +231,7 @@
     {
       "id": "marklong.server-info",
       "name": "Server Info",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "short": "members, roles, channels, boosts, owner and friends for any server",
       "suffix": ""
     },
