@@ -61,6 +61,13 @@
       "suffix": ""
     },
     {
+      "id": "marklong.better-folders",
+      "name": "Better Folders",
+      "version": "1.0.0",
+      "short": "hide the server icons in collapsed folders and auto-collapse folders as you open different ones (port of fres's BetterFolders)",
+      "suffix": ""
+    },
+    {
       "id": "marklong.bypass-status",
       "name": "Bypass Status",
       "version": "3.0.1",
