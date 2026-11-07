@@ -47,6 +47,13 @@
       "suffix": ""
     },
     {
+      "id": "marklong.better-command-popout",
+      "name": "Better Command Popout",
+      "version": "1.0.0",
+      "short": "copy a slash command's mention or ID from its popout",
+      "suffix": ""
+    },
+    {
       "id": "marklong.better-devices",
       "name": "Better Devices",
       "version": "1.0.4",
