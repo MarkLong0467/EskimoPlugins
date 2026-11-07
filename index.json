@@ -3640,6 +3640,32 @@
           }
         }
       }
+    },
+    "marklong.silence-users": {
+      "name": "Silence Users",
+      "description": "Silence @mention pings, server badge counts and in-app notifications from specific people, or from everyone, without muting the chat. Add people in the settings or with /silence.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.silence-users@1.0.0.zip",
+          "sha256": "7d3282b0615665f96c5b16bc6258342c47bb5acfb39b4aaaa9db1b392f2516d8",
+          "size": 10878,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "contributors": [
+        "dka (https://github.com/Equicord/Equicord/tree/main/src/equicordplugins/silenceUsers \"Original SilenceUsers plugin for Equicord, GPL-3.0\")"
+      ]
     }
   }
 }

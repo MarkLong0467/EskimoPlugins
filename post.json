@@ -236,6 +236,13 @@
       "suffix": ""
     },
     {
+      "id": "marklong.silence-users",
+      "name": "Silence Users",
+      "version": "1.0.0",
+      "short": "silence pings and server badge counts from chosen people, or from everyone (port of SilenceUsers for Equicord)",
+      "suffix": ""
+    },
+    {
       "id": "marklong.slowmode-extended",
       "name": "Slowmode Extended",
       "version": "1.0.1",
