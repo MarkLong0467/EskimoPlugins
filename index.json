@@ -3207,6 +3207,32 @@
       "contributors": [
         "Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
       ]
+    },
+    "marklong.better-command-popout": {
+      "name": "Better Command Popout",
+      "description": "Adds options to copy command mention and ID in the command popout.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.better-command-popout@1.0.0.zip",
+          "sha256": "82da82ffc291ef783408114a939ed216f2dd8e0168e5e4472298c65b9a727f55",
+          "size": 7639,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "contributors": [
+        "aliernfrog <459370047652102154> (https://github.com/aliernfrog \"Original author\") (https://github.com/aliernfrog/vd-plugins \"Source\")"
+      ]
     }
   }
 }
