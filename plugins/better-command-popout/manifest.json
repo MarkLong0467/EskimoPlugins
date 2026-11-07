@@ -1,0 +1,23 @@
+{
+	"format": 1,
+	"id": "marklong.better-command-popout",
+	"name": "Better Command Popout",
+	"description": "Adds options to copy command mention and ID in the command popout.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [
+		"aliernfrog <459370047652102154> (https://github.com/aliernfrog \"Original author\") (https://github.com/aliernfrog/vd-plugins \"Source\")"
+	],
+	"icon": "CopyIcon",
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
