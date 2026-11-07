@@ -3288,7 +3288,7 @@
       "description": "A /timestamp command with a popup to build a Discord timestamp: pick the date and time, choose from all 7 styles, add text, then send, insert or copy it. Type @time in a message for a quick one.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.3.0"
+        "latest": "1.3.1"
       },
       "versions": {
         "1.0.0": {
@@ -3373,6 +3373,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.timestamp-maker@1.3.0.zip",
           "sha256": "42354fbcdb4fb9cb89ff4ae3b1c32ede64277bbd57b120be45ed47ea4c5330c0",
           "size": 18151,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.3.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.timestamp-maker@1.3.1.zip",
+          "sha256": "8706ad734307735abfb6935325a926970cae918de58ab70fb96abc4440500305",
+          "size": 18162,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
