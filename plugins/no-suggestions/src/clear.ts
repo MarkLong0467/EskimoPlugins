@@ -184,11 +184,22 @@ export function installDismissal(cleanup: Cleanup): void {
 		valenced.patcher.instead(
 			store as never,
 			'getGuildRecentsDismissedAt' as never,
-			((args: [string], original: (guildId: string) => number) => {
-				const real = original(args[0])
+			function (
+				this: unknown,
+				args: [string],
+				original: (guildId: string) => number,
+			) {
 				const mine = dismissedAt.get(args[0])
+				let real = 0
+				try {
+					// Discord's method reads `this.settings`, so it has to be called on the store itself.
+					real = Reflect.apply(original, this, args) as number
+				} catch (error) {
+					// A store that is not ready yet must not crash the channel list.
+					if (mine === undefined) throw error
+				}
 				return mine !== undefined && mine > real ? mine : real
-			}) as never,
+			} as never,
 		),
 	)
 	state.dismissal = !!unpatch

@@ -184,7 +184,7 @@ const events = s => s.runtime.log.dispatched.filter(a => a.type === 'BULK_CLEAR_
 	{
 		const f = fakeSection()
 		let real = 1000
-		const store = { getGuildRecentsDismissedAt: () => real }
+		const store = { settings: { ok: true }, getGuildRecentsDismissedAt() { return this.settings.ok ? real : -1 } }
 		const s = await startPort('no-suggestions', { stores: { UserSettingsProtoStore: store, ReadStateStore: { lastMessageId: id => `m-${id}` } } })
 		check('the dismissal time is patched when the store is there', store.getGuildRecentsDismissedAt('x') === 1000)
 		render(drawElement(s, f.SuggestedCategory, { guildId: 'parts', channelIds: ['p1', 'p2'] }))
@@ -194,6 +194,7 @@ const events = s => s.runtime.log.dispatched.filter(a => a.type === 'BULK_CLEAR_
 		check('without asking Discord to tell its servers (no context)', acks[0].context === undefined)
 		const dismissed = store.getGuildRecentsDismissedAt('parts')
 		check('the server now counts as dismissed just now, later than any saved time', dismissed > Date.now() - 5000 && dismissed >= 1000, dismissed)
+		check('the store is called as itself, not on its own', store.getGuildRecentsDismissedAt('parts') > 0)
 		check('another server is untouched', store.getGuildRecentsDismissedAt('other') === 1000)
 		real = Date.now() + 100000
 		check('a later time saved by Discord itself wins', store.getGuildRecentsDismissedAt('parts') === real)
