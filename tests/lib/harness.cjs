@@ -70,7 +70,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
  * Creates a React stand-in together with the renderer that drives it. Hooks keep their state per component
  * position in the tree, so re-rendering after a state change gives the component its old state back.
  */
-function createReact() {
+function createReact(extras = false) {
 	/** Component instances keyed by their position in the tree. */
 	const instances = new Map()
 	let current = null
@@ -118,6 +118,23 @@ function createReact() {
 				this.props = props
 			}
 		},
+		// Only when a test asks for them (`reactExtras`): a plugin that checks for these functions takes another path when they exist.
+		...(extras
+			? {
+					isValidElement: element => !!element && typeof element === 'object' && 'type' in element && 'props' in element,
+					useSyncExternalStore(subscribe, getSnapshot) {
+						const owner = current
+						const slot = useSlot(() => ({ subscribed: false }))
+						if (!slot.subscribed) {
+							slot.subscribed = true
+							subscribe(() => {
+								if (owner) requestRender()
+							})
+						}
+						return getSnapshot()
+					},
+				}
+			: {}),
 		useState(initial) {
 			const owner = current
 			const slot = useSlot(() => ({ value: typeof initial === 'function' ? initial() : initial }))
@@ -503,7 +520,7 @@ function recorder(log, label) {
  * plugins registered with `onFluxEventDispatched`, as Discord's own Flux would. The action is still recorded.
  */
 function createRuntime(options = {}) {
-	const react = createReact()
+	const react = createReact(!!options.reactExtras)
 	const patcher = createPatcher()
 	const finders = createFinders()
 

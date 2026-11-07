@@ -28,11 +28,13 @@ function merge(target, source) {
  * @param {object} [options.saved] What the plugin has saved from an earlier session.
  * @param {object} [options.stores] Fake Flux stores by name.
  * @param {object} [options.overrides] More of the fake `valenced` global (see `createRuntime`).
+ * @param {boolean} [options.reactExtras] Gives the fake React `isValidElement` and `useSyncExternalStore`.
  * @param {(runtime: object) => void} [options.before] Runs before the plugin starts, to load modules and so on.
  */
-async function startPort(name, { saved = {}, stores = {}, overrides = {}, before, version = [1, 0, 0] } = {}) {
+async function startPort(name, { saved = {}, stores = {}, overrides = {}, before, version = [1, 0, 0], reactExtras = false } = {}) {
 	const copied = []
 	const runtime = createRuntime({
+		reactExtras,
 		stores,
 		overrides: merge(
 			{
