@@ -48,7 +48,7 @@ Updates arrive through the same link.
 | [Custom Sounds](plugins/custom-sounds) | 0.1.34 | replace any Discord sound with your own link, with seasonal packs |
 | [Force Timestamp Locale](plugins/force-timestamp-locale) | 1.0.1 | show every timestamp in one language, such as en-gb 24-hour times |
 | [Haptics](plugins/haptics) | 0.1.3 | turn Discord's buzzing on or off, with a log of what buzzed |
-| [Hide Slash Apps](plugins/hide-slash-apps) | 1.0.0 | long press an app in the / menu to hide it everywhere or in one server (for bots like MEE6) |
+| [Hide Slash Apps](plugins/hide-slash-apps) | 1.1.0 | long press an app or command in the / menu to hide it everywhere or in one server, switch off built-in commands (for bots like MEE6) |
 | [HypeSquad Switcher](plugins/hypesquad) | 1.1.2 | change your HypeSquad house, or leave it, in one tap |
 | [Markdown Toolbar](plugins/markdown-toolbar) | 1.2.4 | a floating formatting bar under the chat input that pops up with the keyboard |
 | [Message Preview](plugins/message-preview) | 1.0.3 | preview your message before sending it |
