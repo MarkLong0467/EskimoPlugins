@@ -119,8 +119,8 @@
     {
       "id": "marklong.hide-slash-apps",
       "name": "Hide Slash Apps",
-      "version": "1.0.0",
-      "short": "long press an app in the / menu to hide it everywhere or in one server (for bots like MEE6)",
+      "version": "1.1.0",
+      "short": "long press an app or command in the / menu to hide it everywhere or in one server, switch off built-in commands (for bots like MEE6)",
       "suffix": ""
     },
     {
