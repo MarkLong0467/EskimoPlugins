@@ -110,6 +110,13 @@
       "suffix": "(beta)"
     },
     {
+      "id": "marklong.flame-text",
+      "name": "Flame Text",
+      "version": "1.0.0",
+      "short": "turns what you send into a burning, animated GIF of your text on fire, drawn on your phone, with a chat box button and /flame to switch it",
+      "suffix": ""
+    },
+    {
       "id": "marklong.force-timestamp-locale",
       "name": "Force Timestamp Locale",
       "version": "1.0.1",
