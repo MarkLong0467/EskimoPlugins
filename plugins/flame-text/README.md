@@ -7,7 +7,7 @@ The GIF is **drawn on your phone**. No website is used and nothing leaves your p
 ## Switching it on and off
 
 - **A flame button in the chat box.** Tap it to switch flame text on or off. It glows orange when it is on. By default it sits next to the send button (which shows while you type); you can also put it with the row of small buttons, or in both places.
-- **`/flame`** in the `/` menu. With nothing typed after it, it switches flame text on or off. `/flame text:hello` sends "hello" as a flame GIF right now and leaves the switch alone (it is not held to the length limit).
+- **`/flame`** in the `/` menu. With nothing typed after it, it switches flame text on or off. `/flame text:hello` sends "hello" as a flame GIF right now and leaves the switch alone.
 - **A switch at the top of the settings.**
 
 ## What gets burned
@@ -16,7 +16,7 @@ While it is on, a message becomes a GIF unless it has something a picture cannot
 
 - a link, code, a mention, a custom emoji or a timestamp (Discord draws those itself)
 - a file or sticker that is already attached
-- more letters than your limit (20, 40, 60, 100 or 150)
+- a message so long that its picture would be too big (a few thousand letters at most; Discord's own limit is 2,000)
 - an emoji or another alphabet (the flame font has letters, numbers and the usual marks; accents are dropped)
 
 If making or saving the GIF fails for any reason, your message is **sent as the text you wrote**, so nothing is lost.
@@ -25,7 +25,7 @@ If making or saving the GIF fails for any reason, your message is **sent as the 
 
 - **Preview**: type some words and see the GIF drawn live, with a **Shuffle the flames** button.
 - **Look**: fire colour (Fire, Blue, Green, Purple), size, flame height, background (Dark, White, See-through), movement (Still, Light, Normal, Smooth) and a glow.
-- **Sending**: also send the words as text under the GIF, and the longest message to burn.
+- **Sending**: also send the words as text under the GIF. There is no length limit: a long message is wrapped into a paragraph.
 - **Ways to switch it**: the chat button (and where it goes) and the `/flame` command.
 - **Copy logs and a self-check** at the bottom, made for finding out why it broke after a Discord update. The report has counts, yes/no answers and settings, and never your messages, chats or servers.
 

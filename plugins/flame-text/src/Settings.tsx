@@ -7,7 +7,7 @@ import { openToast } from '../../../shared/kmmiio/toast'
 import { diag } from './diag'
 import { makeGif, whyNot } from './flame'
 import { state } from './state'
-import { LENGTHS, setting, store } from './store'
+import { setting, store } from './store'
 import { switchFlame } from './toggle'
 import type { PluginSettingsComponent } from '@valenced/plugins/types'
 import type { ComponentProps } from 'react'
@@ -23,7 +23,7 @@ const INTRO =
 	'Turns the words you send into a burning, animated GIF of your text on fire. Switch it on, type a message and send it: the GIF goes out instead of the text. Switch it on and off with the flame button in the chat box or with /flame. The GIF is drawn on your phone, nothing is sent anywhere to make it.'
 const TOAST_KEY = 'MARKLONG_FLAME_TEXT_SETTINGS'
 const PREVIEW_PLACEHOLDER = 'Type something to see it burn'
-const PREVIEW_LIMIT = 60
+const PREVIEW_LIMIT = 300
 const PREVIEW_TITLE = 'Preview'
 const LOOK_TITLE = 'Look'
 
@@ -65,10 +65,6 @@ const SPOTS: Array<Choice<ButtonSpot>> = [
 	{ value: 'actions', label: 'With the buttons' },
 	{ value: 'both', label: 'Both' },
 ]
-const LIMITS: Array<Choice<number>> = LENGTHS.map(value => ({
-	value,
-	label: String(value),
-}))
 
 const BACKDROPS: Record<FlameSettings['background'], string> = {
 	dark: '#160c0c',
@@ -178,16 +174,14 @@ function Preview({ text, seed }: { text: string; seed: number }) {
 			setProblem('')
 			return
 		}
-		const reason = whyNot({ content: clean }, undefined, PREVIEW_LIMIT)
-		if (reason === 'unsupported' || reason === 'long' || reason === 'toobig') {
+		const reason = whyNot({ content: clean }, undefined)
+		if (reason === 'unsupported' || reason === 'toobig') {
 			setMade(undefined)
 			setBusy(false)
 			setProblem(
 				reason === 'unsupported'
 					? 'The flame font has no letter for something in this text, such as an emoji. Messages like this are sent as normal text.'
-					: reason === 'long'
-						? 'That is a long one. Try a shorter text.'
-						: 'That would make a picture that is too big.',
+					: 'That would make a picture that is too big.',
 			)
 			return
 		}
@@ -370,16 +364,6 @@ export default function Settings({ api }: Props) {
 						onValueChange={(caption: boolean) => set({ caption })}
 					/>
 				</Design.TableRowGroup>
-				<View style={{ marginHorizontal: 16 }}>
-					<Chips
-						title="Longest message to burn"
-						hint="Longer messages are sent as normal text. Each letter makes the GIF bigger."
-						options={LIMITS}
-						value={setting('maxLength')}
-						onPick={maxLength => set({ maxLength })}
-					/>
-				</View>
-
 				<Design.TableRowGroup title="Ways to switch it on and off">
 					<Design.TableSwitchRow
 						label="Flame button in the chat box"
@@ -427,8 +411,8 @@ export default function Settings({ api }: Props) {
 						subLabel="Letters, numbers and the usual marks work. Accents are dropped. Emoji and other alphabets cannot be drawn, so those messages are sent as text."
 					/>
 					<Design.TableRow
-						label="A wait"
-						subLabel="Drawing takes a moment, longer for long messages and for Smooth movement. The GIF appears in the chat when it is ready."
+						label="Long messages"
+						subLabel="Any length works. A long message is wrapped into a paragraph, and the letters get smaller to fit. Drawing takes longer for long messages and for Smooth movement, and the GIF appears in the chat when it is ready."
 					/>
 				</Design.TableRowGroup>
 

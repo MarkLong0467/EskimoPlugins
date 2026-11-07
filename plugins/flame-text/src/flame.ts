@@ -2,7 +2,7 @@
  * Makes the flaming GIF for a message, and decides which messages get one.
  *
  * A message gets a GIF only when the picture can be drawn and nothing in it would look wrong as a picture: no links, code,
- * mentions, custom emoji or timestamps (they are shown by Discord, not drawn), and not longer than the limit in the settings.
+ * mentions, custom emoji or timestamps (they are shown by Discord, not drawn), Any length works: a long message is wrapped into a paragraph, and only a very long one, whose picture would be too big, is sent as text.
  * Everything else is sent as normal text.
  */
 
@@ -98,12 +98,10 @@ export interface MessageLike {
  *
  * @param message What is being sent.
  * @param options What Discord was told about the send, which holds the files already attached.
- * @param limit The longest text allowed.
  */
 export function whyNot(
 	message: MessageLike | undefined,
 	options: unknown,
-	limit = setting('maxLength'),
 ): SkipReason | undefined {
 	const text = message?.content
 	if (typeof text !== 'string' || text.trim() === '') return 'empty'
@@ -115,7 +113,6 @@ export function whyNot(
 	if (/https?:\/\/|\bwww\./i.test(text)) return 'link'
 	if (text.includes('```') || /`[^`\n]+`/.test(text)) return 'code'
 	if (/<(?:@|#|:|a:|t:|\/)[^>\n]*>|@everyone|@here/.test(text)) return 'special'
-	if (text.trim().length > limit) return 'long'
 	if (drawable(text) === undefined) return 'unsupported'
 	if (!plan(text, { size: setting('size'), height: setting('height') }))
 		return 'toobig'
@@ -130,7 +127,6 @@ export const REASONS: Record<SkipReason, string> = {
 	link: 'It has a link',
 	code: 'It has code',
 	special: 'It has a mention, emoji or timestamp',
-	long: 'It is longer than your limit',
 	unsupported: 'It has a letter the flame font does not have, such as an emoji',
 	toobig: 'It would make a picture that is too big',
 }

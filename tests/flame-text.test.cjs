@@ -305,6 +305,20 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 		s.stop()
 	}
 
+	// --- Any length: a paragraph is wrapped like text
+	{
+		const s = await start({ on: true, motion: 'off' })
+		const paragraph = 'The quick brown fox jumps over the lazy dog and keeps running through the field until the sun goes down. '.repeat(3).trim()
+		const sent = await say(s, paragraph)
+		const gif = gifOf(s)
+		check('a paragraph of 300 letters is burned, with no length limit', sent[0].options.attachmentsToUpload?.length === 1 && sent[0].message.content === '')
+		check('it is wrapped into many lines and stays inside the width limit', gif.width <= 1100 && gif.height > 400, [gif.width, gif.height])
+		check('long text does not need to be short to be wrapped on spaces', s.files.written.length === 1)
+		const huge = await say(s, 'word '.repeat(700))
+		check('only a message whose picture would be too big is sent as text', huge[0].message.content.startsWith('word') && !huge[0].options.attachmentsToUpload)
+		s.stop()
+	}
+
 	// --- Caption
 	{
 		const s = await start({ on: true, caption: true })
@@ -315,7 +329,7 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 
 	// --- Messages that stay text
 	{
-		const s = await start({ on: true, maxLength: 20 })
+		const s = await start({ on: true })
 		const cases = [
 			['a link', 'look https://example.com now', 'link', {}],
 			['a bare web address', 'see www.example.com', 'link', {}],
@@ -325,7 +339,6 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 			['a custom emoji', 'wow <:cool:123>', 'special', {}],
 			['a timestamp', 'at <t:1794000000:F>', 'special', {}],
 			['@everyone', '@everyone hi', 'special', {}],
-			['too many letters', 'this one is longer than twenty letters', 'long', {}],
 			['an emoji', 'hi 😀', 'unsupported', {}],
 			['another alphabet', 'привет', 'unsupported', {}],
 			['a file already attached', 'photo', 'attachment', { attachmentsToUpload: [{}] }],
@@ -341,7 +354,7 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 		const view = await s.mountSettings()
 		button(view, 'Copy logs').props.onPress()
 		const report = s.copied.at(-1)
-		check('the report counts them by reason without showing the words', /sent as plain text on purpose: /.test(report) && ['link 2', 'code 2', 'special 4', 'long 1', 'unsupported 2', 'attachment 1', 'sticker 1', 'empty 1'].every(part => report.includes(part)) && !/example\.com|npm i|привет/.test(report), report)
+		check('the report counts them by reason without showing the words', /sent as plain text on purpose: /.test(report) && ['link 2', 'code 2', 'special 4', 'unsupported 2', 'attachment 1', 'sticker 1', 'empty 1'].every(part => report.includes(part)) && !/example\.com|npm i|привет/.test(report), report)
 		s.stop()
 	}
 	{
@@ -455,7 +468,7 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 		check('text that cannot be drawn is not sent and the person is told', s.messages.sent.length === 1 && s.toasts().some(t => /link/.test(t ?? '')), s.toasts())
 		cmd.execute([{ name: 'text', value: 'x'.repeat(80) }], { channel: { id: 'chan7' } })
 		await until(() => s.messages.sent.length >= 2)
-		check('/flame text is not held to the length limit of the switch', s.messages.sent.length === 2)
+		check('a long /flame text is wrapped', s.messages.sent.length === 2)
 		s.stop()
 	}
 
@@ -523,7 +536,7 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 		await view.settle()
 		const blue = findNode(view.tree, n => n.type === 'Image' && /^data:image\/gif/.test(n.props.source?.uri ?? ''))
 		check('and the preview is drawn again in the new look', !!blue && blue.props.source.uri !== again.props.source.uri)
-		for (const [label, key, value] of [['Large', 'size', 'large'], ['High', 'height', 'high'], ['White', 'background', 'white'], ['Smooth', 'motion', 'smooth'], ['Both', 'buttonSpot', 'both'], ['100', 'maxLength', 100]]) {
+		for (const [label, key, value] of [['Large', 'size', 'large'], ['High', 'height', 'high'], ['White', 'background', 'white'], ['Smooth', 'motion', 'smooth'], ['Both', 'buttonSpot', 'both']]) {
 			chip(label).props.onPress()
 			await view.settle()
 			check(`the ${label} chip sets ${key}`, s.storage.cache[key] === value, s.storage.cache)
@@ -563,7 +576,7 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 		check('it counts messages, GIFs and problems', /Messages looked at while on: 1; sent as flame GIFs: 1/.test(report) && /Problems: 0; sent as plain text because the GIF failed: 0; the step the last GIF reached: done/.test(report), report)
 		check('it says how big the last GIF was and how long it took', /Last GIF: \d+x\d+, 8 pictures, \d+ KB, made in \d+ ms/.test(report), report)
 		check('it says what the command and the chat box did', /Command: module found; patch patched/.test(report) && /\/flame was in the answer [1-9]/.test(report) && /Chat box: JSX watched yes/.test(report) && /run 1 time\(s\)/.test(report), report)
-		check('it has the settings', /"on":/.test(report) && /"style": "fire"/.test(report) && /"maxLength": 60/.test(report))
+		check('it has the settings', /"on":/.test(report) && /"style": "fire"/.test(report))
 		check('it holds no message text or chat', !/private words here|chan-private-123|chan1/.test(report), report)
 		button(view, 'Run self-check').props.onPress()
 		await view.settle()

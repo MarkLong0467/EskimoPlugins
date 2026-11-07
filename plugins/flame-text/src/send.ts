@@ -265,7 +265,7 @@ export function sendOnce(channelId: string | undefined, text: string): void {
 		state.last = 'could not send: no message module or no chat'
 		return
 	}
-	const reason = whyNot({ content: text }, undefined, Number.MAX_SAFE_INTEGER)
+	const reason = whyNot({ content: text }, undefined)
 	if (reason) {
 		openToast(TOAST_KEY, REASONS[reason])
 		state.last = `/flame text was not sent: ${reason}`

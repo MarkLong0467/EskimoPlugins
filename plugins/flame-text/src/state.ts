@@ -9,7 +9,6 @@ export type SkipReason =
 	| 'link'
 	| 'code'
 	| 'special'
-	| 'long'
 	| 'unsupported'
 	| 'toobig'
 
@@ -20,7 +19,6 @@ const skipped = (): Record<SkipReason, number> => ({
 	link: 0,
 	code: 0,
 	special: 0,
-	long: 0,
 	unsupported: 0,
 	toobig: 0,
 })

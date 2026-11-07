@@ -27,7 +27,6 @@ function reportedSettings(): Record<string, unknown> {
 		'motion',
 		'glow',
 		'caption',
-		'maxLength',
 	]
 	const out: Record<string, unknown> = {}
 	for (const key of keys) out[key] = setting(key)

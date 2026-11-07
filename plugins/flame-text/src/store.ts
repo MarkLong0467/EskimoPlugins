@@ -30,8 +30,6 @@ export interface Settings {
 	glow: boolean
 	/** Also send the words as text with the GIF. */
 	caption: boolean
-	/** Longer messages are sent as normal text. */
-	maxLength: number
 	/** What the preview in the settings shows. */
 	previewText: string
 }
@@ -49,7 +47,6 @@ export const DEFAULT_SETTINGS: Settings = {
 	motion: 'normal',
 	glow: true,
 	caption: false,
-	maxLength: 60,
 	previewText: 'Flame',
 }
 
@@ -59,6 +56,3 @@ export const store = createStore<Settings>(DEFAULT_SETTINGS)
 /** A setting. */
 export const setting = <K extends keyof Settings>(key: K): Settings[K] =>
 	store.get(key)
-
-/** The longest message that can be turned into a GIF. */
-export const LENGTHS = [20, 40, 60, 100, 150]
