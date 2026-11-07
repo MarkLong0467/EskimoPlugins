@@ -147,7 +147,7 @@
     {
       "id": "marklong.no-suggestions",
       "name": "No Suggestions",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "short": "removes the Suggested channels section that keeps coming back",
       "suffix": ""
     },
