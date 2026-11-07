@@ -5,6 +5,7 @@ import { planNow } from './apply'
 import { effectiveAppId, maxActive, soundCloudProfile } from './profiles'
 import { sc } from './scstate'
 import { allRuntimes, read } from './state'
+import { warnings } from './warnings'
 
 /** How many activities one of Discord's stores holds, or `n/a` if the store or the method is not there. */
 function count(store: string, method: string): number | 'n/a' {

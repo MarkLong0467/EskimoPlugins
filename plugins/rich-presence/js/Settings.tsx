@@ -26,6 +26,7 @@ import {
 import SoundCloudEditor from './SoundCloudEditor'
 import { setStorage, toast } from './state'
 import { radio, row, section, toggleRow } from './ui'
+import { warnings } from './warnings'
 import type { PluginSettingsComponent } from '@valenced/plugins/types'
 import type { ComponentProps } from 'react'
 import type { Profile, RichPresenceSettings } from './types'
@@ -84,7 +85,25 @@ export default function Settings({ api }: Props) {
 		setEditing(added.id)
 	}
 
+	const problems = warnings(settings)
+	const names = new Map(
+		settings.profiles.map(p => [p.id, p.label || p.name || p.id]),
+	)
 	const items = [
+		problems.length
+			? section(
+					`Fix this (${problems.length})`,
+					'These presences are set up in a way that will not work. Tap one to fix it.',
+					...problems.map((w, i) =>
+						row(
+							`⚠ ${names.get(w.id)} (${i + 1})`,
+							w.text,
+							() => setEditing(w.id),
+							true,
+						),
+					),
+				)
+			: null,
 		section(
 			`Show on my profile (${shown.length} of up to ${limit} showing)`,
 			'Switch on the ones you want. Each one is its own card on your profile.',

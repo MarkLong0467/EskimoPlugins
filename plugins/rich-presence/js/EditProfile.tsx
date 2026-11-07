@@ -28,6 +28,7 @@ import {
 	relativeText,
 } from './timers'
 import { Back, radio, row, section, Tabs, toggleRow } from './ui'
+import { warnings } from './warnings'
 import type { Choice, Profile, RichPresenceSettings } from './types'
 
 type TabId = 'basics' | 'text' | 'images' | 'timer' | 'buttons' | 'when'
@@ -130,6 +131,8 @@ export default function EditProfile({
 			}
 		/>
 	)
+
+	const mine = warnings(settings).filter(w => w.id === profile.id)
 
 	/** The page for the chosen button. */
 	let page: React.ReactNode[]
@@ -454,6 +457,13 @@ export default function EditProfile({
 			>
 				<Back title="All presences" onPress={onBack} />
 				<Tabs tabs={TABS} value={tab} onChange={setTab} />
+				{mine.length
+					? section(
+							'Fix this',
+							undefined,
+							...mine.map((w, i) => row(`⚠ Problem ${i + 1}`, w.text)),
+						)
+					: null}
 				{page}
 			</Design.Stack>
 		</ScrollView>

@@ -775,6 +775,35 @@ async function type(view, label, value, wait = 1000) {
 		await s.restore()
 	}
 
+	// --- Warnings the person can see
+	{
+		const s = await setup({ profiles: [prof('a', { type: 2, applicationId: '111111111111111111' }), prof('b', { type: 3, applicationId: '111111111111111111', button1Label: 'Go' }), prof('c', { type: 5, applicationId: 'abc', timestampMode: 'until', timerDate: 'soon', partyCurrent: '2' })] })
+		const view = await s.settingsView()
+		const fix = sectionOf(view, 'Fix this')
+		const texts = findNodes(fix, n => n.type === 'Design.TableRow').map(n => n.props.subLabel).join(' | ')
+		check('the list shows a "Fix this" group when something is wrong', !!fix && /Fix this \(\d+\)/.test(fix.props.title), texts)
+		check('it says two presences share an Application ID', /same Application ID as "A"/.test(texts), texts)
+		check('it says a button has no link, an ID is not a number, a date is missing and a group size is half filled', /Button 1 has a label but no link/.test(texts) && /should be a long number/.test(texts) && /needs a date and time/.test(texts) && /group size needs both/.test(texts), texts)
+		await openEditor(view, 'B')
+		check('the editor of that presence shows its own problems on every page', textOf(view.tree).includes('same Application ID') && !textOf(view.tree).includes('should be a long number'))
+		view.unmount()
+		await s.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('a', { type: 2 }), prof('b', { type: 3 })] })
+		const view = await s.settingsView()
+		check('nothing is shown when everything is fine', sectionOf(view, 'Fix this') === null)
+		view.unmount()
+		await s.restore()
+	}
+	{
+		const s = await setup({ profiles: [prof('p1', { type: 0 }), prof('p2', { type: 0 })] })
+		const view = await s.settingsView()
+		check('a second Playing is explained', /only one Playing/.test(textOf(sectionOf(view, 'Fix this'))))
+		view.unmount()
+		await s.restore()
+	}
+
 	// --- The report
 	{
 		const s = await setup({

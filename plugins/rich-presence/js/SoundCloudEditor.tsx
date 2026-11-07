@@ -23,6 +23,7 @@ import {
 } from './soundcloud'
 import { read, saveSoundCloud, toast } from './state'
 import { Back, radio, row, section, toggleRow } from './ui'
+import { warnings } from './warnings'
 import type { Profile, RichPresenceSettings, SoundCloudSettings } from './types'
 
 /**
@@ -85,7 +86,15 @@ export default function SoundCloudEditor({
 		)
 	}
 
+	const mine = warnings(settings).filter(w => w.id === profile.id)
 	const items = [
+		mine.length
+			? section(
+					'Fix this',
+					undefined,
+					...mine.map((w, i) => row(`⚠ Problem ${i + 1}`, w.text)),
+				)
+			: null,
 		section(
 			'SoundCloud',
 			STANDING_TEXT[standingOf(settings, profile)],
