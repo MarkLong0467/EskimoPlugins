@@ -1,7 +1,7 @@
 import { createDiagnostics } from '../../../shared/kmmiio/diagnostics'
-import { looks } from './flame'
 import { prepareFire, seedOf } from './render/fire'
 import { encodeGif } from './render/gif'
+import { parts } from './send'
 import { state } from './state'
 import { setting } from './store'
 import type { Settings } from './store'
@@ -34,22 +34,27 @@ function reportedSettings(): Record<string, unknown> {
 	return out
 }
 
-/** Draws a short test GIF the way a message would be drawn, and says what came out. Takes a moment on a phone. */
+/** Draws a small test GIF with one picture, and says what came out. It is small because the phone is slow and the check waits for it. */
 function testGif(): { ok: boolean; detail: string } {
 	const started = Date.now()
 	try {
-		const text = 'Flame test'
-		const prepared = prepareFire(text, looks(text, seedOf(text)))
+		const text = 'Test'
+		const prepared = prepareFire(text, {
+			style: 'fire',
+			size: 'small',
+			height: 'low',
+			background: 'dark',
+			motion: 'off',
+			glow: false,
+			seed: seedOf(text),
+		})
 		if (!prepared)
 			return { ok: false, detail: 'The test text could not be drawn' }
-		const frames = Array.from({ length: prepared.frames }, (_, n) =>
-			prepared.frame(n),
-		)
 		const gif = encodeGif({
 			width: prepared.width,
 			height: prepared.height,
 			palette: prepared.palette,
-			frames,
+			frames: [prepared.frame(0)],
 			delay: 7,
 			transparent: prepared.transparent,
 		})
@@ -57,7 +62,7 @@ function testGif(): { ok: boolean; detail: string } {
 		const ok = header === 'GIF89a' && gif[gif.length - 1] === 0x3b
 		return {
 			ok,
-			detail: `${prepared.width}x${prepared.height}, ${prepared.frames} pictures, ${Math.round(gif.length / 1024)} KB, ${Date.now() - started} ms${ok ? '' : ' (the file looks wrong)'}`,
+			detail: `a small test, ${prepared.width}x${prepared.height}, 1 picture, ${Math.round(gif.length / 1024)} KB, ${Date.now() - started} ms${ok ? '' : ' (the file looks wrong)'}`,
 		}
 	} catch (error) {
 		return {
@@ -81,7 +86,7 @@ export const diag = createDiagnostics('Flame Text', {
 			.map(([reason, count]) => `${reason} ${count}`)
 		return [
 			`Message module (sendMessage): ${state.sendModule ? 'found' : 'not found yet'}; patch ${hookText(state.sendHook)}`,
-			`Discord's file code (writeFile): ${state.fileModule ? 'found' : 'not found yet'}; upload object (CloudUpload): ${state.uploadModule ? 'found' : 'not found yet'}; upload platform number: ${state.platform}`,
+			`Discord's file code (writeFile): ${state.fileModule ? 'found' : 'not found yet'}; upload object (CloudUpload): ${state.uploadModule ? 'found' : 'not found yet'}; upload platform number: ${state.platform}; upload object search: ${state.uploadSearch}`,
 			`Messages looked at while on: ${state.seen}; sent as flame GIFs: ${state.flamed}; sent as plain text on purpose: ${skipped.length ? skipped.join(', ') : 'none'}`,
 			`Problems: ${state.failed}; sent as plain text because the GIF failed: ${state.fellBack}; the step the last GIF reached: ${state.stage}`,
 			`Last GIF: ${state.lastSize ? `${state.lastSize}, ${state.lastFrames} pictures, ${Math.round(state.lastBytes / 1024)} KB, made in ${state.lastMs} ms` : 'none yet'}`,
@@ -94,6 +99,7 @@ export const diag = createDiagnostics('Flame Text', {
 	},
 	checks: () => {
 		const test = testGif()
+		parts()
 		const spot = setting('buttonSpot')
 		const wanted =
 			spot === 'send' ? 'send' : spot === 'actions' ? 'actions' : 'either'
@@ -126,13 +132,11 @@ export const diag = createDiagnostics('Flame Text', {
 			{
 				ok: state.uploadModule,
 				label: 'Discord’s upload object was found',
-				detail:
-					'Without it the GIF cannot be attached. Open a chat and try again; if it stays missing, Discord changed',
+				detail: `Without it the GIF cannot be attached. ${state.uploadSearch}`,
 			},
 			{
-				ok: state.platform !== 'not found',
-				label: 'The kind of device Discord uploads from was found',
-				detail: 'Not fatal: the plugin uses 0, which is what a phone uses',
+				ok: true,
+				label: `Upload platform number: ${state.platform === 'not found' ? 'not found, 0 is used, which is what a phone uses' : state.platform}`,
 			},
 			{
 				ok: state.failed === 0,

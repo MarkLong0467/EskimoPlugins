@@ -145,32 +145,42 @@ function hash(x: number, y: number, seed: number): number {
 }
 
 /**
- * Smooth noise: 0 up to 1, changing slowly from place to place. It repeats every `period` steps downward, so moving it
- * down by exactly `period` gives the picture it started with, which is what lets the flames loop.
+ * Smooth noise worked out from a table of random numbers, so asking for a value is a few array reads. That matters: a phone
+ * asks for hundreds of thousands of them.
+ *
+ * It changes slowly from place to place, and repeats every `period` steps downward, so moving it down by exactly `period`
+ * gives the picture it started with, which is what lets the flames loop.
+ *
+ * @param columns How far across it will be asked (`x` goes from 0 up to this).
  */
-function noise(x: number, y: number, seed: number, period: number): number {
-	const ix = Math.floor(x)
-	const iy = Math.floor(y)
-	const fx = x - ix
-	const fy = y - iy
-	const sx = fx * fx * (3 - 2 * fx)
-	const sy = fy * fy * (3 - 2 * fy)
-	const row0 = ((iy % period) + period) % period
-	const row1 = (row0 + 1) % period
-	const a = hash(ix, row0, seed)
-	const b = hash(ix + 1, row0, seed)
-	const c = hash(ix, row1, seed)
-	const d = hash(ix + 1, row1, seed)
-	return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy
-}
-
-/** Noise with a coarse layer and finer ones on top, 0 up to 1. Repeats every `period` steps. */
-function fbm(x: number, y: number, seed: number, period: number): number {
-	return (
-		noise(x, y, seed, period) * 0.55 +
-		noise(x * 2, y * 2, seed + 11, period * 2) * 0.3 +
-		noise(x * 4, y * 4, seed + 23, period * 4) * 0.15
-	)
+function field(
+	seed: number,
+	period: number,
+	columns: number,
+): (x: number, y: number) => number {
+	const across = Math.ceil(columns) + 2
+	const table = new Float32Array(across * period)
+	for (let ix = 0; ix < across; ix++)
+		for (let row = 0; row < period; row++)
+			table[ix * period + row] = hash(ix, row, seed)
+	return (x, y) => {
+		let ix = Math.floor(x)
+		if (ix < 0) ix = 0
+		else if (ix > across - 2) ix = across - 2
+		const iy = Math.floor(y)
+		const fx = x - Math.floor(x)
+		const fy = y - iy
+		const sx = fx * fx * (3 - 2 * fx)
+		const sy = fy * fy * (3 - 2 * fy)
+		const row0 = ((iy % period) + period) % period
+		const row1 = row0 + 1 === period ? 0 : row0 + 1
+		const base = ix * period
+		const a = table[base + row0] as number
+		const b = table[base + period + row0] as number
+		const c = table[base + row1] as number
+		const d = table[base + period + row1] as number
+		return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy
+	}
 }
 
 /** A blur by averaging, done as two passes along each direction. */
@@ -303,6 +313,9 @@ export function plan(
 /**
  * Gets a picture ready: works out the letters, the outline and the colours.
  *
+ * The letters are drawn at the full size. The flames and the pattern inside the letters are worked out at half the size, which
+ * is a quarter of the work, and looked up from there. Flames are soft, so nobody can see it.
+ *
  * @returns Nothing when the text cannot be drawn (see {@link plan}).
  */
 export function prepareFire(
@@ -336,7 +349,7 @@ export function prepareFire(
 						const dy = y + 0.5 - cy
 						const cover = radius + 0.5 - Math.sqrt(dx * dx + dy * dy)
 						if (cover <= 0) continue
-						const value = Math.min(cover, 1)
+						const value = cover >= 1 ? 1 : cover
 						const at = y * width + x
 						if (value > (mask[at] ?? 0)) mask[at] = value
 					}
@@ -350,7 +363,7 @@ export function prepareFire(
 	const soft = blur(mask, width, height, Math.max(1, Math.round(k * 0.34)))
 	for (let i = 0; i < size; i++) mask[i] = smooth(0.42, 0.58, soft[i] ?? 0)
 
-	// 2. How close to the edge each pixel of a letter is: the red outline. And how each pixel of a letter burns, which moves.
+	// 2. How close to the edge each pixel of a letter is: the red outline.
 	const inner = blur(mask, width, height, Math.max(1, Math.round(k * 0.3)))
 	const edge = new Float32Array(size)
 	for (let i = 0; i < size; i++)
@@ -378,100 +391,156 @@ export function prepareFire(
 		for (let heat = 0; heat < 32; heat++) {
 			const colour = ramp(stops, heat / 31)
 			for (let solid = 0; solid < 8; solid++) {
-				const k2 = solid / 7
+				const amount = solid / 7
 				const at = (heat * 8 + solid) * 3
-				palette[at] = colour[0] * k2 + back[0] * (1 - k2)
-				palette[at + 1] = colour[1] * k2 + back[1] * (1 - k2)
-				palette[at + 2] = colour[2] * k2 + back[2] * (1 - k2)
+				palette[at] = colour[0] * amount + back[0] * (1 - amount)
+				palette[at + 1] = colour[1] * amount + back[1] * (1 - amount)
+				palette[at + 2] = colour[2] * amount + back[2] * (1 - amount)
 			}
 		}
 	}
 
-	/** Heat of the flames above the letters for picture `n`: swept upward from the letters. */
-	const sweep = (n: number): Float32Array => {
+	// 3. The flames and the pattern, at half the size.
+	const w2 = Math.ceil(width / 2)
+	const h2 = Math.ceil(height / 2)
+	const size2 = w2 * h2
+	const k2 = k / 2
+	const mask2 = new Float32Array(size2)
+	for (let y = 0; y < h2; y++) {
+		for (let x = 0; x < w2; x++) {
+			const at = y * 2 * width + x * 2
+			const right = x * 2 + 1 < width ? 1 : 0
+			const below = y * 2 + 1 < height ? width : 0
+			mask2[y * w2 + x] =
+				((mask[at] ?? 0) +
+					(mask[at + right] ?? 0) +
+					(mask[at + below] ?? 0) +
+					(mask[at + below + right] ?? 0)) /
+				4
+		}
+	}
+	const drift = field(seed + 3, 3, w2 / (k2 * 3.2))
+	const tongues = field(seed + 7, 2, w2 / (k2 * 1.5))
+	const coarse = field(seed + 31, 2, w2 / (k2 * 1.5))
+	const medium = field(seed + 42, 4, (w2 * 2) / (k2 * 1.5))
+	const fine = field(seed + 54, 8, (w2 * 4) / (k2 * 1.5))
+	const fade = 2 / (flame * 1.15)
+
+	/** The heat of the flames for picture `n`, swept upward from the letters, and how solid that makes them. */
+	const sweep = (n: number): { burn: Float32Array; solid: Float32Array } => {
 		const phase = frames > 1 ? n / frames : 0
-		const heat = new Float32Array(size)
-		const fade = 1 / (flame * 0.8)
-		for (let y = height - 1; y >= 0; y--) {
-			for (let x = 0; x < width; x++) {
-				let below = 0
-				if (y < height - 1) {
+		const burn = new Float32Array(size2)
+		const solid = new Float32Array(size2)
+		for (let y = h2 - 1; y >= 0; y--) {
+			const row = y * w2
+			for (let x = 0; x < w2; x++) {
+				let heat = 0
+				if (y < h2 - 1) {
 					// Each row up, the heat drifts sideways a little, spreads, and fades. Columns fade at different speeds, which is
 					// what makes separate tongues with pointed tips. The noise slides upward from picture to picture.
-					const drift =
-						(noise(x / (k * 3.2), y / (k * 2.6) + phase * 3, seed + 3, 3) -
-							0.5) *
-						1.5
-					const col = Math.round(x + drift)
-					const base = (y + 1) * width
-					const left =
-						heat[base + Math.min(width - 1, Math.max(0, col - 1))] ?? 0
-					const mid = heat[base + Math.min(width - 1, Math.max(0, col))] ?? 0
-					const right =
-						heat[base + Math.min(width - 1, Math.max(0, col + 1))] ?? 0
-					below = (left + 2 * mid + right) / 4
-					below -=
+					const sway =
+						(drift(x / (k2 * 3.2), y / (k2 * 2.6) + phase * 3) - 0.5) * 1.5
+					const col = Math.round(x + sway)
+					const base = row + w2
+					const left = burn[
+						base + (col < 1 ? 0 : col - 1 >= w2 ? w2 - 1 : col - 1)
+					] as number
+					const mid = burn[
+						base + (col < 0 ? 0 : col >= w2 ? w2 - 1 : col)
+					] as number
+					const right = burn[
+						base + (col + 1 < 0 ? 0 : col + 1 >= w2 ? w2 - 1 : col + 1)
+					] as number
+					heat =
+						(left + 2 * mid + right) / 4 -
 						fade *
-						(0.35 +
-							1.9 * noise(x / (k * 1.5), y / (k * 9) + phase * 2, seed + 7, 2))
+							(0.35 + 1.9 * tongues(x / (k2 * 1.5), y / (k2 * 9) + phase * 2))
 				}
-				const own = mask[y * width + x] ?? 0
-				heat[y * width + x] = own > below ? own : Math.max(below, 0)
+				const own = mask2[row + x] as number
+				const value = own > heat ? own : heat > 0 ? heat : 0
+				burn[row + x] = value
+				solid[row + x] = value < 0.1 ? 0 : smooth(0.1, 0.4, value)
 			}
 		}
-		return heat
+		return { burn, solid }
 	}
 
-	// 3. A soft glow around everything that burns. It is worked out once, from the first picture, and does not move.
+	/** How hot each part of the letters is for picture `n`: a pattern of streaks that rises. */
+	const patternOf = (n: number): Float32Array => {
+		const phase = frames > 1 ? n / frames : 0
+		const fill = new Float32Array(size2)
+		for (let y = 0; y < h2; y++) {
+			const row = y * w2
+			for (let x = 0; x < w2; x++) {
+				if ((mask2[row + x] as number) === 0) continue
+				const u = x / (k2 * 1.5)
+				const v = y / (k2 * 3.4) - x / (k2 * 40) + phase * 2
+				const texture =
+					coarse(u, v) * 0.55 +
+					medium(u * 2, v * 2) * 0.3 +
+					fine(u * 4, v * 4) * 0.15
+				fill[row + x] = 0.26 + 0.62 * smooth(0.25, 0.85, texture)
+			}
+		}
+		return fill
+	}
+
+	// 4. A soft glow around everything that burns. It is worked out once, from the first picture, and does not move.
+	const first = sweep(0)
 	let halo: Float32Array | undefined
+	/** The picture before any letters or flames: the background, and the glow over it. */
+	const base = new Uint8Array(size)
 	if (options.glow && !see) {
-		const first = sweep(0)
 		const burning = new Float32Array(size)
-		for (let i = 0; i < size; i++)
-			burning[i] = Math.max(mask[i] ?? 0, smooth(0.1, 0.5, first[i] ?? 0))
+		for (let y = 0; y < height; y++)
+			for (let x = 0; x < width; x++) {
+				const at = y * width + x
+				burning[at] = Math.max(
+					mask[at] ?? 0,
+					first.solid[(y >> 1) * w2 + (x >> 1)] ?? 0,
+				)
+			}
 		halo = blur(burning, width, height, Math.round(k * 0.9))
+		for (let i = 0; i < size; i++)
+			base[i] = 5 * 8 + Math.round(Math.min(1, (halo[i] ?? 0) * 0.55) * 7)
 	}
 
 	/** Picture number `n`. */
 	const frame = (n: number): Uint8Array => {
-		const phase = frames > 1 ? n / frames : 0
-		const heat = sweep(n)
-		const out = new Uint8Array(size)
+		const { burn, solid } = n === 0 ? first : sweep(n)
+		const fill = patternOf(n)
+		const out = base.slice()
 		for (let y = 0; y < height; y++) {
+			const row = y * width
+			const row2 = (y >> 1) * w2
 			for (let x = 0; x < width; x++) {
-				const at = y * width + x
-				const letter = mask[at] ?? 0
-				const burn = heat[at] ?? 0
-				const flameAlpha = letter < 1 ? smooth(0.1, 0.4, burn) : 0
-				let h = burn * 0.9
-				let a = flameAlpha
+				const at = row + x
+				const letter = mask[at] as number
+				const cell = row2 + (x >> 1)
+				const flameAmount = letter < 1 ? (solid[cell] as number) : 0
+				if (letter === 0 && flameAmount === 0) continue
+				let h = (burn[cell] as number) * 0.9
+				let a = flameAmount
 				if (letter > 0) {
-					const texture = fbm(
-						x / (k * 1.5),
-						y / (k * 3.4) - x / (k * 40) + phase * 2,
-						seed + 31,
-						2,
-					)
-					const fill = 0.26 + 0.62 * smooth(0.25, 0.85, texture)
-					const body = fill + (0.15 - fill) * (edge[at] ?? 0)
+					const inside = fill[cell] as number
+					const body = inside + (0.15 - inside) * (edge[at] as number)
 					h = body * letter + h * (1 - letter)
-					a = letter + (1 - letter) * flameAlpha
+					a = letter + (1 - letter) * flameAmount
 				}
 				if (halo) {
-					const glow = Math.min(1, (halo[at] ?? 0) * 0.55) * (1 - a)
+					const glow = Math.min(1, (halo[at] as number) * 0.55) * (1 - a)
 					if (glow > 0.001) {
 						const total = a + glow
 						h = (h * a + 0.16 * glow) / total
 						a = total
 					}
 				}
+				if (h < 0) h = 0
+				else if (h > 1) h = 1
 				if (see) {
-					out[at] =
-						a < 0.5 ? 0 : 1 + Math.round(Math.min(1, Math.max(0, h)) * 254)
+					out[at] = a < 0.5 ? 0 : 1 + Math.round(h * 254)
 				} else {
-					const heatStep = Math.round(Math.min(1, Math.max(0, h)) * 31)
-					const solidStep = Math.round(Math.min(1, Math.max(0, a)) * 7)
-					out[at] = heatStep * 8 + solidStep
+					out[at] = Math.round(h * 31) * 8 + Math.round((a > 1 ? 1 : a) * 7)
 				}
 			}
 		}

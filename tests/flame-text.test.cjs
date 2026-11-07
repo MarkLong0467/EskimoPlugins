@@ -570,7 +570,7 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 		const checks = findNodes(view.tree, n => n.type === 'Design.TableRow' && /^[✓✗]/.test(n.props.label ?? '')).map(n => n.props.label)
 		check('the self-check lists its steps', checks.length >= 8 && checks.some(c => /flame GIF can be drawn/.test(c)) && checks.some(c => /file code/.test(c)) && checks.some(c => /upload object/.test(c)), checks)
 		const drawn = findNode(view.tree, n => n.type === 'Design.TableRow' && /flame GIF can be drawn/.test(n.props.label ?? ''))
-		check('the drawing test passes and says how long it took', /^✓/.test(drawn.props.label) && /pictures, \d+ KB, \d+ ms/.test(drawn.props.subLabel ?? ''), drawn.props)
+		check('the drawing test passes and says how long it took', /^✓/.test(drawn.props.label) && /1 picture, \d+ KB, \d+ ms/.test(drawn.props.subLabel ?? ''), drawn.props)
 		s.stop()
 	}
 	{

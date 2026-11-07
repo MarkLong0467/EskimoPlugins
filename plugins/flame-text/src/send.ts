@@ -16,6 +16,7 @@ import { diag } from './diag'
 import { makeGif, REASONS, whyNot } from './flame'
 import { state } from './state'
 import { setting, store } from './store'
+import { loadUploadClass } from './uploader'
 import type { Made } from './flame'
 
 type Cleanup = (...fns: Array<() => unknown>) => unknown
@@ -121,13 +122,13 @@ export function installFinders(cleanup: Cleanup): void {
 	)
 }
 
-/** Everything needed to send, looked up again if it was missed. */
-function parts(): { files: Files; Upload: UploadClass } | undefined {
+/** Everything needed to send, looked up again if it was missed. Discord's upload object is loaded if it is not loaded yet. */
+export function parts(): { files: Files; Upload: UploadClass } | undefined {
 	files ??= lookup<Files>('writeFile', 'moveFile')
 	if (files) state.fileModule = true
 	if (!Upload) {
 		const found = lookup<{ CloudUpload?: UploadClass }>('CloudUpload')
-		Upload = found?.CloudUpload
+		Upload = found?.CloudUpload ?? loadUploadClass()
 		if (Upload) state.uploadModule = true
 	}
 	return files && Upload ? { files, Upload } : undefined

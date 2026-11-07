@@ -33,6 +33,8 @@ export const state = {
 	/** Discord's file code (`writeFile`), its upload class and the number it uses for this kind of device. */
 	fileModule: false,
 	uploadModule: false,
+	/** How the search for the upload object went, when it was not loaded yet. */
+	uploadSearch: 'not needed yet',
 	platform: 'not found' as string,
 	/** The built-in command list. */
 	commandModule: false,
@@ -72,6 +74,7 @@ export function resetState(): void {
 	state.sendHook = 'waiting'
 	state.fileModule = false
 	state.uploadModule = false
+	state.uploadSearch = 'not needed yet'
 	state.platform = 'not found'
 	state.commandModule = false
 	state.commandHook = 'waiting'
