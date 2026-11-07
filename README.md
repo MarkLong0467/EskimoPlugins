@@ -29,7 +29,7 @@ Updates arrive through the same link.
 ## Plugins
 
 <!-- plugins:start -->
-36 plugins. Tap a name for what it does and how it works.
+37 plugins. Tap a name for what it does and how it works.
 
 | Plugin | Version | What it does |
 | ------ | ------- | ------------ |
@@ -68,6 +68,7 @@ Updates arrive through the same link.
 | [Spotify Tools](plugins/spotify-tools) | 2.3.3 | Listen Along button, plus send your song or album from the + menu |
 | [Status Presets](plugins/status-presets) | 1.1.1 | save statuses as presets and switch with one tap, with Undo |
 | [Text React](plugins/text-react) | 1.3.3 | hold a message and add text as reactions, like letters, numbers and words such as "ok" |
+| [Timestamp Maker](plugins/timestamp-maker) | 1.0.0 | a /timestamp command with a popup to build a Discord timestamp (all 7 styles, quick picks, time zones), plus @time in messages |
 | [Valid User](plugins/valid-user) | 1.0.1 | resolves @unknown-user mentions automatically |
 <!-- plugins:end -->
 
