@@ -658,6 +658,19 @@ function createRuntime(options = {}) {
 		return result
 	}
 
+	/**
+	 * Test control: sends a Flux event through the handlers the way Discord does. A handler that returns nothing stops the event,
+	 * and the answer says so. (`fire` is kinder: it lets an event through when a handler returns nothing.)
+	 */
+	function through(type, payload) {
+		let result = payload
+		for (const handler of fluxHandlers.get(type) ?? []) {
+			result = handler(result)
+			if (!result) return { blocked: true, payload: undefined }
+		}
+		return { blocked: false, payload: result }
+	}
+
 	/** Creates a fake JSON storage. `use()` works as a hook inside `mount()`. */
 	function makeStorage(initial = {}) {
 		const listeners = new Set()
@@ -697,6 +710,7 @@ function createRuntime(options = {}) {
 		stores,
 		finders,
 		fire,
+		through,
 		makeStorage,
 		mount: react.mount,
 		React: react.React,

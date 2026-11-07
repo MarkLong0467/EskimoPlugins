@@ -1,0 +1,23 @@
+{
+	"format": 1,
+	"id": "marklong.silence-users",
+	"name": "Silence Users",
+	"description": "Silence @mention pings, server badge counts and in-app notifications from specific people, or from everyone, without muting the chat. Add people in the settings or with /silence.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [
+		"dka (https://github.com/Equicord/Equicord/tree/main/src/equicordplugins/silenceUsers \"Original SilenceUsers plugin for Equicord, GPL-3.0\")"
+	],
+	"icon": "BellSlashIcon",
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}

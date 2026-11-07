@@ -43,6 +43,7 @@
 		"marklong.role-options": "copy a role's name, color or icon from the role menu",
 		"marklong.server-drawer": "manage your servers from a drawer above the YouBar",
 		"marklong.server-info": "members, roles, channels, boosts, owner and friends for any server",
+		"marklong.silence-users": "silence pings and server badge counts from chosen people, or from everyone (port of SilenceUsers for Equicord)",
 		"marklong.slowmode-extended": "more slowmode choices, from every second up to 6 hours",
 		"marklong.soundcloud-presence": "show your SoundCloud track on your profile (works with Last.fm)",
 		"marklong.split-large-messages": "automatically splits messages over the character limit",
