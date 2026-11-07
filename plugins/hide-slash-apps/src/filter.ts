@@ -17,7 +17,14 @@ import { withProps } from '@valenced/modules/finders/filters'
 import { useSyncExternalStore } from 'react'
 import { diag } from './diag'
 import { state } from './state'
-import { getRevision, hasHidden, isHidden, onRevision } from './store'
+import {
+	BUILT_IN_APP_ID,
+	getRevision,
+	hasHidden,
+	isCommandHidden,
+	isHidden,
+	onRevision,
+} from './store'
 
 /** A hook, as it is called. */
 type Hook = (...args: unknown[]) => unknown
@@ -64,9 +71,13 @@ const appIdOf = (item: unknown, field: 'id' | 'applicationId'): unknown =>
 const sectionHidden = (section: unknown, guildId?: string): boolean =>
 	isHidden(appIdOf(section, 'id'), guildId)
 
-/** Whether a command is of a hidden app. Placeholders and built-in commands have no app and stay. */
-const commandHidden = (command: unknown, guildId?: string): boolean =>
-	isHidden(appIdOf(command, 'applicationId'), guildId)
+/**
+ * Whether a command is hidden: it is of a hidden app, or it was hidden itself. Placeholders have no app and no saved id and
+ * stay.
+ */
+export const commandHidden = (command: unknown, guildId?: string): boolean =>
+	isHidden(appIdOf(command, 'applicationId'), guildId) ||
+	isCommandHidden(appIdOf(command, 'id'), guildId)
 
 /**
  * What was filtered for a result, so the same result gives the same filtered copy while nothing changed. Discord compares
@@ -106,30 +117,76 @@ function without<T>(
 		: { list: kept, removed: list.length - kept.length }
 }
 
+/** The lists of commands under each app's header, with the hidden apps and commands taken out. */
+interface Groups {
+	list: unknown
+	/** How many groups were dropped (their app is hidden, or every command in them is). */
+	dropped: number
+	/** The ids of the apps that lost every command, so their pictures and headers can go too. */
+	emptied: Set<unknown>
+	/** How many commands were taken out of the groups. */
+	commands: number
+}
+
+/**
+ * Takes the hidden commands out of `commandsByActiveSection`. A group whose app is hidden goes. A group that had commands and
+ * has none left goes too: Discord would show it as "this app has no commands", which is not true.
+ */
+function filterGroups(list: unknown, guildId?: string): Groups {
+	const emptied = new Set<unknown>()
+	if (!Array.isArray(list)) return { list, dropped: 0, emptied, commands: 0 }
+	const kept: unknown[] = []
+	let dropped = 0
+	let commands = 0
+	for (const group of list as Bag[]) {
+		const section = group?.section
+		if (sectionHidden(section, guildId)) {
+			dropped++
+			continue
+		}
+		const data = group?.data
+		if (Array.isArray(data) && data.length) {
+			const shown = data.filter(command => !commandHidden(command, guildId))
+			if (shown.length !== data.length) {
+				commands += data.length - shown.length
+				if (!shown.length) {
+					emptied.add(appIdOf(section, 'id'))
+					dropped++
+					continue
+				}
+				kept.push({ ...group, data: shown })
+				continue
+			}
+		}
+		kept.push(group)
+	}
+	return dropped || commands
+		? { list: kept, dropped, emptied, commands }
+		: { list, dropped, emptied, commands }
+}
+
 /** Filters what `useDiscovery` returned. */
 function filterDiscovery(result: unknown, guildId?: string): unknown {
 	if (!isBag(result) || !hasHidden(guildId)) return result
 	return memoized(result, guildId, () => {
-		const sections = without(result.sectionDescriptors, s =>
-			sectionHidden(s, guildId),
-		)
-		const active = without(result.activeSections, s =>
-			sectionHidden(s, guildId),
-		)
-		const grouped = without<Bag>(result.commandsByActiveSection, group =>
-			sectionHidden(group?.section, guildId),
-		)
+		const grouped = filterGroups(result.commandsByActiveSection, guildId)
+		const gone = (s: unknown) =>
+			sectionHidden(s, guildId) || grouped.emptied.has(appIdOf(s, 'id'))
+		const sections = without(result.sectionDescriptors, gone)
+		const active = without(result.activeSections, gone)
 		const commands = without(result.commands, c => commandHidden(c, guildId))
 		if (
 			!sections.removed &&
 			!active.removed &&
-			!grouped.removed &&
+			!grouped.dropped &&
+			!grouped.commands &&
 			!commands.removed
 		)
 			return result
 		state.discoveryFiltered++
 		state.appsRemoved += sections.removed
 		state.commandsRemoved += commands.removed
+		state.groupsRemoved += grouped.emptied.size
 		return {
 			...result,
 			sectionDescriptors: sections.list,
@@ -152,6 +209,18 @@ function filterQuery(result: unknown, guildId?: string): unknown {
 		state.commandsRemoved += commands.removed
 		return { ...result, commands: commands.list, sections: sections.list }
 	})
+}
+
+/** Notes the built-in commands Discord returned, by id and name, so the settings can list them with switches. */
+function noteBuiltIns(result: unknown): void {
+	if (!isBag(result) || !Array.isArray(result.commands)) return
+	for (const command of result.commands as unknown[]) {
+		if (!isBag(command) || command.applicationId !== BUILT_IN_APP_ID) continue
+		const id = command.id
+		const name = command.displayName ?? command.untranslatedName
+		if (typeof id === 'string' && typeof name === 'string' && name)
+			state.builtins.set(id, name)
+	}
 }
 
 /** Notes what a result looks like, once, so a report shows what this Discord returns. */
@@ -198,7 +267,11 @@ function wrap(
 			if (kind === 'discovery') state.discoveryCalls++
 			else state.queryCalls++
 			noteShape(kind, result)
+			noteBuiltIns(result)
 			const guildId = guildOf(args)
+			// The rows of the menu are told the server through this: their own `guildId` prop is the command's, not the chat's.
+			state.menuGuildKnown = true
+			state.menuGuild = guildId
 			return kind === 'discovery'
 				? filterDiscovery(result, guildId)
 				: filterQuery(result, guildId)

@@ -27,7 +27,10 @@ export const diag = createDiagnostics('Hide Slash Apps', {
 		`Watching the JSX runtime: ${state.jsx ? 'yes' : 'no'}`,
 		`App icons of the rail: seen ${state.railSeen}, long press added ${state.railMenu}`,
 		`App headers: seen ${state.headerSeen}, long press added ${state.headerMenu}`,
-		`Command rows seen: ${state.rowSeen}`,
+		`Command rows: seen ${state.rowSeen}, long press added ${state.rowMenu}`,
+		`Lists dropped because every command in them was hidden: ${state.groupsRemoved}`,
+		`Built-in commands Discord returned (ids): ${state.builtins.size ? [...state.builtins.keys()].join(', ') : 'none yet'}`,
+		`The open menu told its server: ${state.menuGuildKnown ? (state.menuGuild ? 'in a server' : 'in a DM') : 'not yet'}`,
 		`Hidden by the components themselves (second way): ${state.componentHid}`,
 		`Long presses heard: ${state.longPresses}; sheets opened: ${state.sheets}; hidden: ${state.hid}; shown again: ${state.shown}`,
 		`Last long press: ${state.lastPress || 'none yet'}`,
@@ -73,6 +76,14 @@ export const diag = createDiagnostics('Hide Slash Apps', {
 		{
 			ok: state.railSeen === 0 || state.railMenu > 0,
 			label: 'The long press was added to the app icons',
+		},
+		{
+			ok: state.rowSeen === 0 || state.rowMenu > 0,
+			label: 'The long press was added to the command rows',
+			detail:
+				state.rowSeen > 0 && state.rowMenu === 0
+					? 'The rows were found but have no long press, so single commands cannot be hidden'
+					: undefined,
 		},
 		{
 			ok: state.longPresses === 0 || state.sheets > 0,

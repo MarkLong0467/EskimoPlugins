@@ -376,6 +376,204 @@ const pressRow = (view, label) => findNode(view.tree, n => n.type === 'Design.Ta
 		s.stop()
 	}
 
+	// --- Commands: Discord's own commands and single commands of an app
+	{
+		const withBuiltIns = api => {
+			const shrug = { id: '-1', applicationId: '-1', displayName: 'shrug' }
+			const me = { id: '-5', applicationId: '-1', displayName: 'me' }
+			api.discovery.commands.push(shrug, me)
+			api.discovery.commandsByActiveSection.unshift({ section: BUILT_IN, data: [shrug, me] })
+			return api
+		}
+		const names = r => r.commands.map(c => c.displayName).join()
+		const groupNames = (r, id) => r.commandsByActiveSection.find(g => g.section.id === id)?.data.map(c => c.displayName).join()
+
+		// The built-in switches
+		const api = withBuiltIns(fakeApi())
+		const s = await startWith({}, api)
+		await callHook(s, () => api.useDiscovery(optionsFor('g1')))
+		let view = await s.mountSettings()
+		const switches = findNodes(view.tree, n => n.type === 'Design.TableSwitchRow')
+		check('every built-in command has a switch, all on', switches.length === 14 && switches.every(sw => sw.props.value === true), switches.map(sw => sw.props.label))
+		check('the switches have the names and what they do', ['/shrug', '/tableflip', '/unflip', '/tts', '/me', '/spoiler', '/nick', '/thread', '/kick', '/ban', '/timeout', '/msg', '/leave', '/roll-dice'].every(l => switches.some(sw => sw.props.label === l)) && /¯/.test(switches[0].props.subLabel))
+		const shrugSwitch = () => findNode(view.tree, n => n.type === 'Design.TableSwitchRow' && n.props.label === '/shrug')
+		shrugSwitch().props.onValueChange(false)
+		await sleep(5)
+		const saved = s.storage.cache.commands?.[0]
+		check('turning /shrug off saves it as hidden everywhere', s.storage.cache.commands?.length === 1 && saved.id === '-1' && saved.name === 'shrug' && saved.appId === '-1' && !saved.guildId, s.storage.cache.commands)
+		check('with a toast', s.toasts().some(t => /\/shrug is hidden/.test(t ?? '')), s.toasts())
+		let { box } = await callHook(s, () => api.useDiscovery(optionsFor('g1')))
+		check('it is gone from the commands and from the built-in list, /me stays', names(box.result).split(',').includes('me') && !names(box.result).includes('shrug') && groupNames(box.result, '-1') === 'me', box.result.commands)
+		check('the other apps are untouched', idsOf(box.result.sectionDescriptors).join() === `-1,${MEE6},${GIPHY},${NITRO}`)
+		const dm = await callHook(s, () => api.useDiscovery(optionsFor(undefined)))
+		check('it is gone in a DM too', !names(dm.box.result).includes('shrug'))
+		view = await s.mountSettings()
+		check('the switch shows it off', shrugSwitch().props.value === false)
+
+		findNode(view.tree, n => n.type === 'Design.TableSwitchRow' && n.props.label === '/me').props.onValueChange(false)
+		await sleep(5)
+		;({ box } = await callHook(s, () => api.useDiscovery(optionsFor('g1'))))
+		check('with every built-in command hidden the built-in list and its picture go too', !idsOf(box.result.commandsByActiveSection).includes('-1') && !idsOf(box.result.sectionDescriptors).includes('-1') && !idsOf(box.result.activeSections).includes('-1'), idsOf(box.result.sectionDescriptors))
+		check('and the rest of Discord’s list stays', idsOf(box.result.sectionDescriptors).join() === `${MEE6},${GIPHY},${NITRO}`)
+		view = await s.mountSettings()
+		findNode(view.tree, n => n.type === 'Design.TableSwitchRow' && n.props.label === '/shrug').props.onValueChange(true)
+		await sleep(5)
+		;({ box } = await callHook(s, () => api.useDiscovery(optionsFor('g1'))))
+		check('turning a switch on shows the command again, with its list', names(box.result).includes('shrug') && groupNames(box.result, '-1') === 'shrug' && s.storage.cache.commands.length === 1)
+		s.stop()
+		check('the plugin reported no errors', s.errors.length === 0, s.errors)
+	}
+	{
+		const api = fakeApi()
+		api.discovery.commandsByActiveSection.find(g => g.section.id === MEE6).data.push(command(MEE6, 'levels'))
+		api.discovery.commands.push(command(MEE6, 'levels'))
+		const s = await startWith({}, api)
+		const names = r => r.commands.map(c => c.displayName).join()
+		await callHook(s, () => api.useDiscovery(optionsFor('g1')))
+
+		// A long press on a command row opens the command sheet
+		const row = draw(s, ApplicationCommandItem, { command: api.discovery.commandsByActiveSection[0].data[0], section: api.sections[1], guildId: undefined })
+		const rowView = await s.mountRender(() => row.type(row.props))
+		const press = findNode(rowView.tree, n => n.type === 'Row').props
+		check('a command row has a long press, and keeps what it drew', typeof press.onLongPress === 'function' && press.delayLongPress > 0 && press.label === 'rank')
+		press.onLongPress()
+		await sleep(5)
+		const sheet = await s.mountSheet(SHEET)
+		const text = textOf(sheet.tree)
+		check('the sheet names the command and its app', text.includes('/rank') && text.includes('From MEE6'), text)
+		check('it offers hiding the command everywhere, in the server the menu is open in, and the whole app', !!findNode(sheet.tree, n => n.props?.label === 'Hide this command everywhere') && !!findNode(sheet.tree, n => n.props?.label === 'Hide this command in My Server') && !!findNode(sheet.tree, n => n.props?.label === 'Hide all of MEE6'), text)
+		pressRow(sheet, 'Hide this command in My Server')
+		await sleep(5)
+		const saved = s.storage.cache.commands?.[0]
+		check('the server comes from the open menu, not from the row', s.storage.cache.commands.length === 1 && saved.id === `${MEE6}:rank` && saved.guildId === 'g1' && saved.guildName === 'My Server' && saved.appId === MEE6 && saved.appName === 'MEE6', s.storage.cache.commands)
+		check('a toast names the command and the server', s.toasts().some(t => /\/rank is hidden in My Server/.test(t ?? '')), s.toasts())
+		const { box: here } = await callHook(s, () => api.useDiscovery(optionsFor('g1')))
+		const { box: there } = await callHook(s, () => api.useDiscovery(optionsFor('g2')))
+		check('the command is gone in that server only', !names(here.result).includes('rank') && names(there.result).includes('rank'))
+		check('the app stays, with its other command', idsOf(here.result.sectionDescriptors).includes(MEE6) && here.result.commandsByActiveSection.find(g => g.section.id === MEE6).data.map(c => c.displayName).join() === 'levels')
+		const q = await callHook(s, () => api.useQuery({ channel: { guild_id: 'g1' }, type: 'channel' }, {}, {}))
+		check('typing after / hides it too', !names(q.box.result).includes('rank') && names(q.box.result).includes('gif'), q.box.result.commands)
+		const rowAgain = draw(s, ApplicationCommandItem, { command: api.discovery.commandsByActiveSection[0].data[0], section: api.sections[1] })
+		const rowAgainView = await s.mountRender(() => rowAgain.type(rowAgain.props))
+		check('a hidden command’s row draws nothing (the second way)', findNode(rowAgainView.tree, n => n.type === 'Row') === null)
+
+		// Hiding the last command of an app takes the app out of the menu
+		const levelsRow = draw(s, ApplicationCommandItem, { command: api.discovery.commandsByActiveSection[0].data[1], section: api.sections[1] })
+		const levelsView = await s.mountRender(() => levelsRow.type(levelsRow.props))
+		findNode(levelsView.tree, n => n.type === 'Row').props.onLongPress()
+		await sleep(5)
+		pressRow(await s.mountSheet(SHEET), 'Hide this command everywhere')
+		await sleep(5)
+		check('hiding it everywhere is saved without a server', s.storage.cache.commands.some(c => c.id === `${MEE6}:levels` && !c.guildId))
+		const { box: empty } = await callHook(s, () => api.useDiscovery(optionsFor('g1')))
+		check('an app with every command hidden is dropped from the lists and the pictures', !idsOf(empty.result.commandsByActiveSection).includes(MEE6) && !idsOf(empty.result.sectionDescriptors).includes(MEE6) && !idsOf(empty.result.activeSections).includes(MEE6), idsOf(empty.result.sectionDescriptors))
+		const { box: other } = await callHook(s, () => api.useDiscovery(optionsFor('g2')))
+		check('where one command is still shown the app stays', idsOf(other.result.sectionDescriptors).includes(MEE6) && other.result.commandsByActiveSection.find(g => g.section.id === MEE6).data.map(c => c.displayName).join() === 'rank')
+		check('Discord’s own result is not changed', api.discovery.commandsByActiveSection[0].data.length === 2 && api.discovery.sectionDescriptors.length === 4)
+		check('every hook returned what Valenced needs', s.violations.length === 0, s.violations)
+		s.stop()
+	}
+	{
+		// The sheet of an app command can hide the whole app; a built-in one cannot
+		const api = fakeApi()
+		const s = await startWith({}, api)
+		await callHook(s, () => api.useDiscovery(optionsFor('g1')))
+		const row = draw(s, ApplicationCommandItem, { command: api.discovery.commandsByActiveSection[1].data[0], section: api.sections[2] })
+		const rowView = await s.mountRender(() => row.type(row.props))
+		findNode(rowView.tree, n => n.type === 'Row').props.onLongPress()
+		await sleep(5)
+		pressRow(await s.mountSheet(SHEET), 'Hide all of Giphy')
+		await sleep(5)
+		check('"Hide all of" hides the app everywhere', s.storage.cache.everywhere?.length === 1 && s.storage.cache.everywhere[0].id === GIPHY && !s.storage.cache.commands?.length, s.storage.cache)
+
+		const shrug = { id: '-1', applicationId: '-1', displayName: 'shrug' }
+		const builtIn = draw(s, ApplicationCommandItem, { command: shrug, section: BUILT_IN, guildId: undefined })
+		const builtInView = await s.mountRender(() => builtIn.type(builtIn.props))
+		findNode(builtInView.tree, n => n.type === 'Row').props.onLongPress()
+		await sleep(5)
+		const sheet = await s.mountSheet(SHEET)
+		check('a built-in command says so and has no "Hide all of"', /Discord’s own commands/.test(textOf(sheet.tree)) && !/Hide all of/.test(textOf(sheet.tree)) && !!findNode(sheet.tree, n => n.props?.label === 'Hide this command everywhere'), textOf(sheet.tree))
+		pressRow(sheet, 'Hide this command everywhere')
+		await sleep(5)
+		const entry = s.storage.cache.commands[0]
+		check('it is saved as a built-in command', entry.id === '-1' && entry.appId === '-1' && entry.appName === 'Built-in' && entry.name === 'shrug', entry)
+
+		const placeholder = draw(s, ApplicationCommandItem, { command: { id: 'placeholder-0', applicationId: '', displayName: '' }, section: { id: 'placeholder-section' } })
+		const placeholderView = await s.mountRender(() => placeholder.type(placeholder.props))
+		check('a loading placeholder row gets no long press', findNode(placeholderView.tree, n => n.type === 'Row').props.onLongPress === undefined)
+		s.stop()
+	}
+
+	// --- The settings list hidden commands under their app
+	{
+		const api = fakeApi()
+		const s = await startWith(
+			{
+				commands: [
+					{ id: `${MEE6}:rank`, name: 'rank', appId: MEE6, appName: 'MEE6', at: 1 },
+					{ id: `${MEE6}:levels`, name: 'levels', appId: MEE6, appName: 'MEE6', guildId: 'g1', guildName: 'My Server', at: 2 },
+					{ id: '-4', name: 'tts', appId: '-1', appName: 'Built-in', at: 3 },
+					{ id: '-5', name: 'me', appId: '-1', appName: 'Built-in', guildId: 'g2', guildName: 'Other Server', at: 4 },
+				],
+			},
+			api,
+		)
+		let view = await s.mountSettings()
+		const text = textOf(view.tree)
+		check('the count says 2 commands everywhere, 2 in single servers', /2 everywhere, 2 in single servers/.test(text), text.slice(0, 400))
+		check('the commands are listed under their app', /MEE6/.test(text) && /\/rank/.test(text) && /\/levels/.test(text) && /Only in My Server/.test(text) && /Everywhere/.test(text))
+		check('a built-in command hidden in a server is listed, with its server', /BUILT-IN/.test(text) && /Only in Other Server/.test(text))
+		check('a built-in command hidden everywhere is the switch, not a card', !/\/tts ·/.test(text) && findNode(view.tree, n => n.type === 'Design.TableSwitchRow' && n.props.label === '/tts').props.value === false)
+		check('a built-in hidden in one server says so on its switch', /hidden in 1 server/.test(findNode(view.tree, n => n.type === 'Design.TableSwitchRow' && n.props.label === '/me').props.subLabel))
+		check('each card has a Show again button', findNodes(view.tree, n => n.type === 'Design.Button' && n.props.text === 'Show again').length === 3)
+
+		const second = findNodes(view.tree, n => n.type === 'Design.Button' && n.props.text === 'Show again')[1]
+		second.props.onPress()
+		await sleep(5)
+		check('Show again brings back the command in that server only', s.storage.cache.commands.length === 3 && !s.storage.cache.commands.some(c => c.id === `${MEE6}:levels`) && s.storage.cache.commands.some(c => c.id === `${MEE6}:rank`), s.storage.cache.commands)
+		check('with a toast', s.toasts().some(t => /\/levels is back/.test(t ?? '')), s.toasts())
+
+		view = await s.mountSettings()
+		findNode(view.tree, n => n.type === 'Design.TableRow' && n.props.label === 'Show everything again').props.onPress()
+		await view.settle()
+		findNode(view.tree, n => n.props?.label === 'Tap again to show everything').props.onPress()
+		await sleep(5)
+		check('Show everything again clears the commands too', s.storage.cache.commands.length === 0 && s.storage.cache.everywhere.length === 0, s.storage.cache)
+		s.stop()
+	}
+	{
+		// Settings saved by version 1.0.0 have no list of commands
+		const api = fakeApi()
+		const s = await startWith({ everywhere: [{ id: MEE6, name: 'MEE6', at: 1 }] }, api)
+		const { box } = await callHook(s, () => api.useDiscovery(optionsFor('g1')))
+		check('an older save with no commands still works', !idsOf(box.result.sectionDescriptors).includes(MEE6))
+		const view = await s.mountSettings()
+		check('and the settings show no hidden commands', /0 everywhere, 0 in single servers/.test(textOf(view.tree)))
+		s.stop()
+		check('the plugin reported no errors', s.errors.length === 0, s.errors)
+	}
+
+	// --- The report knows about commands
+	{
+		const api = fakeApi()
+		api.discovery.commands.push({ id: '-1', applicationId: '-1', displayName: 'shrug' })
+		const s = await startWith({ commands: [{ id: `${MEE6}:rank`, name: 'rank', appId: MEE6, appName: 'MEE6', at: 1 }, { id: '-1', name: 'shrug', appId: '-1', appName: 'Built-in', guildId: 'g1', guildName: 'My Server', at: 2 }] }, api)
+		await callHook(s, () => api.useDiscovery(optionsFor('g1')))
+		const row = draw(s, ApplicationCommandItem, { command: command(GIPHY, 'gif'), section: api.sections[2] })
+		await s.mountRender(() => row.type(row.props))
+		const view = await s.mountSettings()
+		button(view, 'Copy logs').props.onPress()
+		const report = s.copied.at(-1) ?? ''
+		check('the report counts hidden commands without naming them', /"commandsEverywhere": 1/.test(report) && /"commandsInServers": 1/.test(report) && !/rank|shrug|MEE6|My Server/.test(report), report)
+		check('it lists the ids of the built-in commands Discord returned', /Built-in commands Discord returned \(ids\): -1/.test(report))
+		check('it says whether the command rows got the long press', /Command rows: seen 1, long press added [1-9]/.test(report), report)
+		check('it says which kind of chat the menu is in', /The open menu told its server: in a server/.test(report))
+		button(view, 'Run self-check').props.onPress()
+		await view.settle()
+		check('the self-check has the command rows', /long press was added to the command rows/.test(textOf(view.tree)))
+		s.stop()
+	}
+
 	done()
 })().catch(error => {
 	console.error(error)

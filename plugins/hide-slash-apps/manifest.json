@@ -2,10 +2,10 @@
 	"format": 1,
 	"id": "marklong.hide-slash-apps",
 	"name": "Hide Slash Apps",
-	"description": "Long press an app's picture in the / menu to hide it everywhere or only in one server. For bots like MEE6 that sit in lots of servers and cannot be removed.",
+	"description": "Long press an app or a command in the / menu to hide it everywhere or only in one server, and switch off Discord's own commands. For bots like MEE6 that sit in lots of servers and cannot be removed.",
 	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
 	"icon": "EyeIcon",
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"

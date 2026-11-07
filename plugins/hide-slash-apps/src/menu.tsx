@@ -15,11 +15,12 @@ import { cloneElement, isValidElement, useSyncExternalStore } from 'react'
 import { Pressable } from 'react-native'
 import { installJsxFinder } from '../../../shared/palmdevs/jsxFind'
 import { diag } from './diag'
-import { openHideSheet } from './sheet'
+import { commandHidden } from './filter'
+import { openCommandSheet, openHideSheet } from './sheet'
 import { state } from './state'
-import { getRevision, isHidden, onRevision } from './store'
+import { BUILT_IN_APP_ID, getRevision, isHidden, onRevision } from './store'
 import type { ComponentType, ReactElement } from 'react'
-import type { AppInfo } from './store'
+import type { AppInfo, CommandInfo } from './store'
 
 /** Registers functions to run when the plugin stops. */
 type Cleanup = (...fns: Array<() => unknown>) => unknown
@@ -150,14 +151,72 @@ function drawHeader(drawn: unknown, props: Record<string, unknown>): unknown {
 	)
 }
 
-/** Draws nothing for a command of a hidden app (the second way). */
+/**
+ * The server a command row belongs to. A row's own `guildId` prop is the guild the command was made for, which is empty for
+ * a command that works everywhere, so the server the menu is open in (told by the hooks) is used when it is known.
+ */
+const rowGuild = (props: Record<string, unknown>): string | undefined =>
+	state.menuGuildKnown ? state.menuGuild : guildOf(props.guildId)
+
+/** The command and app of a row as the menu knows them, or nothing for a placeholder or something unreadable. */
+function commandOf(
+	command: unknown,
+	section: unknown,
+): CommandInfo | undefined {
+	if (!command || typeof command !== 'object') return undefined
+	const c = command as {
+		id?: unknown
+		applicationId?: unknown
+		displayName?: unknown
+		untranslatedName?: unknown
+	}
+	if (typeof c.id !== 'string' || !c.id || c.id.startsWith('placeholder'))
+		return undefined
+	const name = c.displayName ?? c.untranslatedName
+	if (typeof name !== 'string' || !name) return undefined
+	const app = section as { name?: unknown } | undefined
+	const builtIn = c.applicationId === BUILT_IN_APP_ID
+	return {
+		id: c.id,
+		name,
+		appId: typeof c.applicationId === 'string' ? c.applicationId : '',
+		appName: builtIn
+			? 'Built-in'
+			: typeof app?.name === 'string' && app.name
+				? app.name
+				: 'this app',
+	}
+}
+
+/** Handles a long press on a command row: opens the sheet, or notes why it could not. */
+function pressedRow(props: Record<string, unknown>): void {
+	state.longPresses++
+	const command = commandOf(props.command, props.section)
+	if (!command) {
+		state.lastPress = 'the press was on a command that could not be read'
+		diag.log('press', state.lastPress, 'warn')
+		return
+	}
+	const section = props.section as
+		| { id?: unknown; name?: unknown; icon?: unknown }
+		| undefined
+	openCommandSheet(command, appOf(section), rowGuild(props))
+}
+
+/** Gives a command row the long press, or draws nothing if the command or its app is hidden (the second way). */
 function drawRow(drawn: unknown, props: Record<string, unknown>): unknown {
-	const command = props.command as { applicationId?: unknown } | undefined
-	if (isHidden(command?.applicationId, guildOf(props.guildId))) {
+	const guildId = rowGuild(props)
+	if (commandHidden(props.command, guildId)) {
 		state.componentHid++
 		return null
 	}
-	return drawn
+	if (!isValidElement(drawn) || !commandOf(props.command, props.section))
+		return drawn
+	state.rowMenu++
+	return cloneElement(drawn as ReactElement<Record<string, unknown>>, {
+		onLongPress: () => pressedRow(props),
+		delayLongPress: LONG_PRESS_MS,
+	})
 }
 
 /**

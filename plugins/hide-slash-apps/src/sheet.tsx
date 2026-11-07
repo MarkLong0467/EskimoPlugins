@@ -6,8 +6,13 @@ import { Image, View } from 'react-native'
 import { openToast } from '../../../shared/kmmiio/toast'
 import { diag } from './diag'
 import { state } from './state'
-import { hideEverywhere, hideInServer } from './store'
-import type { AppInfo } from './store'
+import {
+	BUILT_IN_APP_ID,
+	hideCommand,
+	hideEverywhere,
+	hideInServer,
+} from './store'
+import type { AppInfo, CommandInfo } from './store'
 
 /** The key of the sheet, so it can be closed again. */
 const SHEET_KEY = 'MARKLONG_HIDE_SLASH_APPS'
@@ -177,5 +182,133 @@ export function openHideSheet(app: AppInfo, guildId?: string): void {
 	} catch (error) {
 		state.lastPress = 'the hide menu failed to open'
 		diag.fail('open sheet', error)
+	}
+}
+
+/** Texts as constants because React Native text must be passed as an expression. */
+const COMMAND_SUBTITLE =
+	'Choose where to stop seeing this command in the / menu.'
+const BUILT_IN_NOTE = 'This is one of Discord’s own commands.'
+const COMMAND_DM_NOTE =
+	'This is not in a server, so it can only be hidden everywhere. Open the / menu inside a server to hide it in just that server.'
+const COMMAND_RESTORE_NOTE =
+	'You can bring it back any time in the settings of the Hide Slash Apps plugin.'
+
+/** What the command sheet is opened with. */
+interface CommandSheetProps {
+	command: CommandInfo
+	/** The app the command is of, when it is a real app (not Discord's built-in commands). */
+	app?: AppInfo
+	guildId?: string
+}
+
+/** The sheet for a command: where to hide it, and a way to hide its whole app. */
+function CommandSheet({ command, app, guildId }: CommandSheetProps) {
+	const server = guildNameOf(guildId)
+	const builtIn = command.appId === BUILT_IN_APP_ID
+	const label = `/${command.name}`
+	return (
+		<Design.ActionSheet>
+			<View style={{ padding: 16, gap: 16 }}>
+				<View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+					{app ? <AppPicture app={app} /> : null}
+					<View style={{ flex: 1, gap: 2 }}>
+						<Design.Text variant="heading-lg/bold">{label}</Design.Text>
+						<Design.Text variant="text-sm/medium" color="text-muted">
+							{builtIn ? BUILT_IN_NOTE : `From ${command.appName}`}
+						</Design.Text>
+						<Design.Text variant="text-sm/medium" color="text-muted">
+							{COMMAND_SUBTITLE}
+						</Design.Text>
+					</View>
+				</View>
+				<Design.TableRowGroup>
+					<Design.TableRow
+						label="Hide this command everywhere"
+						subLabel={`Never show ${label} in the / menu, in any server or DM`}
+						onPress={() => {
+							hideCommand(command)
+							state.hid++
+							state.lastPress = 'hid a command everywhere'
+							diag.log('hide', 'Hid a command everywhere')
+							close()
+							done(`${label} is hidden everywhere`)
+						}}
+					/>
+					{guildId ? (
+						<Design.TableRow
+							label={`Hide this command in ${server}`}
+							subLabel={`Only here. ${label} stays in your other servers`}
+							onPress={() => {
+								hideCommand(command, { id: guildId, name: server })
+								state.hid++
+								state.lastPress = 'hid a command in one server'
+								diag.log('hide', 'Hid a command in one server')
+								close()
+								done(`${label} is hidden in ${server}`)
+							}}
+						/>
+					) : null}
+				</Design.TableRowGroup>
+				{app ? (
+					<Design.TableRowGroup>
+						<Design.TableRow
+							label={`Hide all of ${app.name}`}
+							subLabel="Hides the whole app, everywhere, not just this command"
+							onPress={() => {
+								hideEverywhere(app)
+								state.hid++
+								state.lastPress = 'hid an app everywhere (from a command)'
+								diag.log('hide', 'Hid an app everywhere, from a command')
+								close()
+								done(`${app.name} is hidden everywhere`)
+							}}
+						/>
+					</Design.TableRowGroup>
+				) : null}
+				<Design.Text variant="text-sm/medium" color="text-muted">
+					{guildId
+						? COMMAND_RESTORE_NOTE
+						: `${COMMAND_DM_NOTE} ${COMMAND_RESTORE_NOTE}`}
+				</Design.Text>
+				<Design.Button
+					text="Cancel"
+					variant="secondary"
+					size="md"
+					onPress={close}
+				/>
+			</View>
+		</Design.ActionSheet>
+	)
+}
+
+/**
+ * Opens the sheet for a command.
+ *
+ * @param command The command that was long pressed.
+ * @param app Its app, if it is a real app.
+ * @param guildId The server the menu is open in, if it is in one.
+ */
+export function openCommandSheet(
+	command: CommandInfo,
+	app: AppInfo | undefined,
+	guildId?: string,
+): void {
+	try {
+		state.sheets++
+		ActionSheetActionCreators.openLazy(
+			Promise.resolve({
+				default: () => (
+					<CommandSheet command={command} app={app} guildId={guildId} />
+				),
+			}),
+			SHEET_KEY,
+			{},
+		)
+		state.lastPress = 'opened the command menu'
+		diag.log('sheet', 'Opened the command menu')
+	} catch (error) {
+		state.lastPress = 'the command menu failed to open'
+		diag.fail('open command sheet', error)
 	}
 }

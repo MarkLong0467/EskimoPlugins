@@ -26,7 +26,7 @@
 		"marklong.custom-rpc-test": "a test of Rich Presence that shows several presences at once, each profile on its own switch",
 		"marklong.force-timestamp-locale": "show every timestamp in one language, such as en-gb 24-hour times",
 		"marklong.haptics": "turn Discord's buzzing on or off, with a log of what buzzed",
-		"marklong.hide-slash-apps": "long press an app in the / menu to hide it everywhere or in one server (for bots like MEE6)",
+		"marklong.hide-slash-apps": "long press an app or command in the / menu to hide it everywhere or in one server, switch off built-in commands (for bots like MEE6)",
 		"marklong.hypesquad": "change your HypeSquad house, or leave it, in one tap",
 		"marklong.markdown-toolbar": "a floating formatting bar under the chat input that pops up with the keyboard",
 		"marklong.message-preview": "preview your message before sending it",

@@ -39,6 +39,15 @@ export const state = {
 	shown: 0,
 	/** The result of the last long press, in words. */
 	lastPress: '',
+	/** How many command rows had the long press added. */
+	rowMenu: 0,
+	/** How many apps lost a whole list of commands because every command in it was hidden. */
+	groupsRemoved: 0,
+	/** The built-in commands Discord has returned so far, by id, with their names. Used for the switches in the settings. */
+	builtins: new Map<string, string>(),
+	/** Whether a menu has told the plugin which server it is open in, and which one. A command row uses this. */
+	menuGuildKnown: false,
+	menuGuild: undefined as string | undefined,
 }
 
 /** Forgets the counts. Used when the plugin stops. */
@@ -68,4 +77,9 @@ export function resetState(): void {
 	state.hid = 0
 	state.shown = 0
 	state.lastPress = ''
+	state.rowMenu = 0
+	state.groupsRemoved = 0
+	state.builtins.clear()
+	state.menuGuildKnown = false
+	state.menuGuild = undefined
 }
