@@ -199,7 +199,7 @@ const FEATURE_NAMES: Record<string, string> = {
 
 /** Features that say what the server is (shown as badges) or that are only for Discord's own use, so they are not listed. */
 const HIDDEN_FEATURES =
-	/^(COMMUNITY|VERIFIED|PARTNERED|.*ARCHIVE.*|.*EXPERIMENT.*|.*ONBOARDING.*|.*HUB.*|.*HOME.*|.*MODERATION_EXPERIENCE.*|.*ALLOWLIST.*|.*DIRECTORY.*|ENABLED_DISCOVERABLE_BEFORE|CHANNEL_ICON_EMOJIS_GENERATED|HAS_.*|.*_ENABLED_FOR_.*)$/
+	/^(COMMUNITY|VERIFIED|PARTNERED|.*ARCHIVE.*|.*EXPERIMENT.*|.*ONBOARDING.*|.*HUB.*|.*HOME.*|.*MODERATION_EXPERIENCE.*|.*ALLOWLIST.*|.*DIRECTORY.*|ENABLED_DISCOVERABLE_BEFORE|CHANNEL_ICON_EMOJIS_GENERATED|HAS_.*|.*_ENABLED_FOR_.*|AUDIO_BITRATE_.*|MAX_FILE_SIZE_.*|STAGE_CHANNEL_VIEWERS_.*|AV_INFRA_.*|PRUNE_.*|GUILD_WEB_PAGE_VANITY_URL|AGE_VERIFICATION_.*|.*REARCH.*|.*_V\d+|.*LIMIT.*)$/
 
 /** A feature code written as words: `FOO_BAR` becomes `Foo bar`. */
 function words(code: string): string {
