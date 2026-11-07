@@ -41,10 +41,8 @@ function headline(): { label: string; detail: string } {
 function method(): string {
 	if (state.clearedByDiscord > 0)
 		return `Discord’s own clear option (${state.how || 'found'})`
-	if (state.clearedByParts > 0)
-		return 'Discord’s clear steps, one by one (its own function was not found)'
 	if (state.clearedByEvent > 0)
-		return 'The clear event alone (Discord’s function was not found, so some rows may stay)'
+		return 'Discord’s clear events and a dismissal time kept by the plugin (its own function was not found)'
 	return hasDiscordClear()
 		? 'Discord’s own clear option is ready'
 		: 'Nothing cleared yet'
@@ -98,7 +96,7 @@ export default function Settings() {
 					/>
 					<Design.TableRow
 						label="The channels"
-						subLabel="The rows are channels that are new, unread, mention you or were visited lately. The plugin clears them the way Discord’s own Clear option does: it saves that you dismissed them and marks them read."
+						subLabel="The rows are channels that are new, unread, mention you or were visited lately. The plugin clears them the way Discord’s own Clear option does: it counts them as dismissed, tells Discord’s stores and marks them read."
 					/>
 					<Design.TableRow
 						label="Nothing to set"

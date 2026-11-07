@@ -17,7 +17,12 @@
 import { getModules } from '@valenced/modules/finders'
 import { withProps } from '@valenced/modules/finders/filters'
 import { installJsxFinder } from '../../../shared/palmdevs/jsxFind'
-import { clearSuggestions, noteStillShown, watchForClear } from './clear'
+import {
+	clearSuggestions,
+	installDismissal,
+	noteStillShown,
+	watchForClear,
+} from './clear'
 import { diag } from './diag'
 import Settings from './Settings'
 import { resetState, state } from './state'
@@ -95,6 +100,7 @@ export default plugin({
 		cleanup(diag.listen())
 		cleanup(resetState)
 		watchForClear(cleanup)
+		installDismissal(cleanup)
 
 		// The main way: watch for the section being drawn.
 		state.jsx = installJsxFinder(cleanup, [

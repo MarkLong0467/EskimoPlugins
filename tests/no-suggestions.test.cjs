@@ -163,7 +163,7 @@ const events = s => s.runtime.log.dispatched.filter(a => a.type === 'BULK_CLEAR_
 		const report = s.copied.at(-1) || ''
 		check('Copy logs names the plugin and credits PalmDevs and the porter', report.includes('marklong.no-suggestions 1.1.0') && report.includes('Original plugin by PalmDevs') && report.includes('Ported to Valenced by MarkLong0467'), report.split('\n').slice(0, 4))
 		check('the report does not credit kmmiio99o', !report.includes('kmmiio99o'))
-		check('the report has the counts and how it was cleared', /Watching the JSX runtime: yes/.test(report) && /Section replaced: 2 time\(s\)/.test(report) && /Cleared: 1 time\(s\), 2 channel\(s\) \(by Discord's function 0, by its parts 0, by the event alone 1\), 0 marked read/.test(report) && /Looked up just now: bulkAck: not found/.test(report) && /Drawn again with channels after a clear: 0 time/.test(report), report.split('\n').slice(6, 18))
+		check('the report has the counts and how it was cleared', /Watching the JSX runtime: yes/.test(report) && /Section replaced: 2 time\(s\)/.test(report) && /Cleared: 1 time\(s\), 2 channel\(s\) \(by Discord's function 0, by the events 1\), 2 marked read, dismissal patch off/.test(report) && /Looked up just now: UserSettingsProtoStore: not found/.test(report) && /Drawn again with channels after a clear: 0 time/.test(report), report.slice(0, 900))
 		view.unmount()
 		s.stop()
 	}
@@ -180,22 +180,25 @@ const events = s => s.runtime.log.dispatched.filter(a => a.type === 'BULK_CLEAR_
 		s.stop()
 	}
 
-	// --- Without Discord's own function, its parts are used
+	// --- Without Discord's own function, the events and the dismissal time do the same
 	{
 		const f = fakeSection()
-		const calls = { clear: [], ack: [] }
-		const s = await startPort('no-suggestions', {
-			before: runtime => {
-				runtime.valenced.modules.finders.loadModule({ bulkClearRecents: (g, ids) => calls.clear.push([g, ids]) })
-				runtime.valenced.modules.finders.loadModule({ bulkAck: reads => calls.ack.push(reads) })
-			},
-		})
+		let real = 1000
+		const store = { getGuildRecentsDismissedAt: () => real }
+		const s = await startPort('no-suggestions', { stores: { UserSettingsProtoStore: store, ReadStateStore: { lastMessageId: id => `m-${id}` } } })
+		check('the dismissal time is patched when the store is there', store.getGuildRecentsDismissedAt('x') === 1000)
 		render(drawElement(s, f.SuggestedCategory, { guildId: 'parts', channelIds: ['p1', 'p2'] }))
 		await sleep(30)
-		check('the dismissal is saved through bulkClearRecents', calls.clear.length === 1 && calls.clear[0][0] === 'parts' && calls.clear[0][1].join() === 'p1,p2', calls.clear)
-		check('and the channels are marked read, as Discord’s Clear does', calls.ack.length === 1 && calls.ack[0].length === 2 && calls.ack[0][0].channelId === 'p1' && calls.ack[0][0].readStateType === 0, calls.ack)
-		check('without a second event of its own', events(s).filter(e => e.guildId === 'parts').length === 0)
+		const acks = s.runtime.log.dispatched.filter(a => a.type === 'BULK_ACK')
+		check('the channels are marked read here, as Discord’s Clear does', acks.length === 1 && acks[0].channels.length === 2 && acks[0].channels[0].channelId === 'p1' && acks[0].channels[0].readStateType === 0 && acks[0].channels[0].messageId === 'm-p1', acks)
+		check('without asking Discord to tell its servers (no context)', acks[0].context === undefined)
+		const dismissed = store.getGuildRecentsDismissedAt('parts')
+		check('the server now counts as dismissed just now, later than any saved time', dismissed > Date.now() - 5000 && dismissed >= 1000, dismissed)
+		check('another server is untouched', store.getGuildRecentsDismissedAt('other') === 1000)
+		real = Date.now() + 100000
+		check('a later time saved by Discord itself wins', store.getGuildRecentsDismissedAt('parts') === real)
 		s.stop()
+		check('stopping the plugin gives the store back', store.getGuildRecentsDismissedAt('parts') === real && !Object.keys(store).some(k => k.includes('patched')))
 	}
 
 	done()

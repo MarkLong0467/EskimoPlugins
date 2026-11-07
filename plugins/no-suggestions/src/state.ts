@@ -14,9 +14,10 @@ export const state = {
 	/** How many of those went through Discord's own `clearRecentChannels`, and how many through the event alone. */
 	clearedByDiscord: 0,
 	clearedByEvent: 0,
-	/** How many went through Discord's own parts one by one (`bulkClearRecents` and `bulkAck`), and how many channels were marked read. */
-	clearedByParts: 0,
+	/** How many channels were marked read. */
 	acked: 0,
+	/** Whether the dismissal time of Discord's server settings is patched (see `installDismissal` in `clear.ts`). */
+	dismissal: false,
 	/** How Discord's `clearRecentChannels` was found, if it was. */
 	how: '',
 	/** How many times the section was drawn with channels again after they were cleared, which means the clear did not take. */
@@ -33,8 +34,8 @@ export function resetState(): void {
 	state.channelsCleared = 0
 	state.clearedByDiscord = 0
 	state.clearedByEvent = 0
-	state.clearedByParts = 0
 	state.acked = 0
+	state.dismissal = false
 	state.how = ''
 	state.stuck = 0
 }

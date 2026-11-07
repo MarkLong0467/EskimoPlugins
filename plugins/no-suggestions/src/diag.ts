@@ -51,7 +51,7 @@ export const diag = createDiagnostics('No Suggestions', {
 			`Watching the JSX runtime: ${state.jsx ? 'yes' : 'no'}`,
 			`Section replaced: ${state.replaced} time(s), patched in its module: ${state.patched}`,
 			`Rendered while empty: ${state.empty}`,
-			`Cleared: ${state.cleared} time(s), ${state.channelsCleared} channel(s) (by Discord's function ${state.clearedByDiscord}, by its parts ${state.clearedByParts}, by the event alone ${state.clearedByEvent}), ${state.acked} marked read`,
+			`Cleared: ${state.cleared} time(s), ${state.channelsCleared} channel(s) (by Discord's function ${state.clearedByDiscord}, by the events ${state.clearedByEvent}), ${state.acked} marked read, dismissal patch ${state.dismissal ? 'on' : 'off'}`,
 			`Discord's own clear function: ${state.how ? `found ${state.how}` : 'not found yet'}`,
 			`Drawn again with channels after a clear: ${state.stuck} time(s)`,
 			...Object.entries(probe()).map(
@@ -74,11 +74,11 @@ export const diag = createDiagnostics('No Suggestions', {
 					: 'Open a server that has the Suggested section',
 		},
 		{
-			ok: hasDiscordClear() || state.clearedByParts > 0,
+			ok: hasDiscordClear() || state.dismissal,
 			label: 'Discord’s own clear function can be used',
 			detail: hasDiscordClear()
 				? `Found ${state.how || 'just now'}`
-				: 'Not found, so its parts or the event alone are used, and rows may stay',
+				: 'Not found, so the events and the dismissal time are used instead',
 		},
 		{
 			ok: state.stuck === 0,

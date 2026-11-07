@@ -20,7 +20,6 @@ const AGAIN_MS = 4000
  * are unread, mention you, are new, or were visited lately, so the event alone leaves most of them there.
  */
 const PATH_CLEAR = 'modules/opt_in_channels/OptInChannelsUtils.tsx'
-const PATH_RECENTS = 'modules/recent_channels/RecentChannelsActionCreators.tsx'
 
 /** A function that clears the suggestions of a server. */
 type ClearRecentChannels = (guildId: string, channelIds: string[]) => unknown
@@ -123,64 +122,84 @@ export function watchForClear(cleanup: Cleanup): void {
 	cleanup(() => {
 		found = undefined
 		lately.clear()
+		dismissedAt.clear()
 	})
 }
 
 /**
- * What Discord's own function does, put together from its parts, for when the function itself cannot be found:
- * `bulkClearRecents` (saves the dismissal and sends the event), and `bulkAck` (marks the channels read). Whichever part is
- * missing is skipped, and the event is sent by hand when `bulkClearRecents` is not there.
+ * What Discord's own function does, done here when the function cannot be found, using only the event stream and the stores
+ * (both always there):
+ * - `BULK_CLEAR_RECENTS` tells the stores that hold the new channels and the section to forget them,
+ * - `BULK_ACK` marks the channels read here (without `context`, so Discord does not send the read to its servers),
+ * - the dismissal time (see `installDismissal`) takes the rest out: the channels that were visited lately.
  */
-function clearByParts(guildId: string, channelIds: string[]): void {
-	const bulkClear = diag.guard('look for bulkClearRecents', () => {
-		const byName =
-			lookByName<(g: string, ids: string[]) => unknown>('bulkClearRecents')
-		return (
-			byName ??
-			lookByPath<(g: string, ids: string[]) => unknown>(
-				PATH_RECENTS,
-				'bulkClearRecents',
-			)
-		)
+function clearByEvents(guildId: string, channelIds: string[]): void {
+	Dispatcher.dispatch({
+		type: 'BULK_CLEAR_RECENTS',
+		guildId,
+		channelIds,
 	})
-	if (bulkClear) {
-		bulkClear(guildId, channelIds)
-		state.clearedByParts++
-	} else {
-		Dispatcher.dispatch({
-			type: 'BULK_CLEAR_RECENTS',
-			guildId,
-			channelIds,
-		})
-		state.clearedByEvent++
-	}
-	const bulkAck = diag.guard('look for bulkAck', () =>
-		lookByName<(reads: unknown[]) => unknown>('bulkAck'),
-	)
-	if (!bulkAck) return
+	state.clearedByEvent++
 	const readState = (
 		Stores as unknown as {
 			ReadStateStore?: { lastMessageId?: (channelId: string) => string }
 		}
 	).ReadStateStore
-	diag.guard('mark the channels read', () =>
-		bulkAck(
-			channelIds.map(channelId => ({
+	diag.guard('mark the channels read', () => {
+		Dispatcher.dispatch({
+			type: 'BULK_ACK',
+			channels: channelIds.map(channelId => ({
 				channelId,
 				// 0 is Discord's `ReadStateTypes.CHANNEL`.
 				readStateType: 0,
 				messageId: readState?.lastMessageId?.(channelId),
 			})),
+		})
+	})
+	state.acked += channelIds.length
+}
+
+/** When each server's suggestions were last dismissed here (milliseconds), by server id. */
+const dismissedAt = new Map<string, number>()
+
+/**
+ * Makes Discord count the suggestions as dismissed. Whether a channel is in the Suggested section is decided by Discord's
+ * `UserSettingsProtoStore.getGuildRecentsDismissedAt(guildId)`: a channel that was only visited lately, or is new, is left out
+ * once it is older than that time. Discord's own Clear saves a new time in your server settings; this plugin keeps its own for
+ * the server and returns the later of the two, so the section stays empty without changing your saved settings.
+ */
+export function installDismissal(cleanup: Cleanup): void {
+	const store = (
+		Stores as unknown as {
+			UserSettingsProtoStore?: {
+				getGuildRecentsDismissedAt?: (guildId: string) => number
+			}
+		}
+	).UserSettingsProtoStore
+	if (typeof store?.getGuildRecentsDismissedAt !== 'function') {
+		diag.log('patch', 'UserSettingsProtoStore was not found', 'warn')
+		return
+	}
+	const unpatch = diag.apply('getGuildRecentsDismissedAt', () =>
+		valenced.patcher.instead(
+			store as never,
+			'getGuildRecentsDismissedAt' as never,
+			((args: [string], original: (guildId: string) => number) => {
+				const real = original(args[0])
+				const mine = dismissedAt.get(args[0])
+				return mine !== undefined && mine > real ? mine : real
+			}) as never,
 		),
 	)
-	state.acked += channelIds.length
+	state.dismissal = !!unpatch
+	if (unpatch) cleanup(unpatch)
 }
 
 /**
  * Clears the suggestions of a server, the way Discord's own "Clear" option does.
  *
- * Discord's own `clearRecentChannels` is used when it is found. If not, its parts are called one by one (see `clearByParts`),
- * and the event alone is the last resort. It runs a moment later, not in the middle of drawing, so the stores are not changed
+ * Discord's own `clearRecentChannels` is used when it is found. If not, the events and the dismissal time do the same (see
+ * `clearByEvents` and `installDismissal`). It runs a moment later, not in the middle of drawing, so the stores are not changed
  * while a component is being drawn.
  */
 export function clearSuggestions(guildId: string, channelIds: string[]): void {
@@ -189,6 +208,7 @@ export function clearSuggestions(guildId: string, channelIds: string[]): void {
 	const last = lately.get(key)
 	if (last !== undefined && now - last < AGAIN_MS) return
 	lately.set(key, now)
+	dismissedAt.set(guildId, now)
 	if (lately.size > 50) lately.delete(lately.keys().next().value as string)
 
 	setTimeout(() => {
@@ -200,7 +220,7 @@ export function clearSuggestions(guildId: string, channelIds: string[]): void {
 				state.clearedByDiscord++
 				return
 			}
-			clearByParts(guildId, channelIds)
+			clearByEvents(guildId, channelIds)
 		})
 	}, 0)
 }
@@ -231,12 +251,12 @@ export function probe(): Record<string, string> {
 				lookByPath(PATH_CLEAR, 'clearRecentChannels'),
 			),
 		),
-		bulkClearRecents: yes(
-			diag.guard('probe bulkClearRecents', () =>
-				lookByName('bulkClearRecents'),
-			),
-		),
-		bulkAck: yes(diag.guard('probe bulkAck', () => lookByName('bulkAck'))),
+		UserSettingsProtoStore: (
+			Stores as unknown as { UserSettingsProtoStore?: unknown }
+		).UserSettingsProtoStore
+			? 'found'
+			: 'not found',
+		'dismissal patch': state.dismissal ? 'installed' : 'not installed',
 		'Valenced path lookup': pathFinders()?.lookupModuleWithImportedPath
 			? 'available'
 			: 'not available',
