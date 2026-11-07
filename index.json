@@ -3428,7 +3428,7 @@
       "description": "Hide the server icons inside collapsed folders, and collapse folders automatically as you open different ones.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.0.1"
+        "latest": "1.0.2"
       },
       "versions": {
         "1.0.0": {
@@ -3448,6 +3448,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.better-folders@1.0.1.zip",
           "sha256": "5816f33687f56e3e982912af4c8aa60731279c4d37a5efc9acb74d699c51c85d",
           "size": 7763,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.0.2": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.better-folders@1.0.2.zip",
+          "sha256": "75e96e4eff65e1bdcb95eb205214cc3fa5174f76cc76caa6ac0a768723f79384",
+          "size": 8281,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
