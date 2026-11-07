@@ -64,7 +64,7 @@ Updates arrive through the same link.
 | [Rich Presence](plugins/rich-presence) | 2.1.0 | up to 3 presences at once, many timers and schedules, SoundCloud built in |
 | [Role Options](plugins/role-options) | 1.0.2 | copy a role's name, color or icon from the role menu |
 | [Server Drawer](plugins/server-drawer) | 1.1.8 | manage your servers from a drawer above the YouBar |
-| [Server Info](plugins/server-info) | 1.0.6 | members, roles, channels, boosts, owner and friends for any server |
+| [Server Info](plugins/server-info) | 1.1.0 | members, roles, channels, boosts, owner and friends for any server |
 | [Slowmode Extended](plugins/slowmode-extended) | 1.0.1 | more slowmode choices, from every second up to 6 hours |
 | [Split Large Messages](plugins/split-large-messages) | 1.0.2 | automatically splits messages over the character limit |
 | [Spotify Tools](plugins/spotify-tools) | 2.3.3 | Listen Along button, plus send your song or album from the + menu |
