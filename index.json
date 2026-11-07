@@ -3246,6 +3246,29 @@
       "contributors": [
         "aliernfrog <459370047652102154> (https://github.com/aliernfrog \"Original author\") (https://github.com/aliernfrog/vd-plugins \"Source\")"
       ]
+    },
+    "marklong.hide-slash-apps": {
+      "name": "Hide Slash Apps",
+      "description": "Long press an app's picture in the / menu to hide it everywhere or only in one server. For bots like MEE6 that sit in lots of servers and cannot be removed.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.hide-slash-apps@1.0.0.zip",
+          "sha256": "fd8767c5dc17c94f88f70fad67097595e192d0b110b09989a76e4b75e4e22cc6",
+          "size": 10025,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
     }
   }
 }

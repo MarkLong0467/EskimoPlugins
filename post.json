@@ -117,6 +117,13 @@
       "suffix": ""
     },
     {
+      "id": "marklong.hide-slash-apps",
+      "name": "Hide Slash Apps",
+      "version": "1.0.0",
+      "short": "long press an app in the / menu to hide it everywhere or in one server (for bots like MEE6)",
+      "suffix": ""
+    },
+    {
       "id": "marklong.hypesquad",
       "name": "HypeSquad Switcher",
       "version": "1.1.2",
