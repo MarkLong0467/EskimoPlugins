@@ -15,6 +15,7 @@
 		"marklong.always-animate": "animates profile pictures, banners, server icons, decorations, emoji, stickers and GIFs",
 		"marklong.alwaystrust": "removes the untrusted link confirmation",
 		"marklong.better-command-popout": "copy a slash command's mention or ID from its popout",
+		"marklong.better-folders": "hide the server icons in collapsed folders and auto-collapse folders as you open different ones (port of fres's BetterFolders)",
 		"marklong.better-devices": "multi-select logout, new-device alerts and clearer device details",
 		"marklong.better-calls": "silent calls with a bell button in DMs, and remembers your audio output device",
 		"marklong.bypass-status": "get notifications from chosen people (or everyone) while on Do Not Disturb",
