@@ -17,7 +17,7 @@
 import { getModules } from '@valenced/modules/finders'
 import { withProps } from '@valenced/modules/finders/filters'
 import { installJsxFinder } from '../../../shared/palmdevs/jsxFind'
-import { clearSuggestions, watchForClear } from './clear'
+import { clearSuggestions, noteStillShown, watchForClear } from './clear'
 import { diag } from './diag'
 import Settings from './Settings'
 import { resetState, state } from './state'
@@ -60,6 +60,7 @@ function suggested(
 			original(props)
 			return null
 		}
+		if (noteStillShown(props.guildId, props.channelIds)) state.stuck++
 		state.cleared++
 		state.channelsCleared += props.channelIds.length
 		clearSuggestions(props.guildId, props.channelIds)

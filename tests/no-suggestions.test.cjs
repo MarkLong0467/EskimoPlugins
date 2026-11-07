@@ -141,7 +141,7 @@ const events = s => s.runtime.log.dispatched.filter(a => a.type === 'BULK_CLEAR_
 		const f = fakeSection()
 		const s = await startPort('no-suggestions', { version: [1, 1, 0] })
 		let view = await s.mountSettings()
-		check('before the section is drawn the screen says it is waiting', textOf(view.tree).includes('Not patched yet') && textOf(view.tree).includes('Waiting for a server to open'))
+		check('before the section is drawn the screen says it is waiting', textOf(view.tree).includes('Waiting for a server') && textOf(view.tree).includes('Open any server'))
 		view.unmount()
 
 		render(drawElement(s, f.SuggestedCategory, { guildId: 'g1', channelIds: ['c1', 'c2'] }))
@@ -149,21 +149,21 @@ const events = s => s.runtime.log.dispatched.filter(a => a.type === 'BULK_CLEAR_
 		await sleep(10)
 		view = await s.mountSettings()
 		const text = textOf(view.tree)
-		check('afterwards it says it is working', text.includes('Working') && text.includes('being kept away'), text.slice(0, 400))
+		check('afterwards it says it is working', text.includes('Working') && text.includes('is hidden and its channels are cleared'), text.slice(0, 400))
 		check('and shows how often suggestions were cleared', /1 time\(s\) since Discord started, 2 channel\(s\) in all/.test(text), text)
 		check('it has the debugging section and no credits', text.includes('DEBUGGING') && !!button(view, 'Copy logs') && !!button(view, 'Run self-check') && !hasCredits(text), text.slice(-300))
 
 		button(view, 'Run self-check').props.onPress()
 		await view.settle()
 		const checks = textOf(view.tree)
-		check('the self-check says it is watching, found the section and can clear', checks.includes('The plugin is watching Discord’s components') && checks.includes('The suggested channels section was found') && checks.includes('Suggestions can be cleared'), checks.slice(-600))
+		check('the self-check says it is watching, found the section and can clear', checks.includes('The plugin is watching Discord’s components') && checks.includes('The suggested channels section was found') && checks.includes('Discord’s own clear function can be used') && checks.includes('Suggestions stay cleared'), checks.slice(-600))
 
 		button(view, 'Copy logs').props.onPress()
 		await sleep(5)
 		const report = s.copied.at(-1) || ''
 		check('Copy logs names the plugin and credits PalmDevs and the porter', report.includes('marklong.no-suggestions 1.1.0') && report.includes('Original plugin by PalmDevs') && report.includes('Ported to Valenced by MarkLong0467'), report.split('\n').slice(0, 4))
 		check('the report does not credit kmmiio99o', !report.includes('kmmiio99o'))
-		check('the report has the counts and how it was cleared', /Watching the JSX runtime: yes/.test(report) && /Section replaced: 2 time\(s\)/.test(report) && /Cleared: 1 time\(s\), 2 channel\(s\) \(by Discord's function 0, by the event 1\)/.test(report), report.split('\n').slice(6, 18))
+		check('the report has the counts and how it was cleared', /Watching the JSX runtime: yes/.test(report) && /Section replaced: 2 time\(s\)/.test(report) && /Cleared: 1 time\(s\), 2 channel\(s\) \(by Discord's function 0, by its parts 0, by the event alone 1\), 0 marked read/.test(report) && /Looked up just now: bulkAck: not found/.test(report) && /Drawn again with channels after a clear: 0 time/.test(report), report.split('\n').slice(6, 18))
 		view.unmount()
 		s.stop()
 	}
@@ -177,6 +177,24 @@ const events = s => s.runtime.log.dispatched.filter(a => a.type === 'BULK_CLEAR_
 		const drawn = render(drawElement(s, f.SuggestedCategory, { guildId: 'g', channelIds: ['c1'] }))
 		await sleep(10)
 		check('a clear function that throws still draws nothing and reports no error', drawn === null && s.errors.length === 0)
+		s.stop()
+	}
+
+	// --- Without Discord's own function, its parts are used
+	{
+		const f = fakeSection()
+		const calls = { clear: [], ack: [] }
+		const s = await startPort('no-suggestions', {
+			before: runtime => {
+				runtime.valenced.modules.finders.loadModule({ bulkClearRecents: (g, ids) => calls.clear.push([g, ids]) })
+				runtime.valenced.modules.finders.loadModule({ bulkAck: reads => calls.ack.push(reads) })
+			},
+		})
+		render(drawElement(s, f.SuggestedCategory, { guildId: 'parts', channelIds: ['p1', 'p2'] }))
+		await sleep(30)
+		check('the dismissal is saved through bulkClearRecents', calls.clear.length === 1 && calls.clear[0][0] === 'parts' && calls.clear[0][1].join() === 'p1,p2', calls.clear)
+		check('and the channels are marked read, as Discord’s Clear does', calls.ack.length === 1 && calls.ack[0].length === 2 && calls.ack[0][0].channelId === 'p1' && calls.ack[0][0].readStateType === 0, calls.ack)
+		check('without a second event of its own', events(s).filter(e => e.guildId === 'parts').length === 0)
 		s.stop()
 	}
 

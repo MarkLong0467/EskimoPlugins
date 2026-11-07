@@ -19,7 +19,7 @@ Discord draws the section with `SuggestedCategory({ guildId, channelIds, withMar
 - with no suggestions, it draws nothing,
 - with some, it clears them and still draws nothing (on some Discord versions the section shows channels from Discord's own stores whatever list it is given).
 
-Clearing sends the same `BULK_CLEAR_RECENTS` event Discord's own "clear" option sends (the stores then drop the channels from the list), a moment after the draw rather than in the middle of it. Discord's own `clearRecentChannels`, which also saves that you dismissed them, is used too once Discord has loaded it.
+Clearing does what Discord's own "Clear" option on the Suggested header does (from Discord's source, `OptInChannelsUtils.clearRecentChannels`): it saves that you dismissed the section (`guildRecentsDismissedAt` in your server settings), sends `BULK_CLEAR_RECENTS`, and marks the channels read (`bulkAck`). The rows of the section are channels that are new, unread, mention you or were visited lately, so sending the event alone leaves most of them on the screen. The plugin looks for Discord's function by name and by the path of its file. If it cannot be found it calls `bulkClearRecents` and `bulkAck` itself, and only then falls back to the event alone. The clear runs a moment after the draw, not in the middle of it.
 
 ## Differences from the original
 
