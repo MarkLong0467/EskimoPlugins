@@ -11,13 +11,19 @@ import { Pressable, View } from 'react-native'
 import { asset } from './discord'
 import type { ReactNode } from 'react'
 
+/** The raised surface and a stronger one, as see-through grey, so they look right on a dark or a light theme. */
+export const SURFACE = 'rgba(128,128,128,0.17)'
+export const SURFACE_HIGHEST = 'rgba(128,128,128,0.3)'
+
 /** A colour from Discord's tokens, or the fallback when the token is missing. */
 export function color(name: string, fallback: string): string {
 	try {
 		const colors = (
 			Tokens as unknown as { default?: { colors?: Record<string, string> } }
 		).default?.colors
-		return colors?.[name] ?? fallback
+		const value = colors?.[name]
+		// A theme colour that is not plain text may not be accepted as a style value, so the fallback is used.
+		return typeof value === 'string' ? value : fallback
 	} catch {
 		return fallback
 	}
@@ -60,7 +66,7 @@ export function Card({
 	return (
 		<View
 			style={{
-				backgroundColor: color('BACKGROUND_SURFACE_HIGH', '#2b2d31'),
+				backgroundColor: color('BACKGROUND_SURFACE_HIGH', SURFACE),
 				borderRadius: 18,
 				overflow: 'hidden',
 				...style,
@@ -137,7 +143,7 @@ export function Pill({ text, icon }: { text: string; icon?: ReactNode }) {
 				paddingVertical: 6,
 				paddingHorizontal: 12,
 				borderRadius: 999,
-				backgroundColor: color('BACKGROUND_SURFACE_HIGH', '#2b2d31'),
+				backgroundColor: color('BACKGROUND_SURFACE_HIGH', SURFACE),
 			}}
 		>
 			{icon}
@@ -166,7 +172,7 @@ export function ProgressBar({ fraction }: { fraction: number }) {
 				height: 10,
 				borderRadius: 5,
 				overflow: 'hidden',
-				backgroundColor: color('BACKGROUND_SURFACE_HIGHEST', '#3a3c42'),
+				backgroundColor: color('BACKGROUND_SURFACE_HIGHEST', SURFACE_HIGHEST),
 			}}
 		>
 			<View

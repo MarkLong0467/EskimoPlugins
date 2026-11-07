@@ -73,6 +73,8 @@ async function setup({ guild, counts = { members: 1234567, online: 4321 }, roles
 
 /** The element with this accessibility label: the sheet puts one on each thing the person sees as a unit. */
 const labelled = (view, label) => findNode(view.tree, n => n.props?.accessibilityLabel === label)
+/** Presses the X in the top bar. It is given to Discord's title bar as its `trailing` part. */
+const pressClose = view => findNode(view.tree, n => n.type === 'Design.BottomSheetTitleHeader').props.trailing.props.onPress()
 /** The element a person can tap, by label. */
 const tappable = (view, label) => findNode(view.tree, n => n.type === 'Pressable' && n.props.accessibilityLabel === label)
 /** All the words inside an element. */
@@ -120,9 +122,13 @@ const dateOf = id => new Date(Number(BigInt(id) >> 22n) + 1420070400000).toLocal
 		s.menu.default(GUILD)[1].action()
 		const view = await s.mountSheet(SHEET_KEY)
 		const scroller = findNode(view.tree, n => n.type === 'Gorhom.ScrollView')
-		check('the sheet scrolls with the own scroll view of the sheet, so it can be scrolled and pulled open', !!scroller && scroller.props.nestedScrollEnabled === true && scroller.props.maxHeight === undefined && scroller.props.style.maxHeight === 600, scroller && scroller.props)
-		check('the top bar has the title Server info', !!findNode(view.tree, n => n.type === 'Design.Text' && n.props.children === 'Server info'))
-		check('and the title is outside the scrolling part, so it stays', !findNode(scroller, n => n.type === 'Design.Text' && n.props.children === 'Server info'))
+		check('the sheet scrolls with the own scroll view of the sheet, so it can be scrolled and pulled open', !!scroller && scroller.props.nestedScrollEnabled === true && scroller.props.maxHeight === undefined, scroller && scroller.props)
+		const sheet = findNode(view.tree, n => n.type === 'Design.ActionSheet')
+		check('the sheet opens expanded and scrollable, so its own scroll view gets the drag', sheet?.props.scrollable === true && sheet?.props.startExpanded === true && sheet?.props.contentStyles?.paddingHorizontal === 0, sheet?.props)
+		const header = findNode(view.tree, n => n.type === 'Design.BottomSheetTitleHeader')
+		check('the top bar has the title Server info', header?.props.title === 'Server info')
+		check('and the title is outside the scrolling part, so it stays', !findNode(scroller, n => n.type === 'Design.BottomSheetTitleHeader'))
+		check('the list fills the room under the title instead of being capped', scroller.props.style.flex === 1 && scroller.props.style.maxHeight === undefined, scroller.props.style)
 		check('the sheet has the server name', !!findNode(view.tree, n => n.type === 'Design.Text' && n.props.children === 'Test Server'))
 		check('the sheet has the description', !!findNode(view.tree, n => n.type === 'Design.Text' && n.props.children === 'About us'))
 		check('the banner is shown, animated hashes as gifs', !!findNode(view.tree, n => n.type === 'Image' && n.props.source?.uri === `https://cdn.discordapp.com/banners/${GUILD}/a_banner1.gif?size=512`))
@@ -156,7 +162,7 @@ const dateOf = id => new Date(Number(BigInt(id) >> 22n) + 1420070400000).toLocal
 		check('tapping the vanity link copies it with https', s.copied.includes('https://discord.gg/test'), s.copied)
 
 		check('there is no Close button at the bottom any more', !findNode(view.tree, n => n.type === 'Design.Button'))
-		tappable(view, 'Close').props.onPress()
+		pressClose(view)
 		check('the X in the top bar hides the sheet', s.sheetCalls().some(a => a.name === 'hideActionSheet' && a.args[0] === SHEET_KEY))
 	}
 	{
@@ -375,7 +381,7 @@ const dateOf = id => new Date(Number(BigInt(id) >> 22n) + 1420070400000).toLocal
 		check('tapping it opens the friends sheet', s.opened(FRIENDS_KEY).length === 1)
 
 		const list = await s.mountSheet(FRIENDS_KEY)
-		check('the friends sheet has a title', !!findNode(list.tree, n => n.type === 'Design.Text' && n.props.children === 'Friends'))
+		check('the friends sheet has a title', findNode(list.tree, n => n.type === 'Design.BottomSheetTitleHeader')?.props.title === 'Friends')
 		check('and says how many friends there are', !!findNode(list.tree, n => n.type === 'Design.Text' && n.props.children === '2 friends in this server'))
 		const rows = findNodes(list.tree, n => n.type === 'Pressable' && /^Friend: /.test(n.props.accessibilityLabel ?? ''))
 		check('each friend is a row', rows.length === 2, rows.map(r => r.props.accessibilityLabel))
@@ -384,7 +390,7 @@ const dateOf = id => new Date(Number(BigInt(id) >> 22n) + 1420070400000).toLocal
 		check('animated avatars are gifs', !!findNode(rows[1], n => n.type === 'Image' && n.props.source.uri === 'https://cdn.discordapp.com/avatars/f2/a_av.gif?size=64'))
 		rows[0].props.onPress()
 		check('tapping a friend opens their profile', opens.length === 1 && opens[0].userId === 'f1' && opens[0].guildId === GUILD, opens)
-		tappable(list, 'Close').props.onPress()
+		pressClose(list)
 		check('the X hides the friends sheet', s.sheetCalls().some(a => a.name === 'hideActionSheet' && a.args[0] === FRIENDS_KEY))
 	}
 	{

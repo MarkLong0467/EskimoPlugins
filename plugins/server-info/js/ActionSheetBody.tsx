@@ -1,7 +1,7 @@
 import { Design } from '@valenced/discord/design'
 import { BottomSheet } from '@valenced/externals/gorhom'
 import { Component, createElement } from 'react'
-import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native'
+import { Pressable, ScrollView } from 'react-native'
 import { findByProps } from './discord'
 import { Glyph } from './parts'
 import type { ComponentType, ReactNode } from 'react'
@@ -89,9 +89,19 @@ function scrollView(props: ScrollProps, children: ReactNode): ReactNode {
 const CLOSE_LABEL = 'Close'
 
 /**
+ * The sheet opens expanded, in its scrollable mode (the setup Discord's own tall sheets use). Then the list inside it is the
+ * only thing that scrolls: the sheet no longer takes the drag from it, which is what made a long sheet show a scroll bar and
+ * not move. The sheet adds no padding of its own, so the cards can run the whole width.
+ */
+const SHEET_PROPS = {
+	scrollable: true,
+	startExpanded: true,
+	contentStyles: { paddingHorizontal: 0, paddingBottom: 0 },
+} as unknown as Record<string, never>
+
+/**
  * The frame of both sheets: Discord's action sheet with a title and a close button on top, and a scrolling stack under them.
- * The scrolling part is at most three quarters of the screen tall, and it can be scrolled with the sheet's own scrolling,
- * so a long sheet can be read to the end and pulled fully open.
+ * The scrolling part fills the room under the title, with the sheet's own scroll view, so a long sheet can be read to the end.
  *
  * @param title The title in the middle of the top bar.
  * @param onClose What the X at the end of the top bar does.
@@ -105,38 +115,30 @@ export default function ActionSheetBody({
 	onClose: () => void
 	children?: ReactNode
 }) {
-	const { height } = useWindowDimensions()
 	return (
-		<Design.ActionSheet>
-			<View
-				style={{
-					flexDirection: 'row',
-					alignItems: 'center',
-					justifyContent: 'center',
-					paddingTop: 8,
-					paddingBottom: 12,
-					minHeight: 52,
-				}}
-			>
-				<Design.Text variant="heading-lg/bold">{title}</Design.Text>
-				<Pressable
-					accessibilityRole="button"
-					accessibilityLabel={CLOSE_LABEL}
-					hitSlop={12}
-					onPress={onClose}
-					style={{ position: 'absolute', right: 16, top: 10, padding: 6 }}
-				>
-					<Glyph names={['XSmallIcon', 'CloseIcon', 'XIcon']} fallback="✕" />
-				</Pressable>
-			</View>
+		<Design.ActionSheet {...SHEET_PROPS}>
+			<Design.BottomSheetTitleHeader
+				title={title}
+				trailing={
+					<Pressable
+						accessibilityRole="button"
+						accessibilityLabel={CLOSE_LABEL}
+						hitSlop={12}
+						onPress={onClose}
+						style={{ padding: 6 }}
+					>
+						<Glyph names={['XSmallIcon', 'CloseIcon', 'XIcon']} fallback="✕" />
+					</Pressable>
+				}
+			/>
 			{scrollView(
 				{
-					style: { maxHeight: Math.round(height * 0.75) },
+					style: { flex: 1 },
 					keyboardShouldPersistTaps: 'handled',
 					nestedScrollEnabled: true,
 					showsVerticalScrollIndicator: true,
 				},
-				<Design.Stack spacing={16} style={{ padding: 16 }}>
+				<Design.Stack spacing={16} style={{ padding: 16, paddingBottom: 32 }}>
 					{children}
 				</Design.Stack>,
 			)}

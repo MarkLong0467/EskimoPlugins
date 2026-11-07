@@ -38,6 +38,8 @@ import {
 	Pill,
 	ProgressBar,
 	SectionTitle,
+	SURFACE,
+	SURFACE_HIGHEST,
 	Tile,
 } from './parts'
 import { ownerCache } from './state'
@@ -168,7 +170,7 @@ function Avatar({
 					width: size,
 					height: size,
 					borderRadius: size / 2,
-					backgroundColor: color('BACKGROUND_SURFACE_HIGHEST', '#3a3c42'),
+					backgroundColor: color('BACKGROUND_SURFACE_HIGHEST', SURFACE_HIGHEST),
 				}}
 			/>
 			{status ? (
@@ -183,7 +185,7 @@ function Avatar({
 						borderRadius: size * 0.17,
 						backgroundColor: STATUS_COLOURS[status] ?? STATUS_COLOURS.offline,
 						borderWidth: 3,
-						borderColor: color('BACKGROUND_SURFACE_HIGH', '#2b2d31'),
+						borderColor: color('BACKGROUND_SURFACE_HIGH', SURFACE),
 					}}
 				/>
 			) : null}
@@ -409,7 +411,7 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 		guild.premiumSubscriberCount || 0,
 	)
 	const level = guild.verificationLevel ?? 0
-	const surface = color('BACKGROUND_SURFACE_HIGH', '#2b2d31')
+	const surface = color('BACKGROUND_SURFACE_HIGH', SURFACE)
 
 	const memberLine =
 		rawMembers == null
