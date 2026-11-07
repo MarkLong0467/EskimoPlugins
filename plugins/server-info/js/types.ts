@@ -15,6 +15,17 @@ export interface Guild {
 	features?: Set<string> | string[]
 	verificationLevel?: number
 	preferredLocale?: string
+	explicitContentFilter?: number
+	defaultMessageNotifications?: number
+	mfaLevel?: number
+	nsfwLevel?: number
+	afkChannelId?: string | null
+	afkTimeout?: number
+	systemChannelId?: string | null
+	rulesChannelId?: string | null
+	maxMembers?: number
+	splash?: string | null
+	discoverySplash?: string | null
 }
 
 /** A user, as Discord's user store keeps it. */
@@ -119,4 +130,9 @@ export interface StickersStore {
 /** The store of who is online. */
 export interface PresenceStore extends ChangeStore {
 	getStatus?(userId: string): string | undefined
+}
+
+/** The store of channels, as far as the plugin reads it: a channel by id. */
+export interface ChannelById {
+	getChannel?(channelId: string): { name?: string } | undefined
 }

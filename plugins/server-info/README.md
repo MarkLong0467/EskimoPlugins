@@ -16,6 +16,12 @@ A sheet with a **Server info** title and an X to close it, then:
 - **Owner**: their picture with an online dot, name and @name. Tap to open their profile.
 - **Details**: the day the server was made and how long ago, the day you joined and how long ago, its verification level
   and language, its vanity link (tap to copy) and its server ID (tap to copy).
+- **Channels**: categories, announcement, forum and stage channels, and the rules, system messages and inactive voice
+  channels by name.
+- **Safety and settings**: the explicit media filter, default notifications, whether moderators need 2FA, the age rating
+  and the member limit.
+- **Features**: what the server has turned on (animated icon, banner, announcement channels, welcome screen and more).
+- **Links**: tap to copy the link to the server's icon, banner or invite background.
 
 ## How it works
 
@@ -29,6 +35,7 @@ The code is in `js/`:
 | `FriendsSheet.tsx` | The list of friends. |
 | `friends.ts` | Finds your friends in a server. |
 | `format.ts` | Dates, "how long ago", boost levels, language names, numbers and picture links. |
+| `MoreSections.tsx`, `channels.ts` | The channels, settings, features and links under the details, and the channel counting. |
 | `parts.tsx` | The building blocks: cards, tiles, badges, the boost bar, rows and icons. |
 | `discord.ts`, `state.ts`, `constants.ts`, `types.ts`, `ActionSheetBody.tsx`, `Chevron.tsx` | Helpers. |
 

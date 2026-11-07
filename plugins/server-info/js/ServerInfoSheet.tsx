@@ -1,19 +1,19 @@
 import { Dispatcher } from '@valenced/discord/common/flux'
 import { Design } from '@valenced/discord/design'
-import { Clipboard } from '@valenced/externals/react-native-clipboard'
 import { useEffect, useState } from 'react'
 import { Image, Pressable, View } from 'react-native'
 import ActionSheetBody from './ActionSheetBody'
 import { chevron } from './Chevron'
+import { countChannels } from './channels'
 import { DISCORD_EPOCH, FRIENDS_KEY, SHEET_KEY } from './constants'
 import {
 	apiGet,
+	copy,
 	fetchUser,
 	findByProps,
 	openProfile,
 	sheets,
 	store,
-	toast,
 } from './discord'
 import FriendsSheet from './FriendsSheet'
 import {
@@ -28,6 +28,7 @@ import {
 	VERIFICATION,
 } from './format'
 import { getGuildFriends } from './friends'
+import MoreSections from './MoreSections'
 import { fetchOnline } from './online'
 import {
 	Card,
@@ -89,32 +90,6 @@ const STATUS_COLOURS: Record<string, string> = {
 	invisible: '#80848e',
 }
 
-/** What the channel store says a server has: how many channels, and how many of those are text and voice, when it says. */
-interface ChannelCounts {
-	total: number
-	text?: number
-	voice?: number
-}
-
-/**
- * Counts the channels of a server. Discord's channel store sorts them into `SELECTABLE` (text) and `VOCAL` (voice) lists,
- * next to the categories. A store that has no such lists is counted by its entries.
- */
-function countChannels(
-	all: Record<string, unknown> | undefined,
-): ChannelCounts | null {
-	if (!all) return null
-	const text = Array.isArray(all.SELECTABLE) ? all.SELECTABLE.length : undefined
-	const voice = Array.isArray(all.VOCAL) ? all.VOCAL.length : undefined
-	if (text !== undefined || voice !== undefined)
-		return {
-			total: (text ?? 0) + (voice ?? 0),
-			text: text ?? 0,
-			voice: voice ?? 0,
-		}
-	return { total: Object.keys(all).length }
-}
-
 /** Whether a server has a feature. Discord keeps them in a Set, and a list is read too. */
 function hasFeature(
 	features: Set<string> | string[] | undefined,
@@ -140,16 +115,6 @@ function openFriends(friends: Friend[], guildId: string): void {
 		FRIENDS_KEY,
 		{},
 	)
-}
-
-/** Copies text and says so. */
-function copy(text: string, said: string): void {
-	try {
-		Clipboard.setString(text)
-		toast(said)
-	} catch {
-		// Nothing was copied, so nothing is announced.
-	}
 }
 
 /** A round picture, with a small dot for the status when there is one. */
@@ -724,6 +689,7 @@ export default function ServerInfoSheet({ guildId }: { guildId: string }) {
 					onPress={() => copy(String(guildId), 'Server ID copied')}
 				/>
 			</Card>
+			<MoreSections guild={guild} guildId={guildId} channels={channels} />
 		</ActionSheetBody>
 	)
 }

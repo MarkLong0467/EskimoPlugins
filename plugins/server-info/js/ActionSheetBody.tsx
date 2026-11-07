@@ -138,7 +138,7 @@ export default function ActionSheetBody({
 					nestedScrollEnabled: true,
 					showsVerticalScrollIndicator: true,
 				},
-				<Design.Stack spacing={16} style={{ padding: 16, paddingBottom: 32 }}>
+				<Design.Stack spacing={16} style={{ padding: 16, paddingBottom: 140 }}>
 					{children}
 				</Design.Stack>,
 			)}

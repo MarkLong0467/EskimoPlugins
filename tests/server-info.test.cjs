@@ -21,7 +21,7 @@ const FRIENDS_KEY = 'marklong-server-info-friends'
  * Returns the running plugin and helpers to open the menu item and the sheets it leads to.
  */
 async function setup({ guild, counts = { members: 1234567, online: 4321 }, roles = 7, channels = { text: 9, voice: 3 }, emojis = 5, stickers = 2, joined = new Date(Date.now() - 200 * 86400000), status = 'online', users = {}, friends = [], members = {}, rest = null, profileModule = null, extraStores = {}, gorhom = true, token = null } = {}) {
-	const g = guild === undefined ? { id: GUILD, name: 'Test Server', description: 'About us', icon: 'icon1', banner: 'a_banner1', ownerId: OWNER, vanityURLCode: 'test', premiumTier: 1, premiumSubscriberCount: 5, features: new Set(['COMMUNITY']), verificationLevel: 1, preferredLocale: 'en-US' } : guild
+	const g = guild === undefined ? { id: GUILD, name: 'Test Server', description: 'About us', icon: 'icon1', banner: 'a_banner1', ownerId: OWNER, vanityURLCode: 'test', premiumTier: 1, premiumSubscriberCount: 5, features: new Set(['COMMUNITY', 'ANIMATED_ICON', 'VANITY_URL', 'NEWS', 'THREE_DAY_THREAD_ARCHIVE', 'SOME_NEW_THING', 'VERIFIED']), verificationLevel: 1, preferredLocale: 'en-US', explicitContentFilter: 2, defaultMessageNotifications: 1, mfaLevel: 1, nsfwLevel: 3, maxMembers: 500000, rulesChannelId: 'rules', systemChannelId: 'sys', afkChannelId: 'afk', afkTimeout: 300, splash: 'sp1' } : guild
 	const copied = []
 	const requested = []
 	const listeners = []
@@ -30,7 +30,8 @@ async function setup({ guild, counts = { members: 1234567, online: 4321 }, roles
 			GuildStore: { getGuild: id => (id === GUILD ? g : undefined), addChangeListener: l => listeners.push(l), removeChangeListener: l => listeners.splice(listeners.indexOf(l), 1) },
 			UserStore: { getUser: id => users[id], addChangeListener() {}, removeChangeListener() {} },
 			GuildRoleStore: { getSortedRoles: () => new Array(roles).fill({}), addChangeListener() {}, removeChangeListener() {} },
-			GuildChannelStore: { getChannels: () => ({ id: GUILD, SELECTABLE: new Array(channels.text).fill({ channel: {} }), VOCAL: new Array(channels.voice).fill({ channel: {} }), 4: [{ channel: {} }], count: channels.text + channels.voice }), addChangeListener() {}, removeChangeListener() {} },
+			GuildChannelStore: { getChannels: () => ({ id: GUILD, SELECTABLE: [...new Array(Math.max(0, channels.text - 3)).fill({ channel: { type: 0 } }), { channel: { type: 5 } }, { channel: { type: 15 } }, { channel: { type: 16 } }].slice(0, channels.text), VOCAL: [...new Array(Math.max(0, channels.voice - 1)).fill({ channel: { type: 2 } }), { channel: { type: 13 } }].slice(0, channels.voice), 4: [{ channel: {} }, { channel: {} }], count: channels.text + channels.voice }), addChangeListener() {}, removeChangeListener() {} },
+			ChannelStore: { getChannel: id => ({ rules: { name: 'rules' }, sys: { name: 'welcome' }, afk: { name: 'sleepy' } })[id] },
 			EmojiStore: { getGuildEmoji: () => (emojis === null ? undefined : new Array(emojis).fill({})) },
 			StickersStore: { getStickersByGuildId: () => (stickers === null ? undefined : new Array(stickers).fill({})) },
 			PresenceStore: { getStatus: () => status, addChangeListener() {}, removeChangeListener() {} },
@@ -154,6 +155,17 @@ const dateOf = id => new Date(Number(BigInt(id) >> 22n) + 1420070400000).toLocal
 		check('the id is shown', allText(view).includes(GUILD))
 		check('with no friends the card says so', allText(view).includes('None of your friends are here') && !!labelled(view, 'Friends: none'))
 		check('the sections have their titles', ['Friends', 'Owner', 'Details'].every(t => !!findNode(view.tree, n => n.type === 'Design.Text' && n.props.children === t)))
+
+		// --- More about the server
+		check('the channels are listed by kind', /Categories/.test(allText(view)) && /Announcement channels/.test(allText(view)) && /Forum channels/.test(allText(view)) && /Stage channels/.test(allText(view)), allText(view))
+		check('the special channels are named', /#rules/.test(allText(view)) && /#welcome/.test(allText(view)) && /#sleepy · after 5 minutes/.test(allText(view)), allText(view))
+		check('the safety settings are shown', /Explicit media filter/.test(allText(view)) && /All members/.test(allText(view)) && /Only @mentions/.test(allText(view)) && /Moderators need 2FA/.test(allText(view)) && /Age-restricted/.test(allText(view)) && /500,000|500000/.test(allText(view)), allText(view))
+		check('the features are shown by name, without the badges and the ones for Discord only', ['Animated icon', 'Vanity URL', 'Some new thing'].every(f => !!labelled(view, f)) && findNodes(view.tree, n => n.props?.accessibilityLabel === 'Verified').length === 1 && !labelled(view, 'Three day thread archive') && !/Community \|[^|]*Features/.test(allText(view).split('Features')[1] ?? ''), allText(view))
+		check('there are links to the pictures that can be copied', ['Server icon', 'Banner', 'Invite background'].every(t => !!tappable(view, t)))
+		tappable(view, 'Invite background').props.onPress()
+		check('tapping a link copies the full size picture', s.copied.includes(`https://cdn.discordapp.com/splashes/${GUILD}/sp1.png?size=1024`), s.copied)
+		const stack = findNodes(view.tree, n => n.type === 'Design.Stack').at(-1)
+		check('there is room under the last row so it is not cut off by the screen', stack.props.style.paddingBottom >= 100, stack.props.style)
 
 		tappable(view, 'Server ID').props.onPress()
 		check('tapping the id copies it', s.copied.includes(GUILD), s.copied)

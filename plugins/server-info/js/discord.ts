@@ -4,6 +4,7 @@ import {
 	ToastActionCreators,
 } from '@valenced/discord/actions'
 import { Stores } from '@valenced/discord/flux'
+import { Clipboard } from '@valenced/externals/react-native-clipboard'
 import { lookupModule } from '@valenced/modules/finders'
 import { withProps } from '@valenced/modules/finders/filters'
 import { TOAST_KEY } from './constants'
@@ -38,6 +39,16 @@ export function toast(text: string): void {
 		ToastActionCreators.open(TOAST_KEY, { text })
 	} catch {
 		// Toasts are a convenience.
+	}
+}
+
+/** Copies text and says so with a toast. Nothing is announced when the copy fails. */
+export function copy(text: string, said: string): void {
+	try {
+		Clipboard.setString(text)
+		toast(said)
+	} catch {
+		// Nothing was copied, so nothing is announced.
 	}
 }
 

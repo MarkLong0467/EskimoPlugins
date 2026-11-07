@@ -33,7 +33,7 @@ export function avatarUrl(
 
 /** The link to a server's icon or banner (`kind` is `icons` or `banners`) at the given width in pixels. */
 export function assetUrl(
-	kind: 'icons' | 'banners',
+	kind: 'icons' | 'banners' | 'splashes',
 	id: string,
 	hash: string,
 	size: number,
@@ -144,4 +144,76 @@ export function boostCard(tier: number, boosts: number): BoostCard {
 		fraction: Math.min(1, Math.max(0, boosts / need)),
 		hint: `${more} more boost${more === 1 ? '' : 's'} for Level ${level + 1}`,
 	}
+}
+
+/** The names of the explicit media filter settings, from 0 up. */
+export const EXPLICIT_FILTER = ['Off', 'Members without roles', 'All members']
+
+/** The names of the default notification settings, from 0 up. */
+export const NOTIFICATIONS = ['All messages', 'Only @mentions']
+
+/** The names of the age ratings a server can have, from 0 up. */
+export const AGE_RATING = ['Default', 'Explicit', 'Safe', 'Age-restricted']
+
+/** How long a member can be quiet in a voice channel before they are moved, in words. */
+export function afkAfter(seconds: number): string {
+	if (seconds >= 3600) {
+		const hours = Math.round(seconds / 3600)
+		return `${hours} hour${hours === 1 ? '' : 's'}`
+	}
+	const minutes = Math.max(1, Math.round(seconds / 60))
+	return `${minutes} minute${minutes === 1 ? '' : 's'}`
+}
+
+/** The names Discord's server features are shown with. A feature that is not here gets a name made from its code. */
+const FEATURE_NAMES: Record<string, string> = {
+	ANIMATED_ICON: 'Animated icon',
+	ANIMATED_BANNER: 'Animated banner',
+	BANNER: 'Banner',
+	INVITE_SPLASH: 'Invite background',
+	VANITY_URL: 'Vanity URL',
+	DISCOVERABLE: 'Discoverable',
+	NEWS: 'Announcement channels',
+	WELCOME_SCREEN_ENABLED: 'Welcome screen',
+	MEMBER_VERIFICATION_GATE_ENABLED: 'Membership screening',
+	PREVIEW_ENABLED: 'Preview before joining',
+	ROLE_ICONS: 'Role icons',
+	PRIVATE_THREADS: 'Private threads',
+	TICKETED_EVENTS_ENABLED: 'Ticketed events',
+	MONETIZATION_ENABLED: 'Monetization',
+	MORE_STICKERS: 'More stickers',
+	MORE_EMOJI: 'More emoji',
+	MORE_SOUNDBOARD: 'More soundboard',
+	SOUNDBOARD: 'Soundboard',
+	INVITES_DISABLED: 'Invites paused',
+	AUTO_MODERATION: 'AutoMod',
+	THREADS_ENABLED: 'Threads',
+	COMMERCE: 'Commerce',
+	ENHANCED_ROLE_COLORS: 'Role gradients',
+	GUILD_TAGS: 'Server tags',
+	CREATOR_MONETIZABLE_PROVISIONAL: 'Creator monetization',
+	ROLE_SUBSCRIPTIONS_ENABLED: 'Role subscriptions',
+	TEXT_IN_VOICE_ENABLED: 'Text in voice',
+	VIDEO_QUALITY_101: 'Better video quality',
+}
+
+/** Features that say what the server is (shown as badges) or that are only for Discord's own use, so they are not listed. */
+const HIDDEN_FEATURES =
+	/^(COMMUNITY|VERIFIED|PARTNERED|.*ARCHIVE.*|.*EXPERIMENT.*|.*ONBOARDING.*|.*HUB.*|.*HOME.*|.*MODERATION_EXPERIENCE.*|.*ALLOWLIST.*|.*DIRECTORY.*|ENABLED_DISCOVERABLE_BEFORE|CHANNEL_ICON_EMOJIS_GENERATED|HAS_.*|.*_ENABLED_FOR_.*)$/
+
+/** A feature code written as words: `FOO_BAR` becomes `Foo bar`. */
+function words(code: string): string {
+	const text = code.toLowerCase().replace(/_/g, ' ')
+	return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/** The features of a server, by name and sorted, without the ones that are badges or for Discord's own use. */
+export function featureNames(features: Iterable<string> | undefined): string[] {
+	if (!features) return []
+	const names = new Set<string>()
+	for (const code of features) {
+		if (HIDDEN_FEATURES.test(code)) continue
+		names.add(FEATURE_NAMES[code] ?? words(code))
+	}
+	return [...names].sort((a, b) => a.localeCompare(b))
 }
