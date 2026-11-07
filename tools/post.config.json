@@ -25,6 +25,7 @@
 		"marklong.crop-plus": "crop pictures much smaller than Discord allows by cropping the result again",
 		"marklong.custom-sounds": "replace any Discord sound with your own link, with seasonal packs",
 		"marklong.custom-rpc-test": "a test of Rich Presence that shows several presences at once, each profile on its own switch",
+		"marklong.flame-text": "turns what you send into a burning, animated GIF of your text on fire, drawn on your phone, with a chat box button and /flame to switch it",
 		"marklong.force-timestamp-locale": "show every timestamp in one language, such as en-gb 24-hour times",
 		"marklong.haptics": "turn Discord's buzzing on or off, with a log of what buzzed",
 		"marklong.hide-slash-apps": "long press an app or command in the / menu to hide it everywhere or in one server, switch off built-in commands (for bots like MEE6)",

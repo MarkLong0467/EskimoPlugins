@@ -578,6 +578,16 @@ function createRuntime(options = {}) {
 					})
 					return () => undo.reverse().forEach(fn => fn())
 				},
+				// Valenced's `afterJSX(type, fn)`: `fn` gets the element made for `type` and returns the element to use.
+				afterJSX(type, fn) {
+					const runtime = globalThis.valenced.react.ReactJSXRuntime
+					const undo = ['jsx', 'jsxs'].map(name => {
+						const original = runtime[name]
+						runtime[name] = (t, p, k) => (t === type ? (fn(original(t, p, k)) ?? original(t, p, k)) : original(t, p, k))
+						return () => { runtime[name] = original }
+					})
+					return () => undo.reverse().forEach(fn => fn())
+				},
 			},
 			ReactJSXRuntime: {
 				Fragment: react.React.Fragment,
