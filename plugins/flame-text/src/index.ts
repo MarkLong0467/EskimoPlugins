@@ -24,6 +24,13 @@ export default plugin<{ jsonStorage: FlameSettings }>({
 		diag.attach(plugin)
 		cleanup(diag.listen())
 		store.attach(jsonStorage)
+		// Settings saved before the small, see-through defaults existed are moved to them, once.
+		if (!jsonStorage.cache?.defaultsSeen)
+			store.set({
+				defaultsSeen: true,
+				size: 'small',
+				background: 'transparent',
+			})
 		cleanup(() => store.clear())
 		cleanup(resetState)
 		installFinders(cleanup)

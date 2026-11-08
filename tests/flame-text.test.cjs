@@ -56,7 +56,7 @@ const start = async (saved = {}, extra = {}) => {
 	const files = extra.files ?? fakeFiles()
 	const uploads = extra.uploads ?? fakeUploads()
 	const s = await startPort('flame-text', {
-		saved,
+		saved: { defaultsSeen: true, size: 'medium', background: 'dark', ...saved },
 		reactExtras: true,
 		before: runtime => {
 			const load = runtime.valenced.modules.finders.loadModule
@@ -595,6 +595,30 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 		check('when nothing is found the report says so', /Message module \(sendMessage\): not found yet/.test(report) && /file code \(writeFile\): not found yet/.test(report))
 		s.stop()
 		check('the plugin reported no errors', s.errors.length === 0, s.errors)
+	}
+
+	{
+		// The newer defaults and the classic look
+		const fresh = await startPort('flame-text', { saved: {}, reactExtras: true })
+		fresh.stop()
+		const probe = await start({ on: true, defaultsSeen: false, size: 'large', background: 'dark', motion: 'off' })
+		await say(probe, 'Hi')
+		const moved = gifOf(probe)
+		check('settings saved before the new defaults are moved to small and see-through, once', moved.width < 200 && moved.transparent !== undefined && moved.transparent >= 0, [moved.width, moved.transparent])
+		probe.stop()
+		const wild = await start({ on: true, motion: 'off', background: 'transparent', size: 'small', look: 'wild' })
+		await say(wild, 'Look')
+		const wildGif = gifOf(wild)
+		wild.stop()
+		const classic = await start({ on: true, motion: 'off', background: 'transparent', size: 'small', look: 'classic' })
+		await say(classic, 'Look')
+		const classicGif = gifOf(classic)
+		check('the classic look is a different, shorter picture than the wild one', classicGif.height < wildGif.height && differ(classicGif.frames[0], wildGif.frames[0].slice(0, classicGif.frames[0].length)), [classicGif.height, wildGif.height])
+		check('the classic look is see-through around the letters', classicGif.frames[0].some(v => v === classicGif.transparent) && classicGif.frames[0].some(v => v !== classicGif.transparent))
+		const view = await classic.mountSettings()
+		const styleChip = findNodes(view.tree, n => n.props?.accessibilityLabel === 'Classic' || textOf(n) === 'Classic')
+		check('the settings offer the Classic style', styleChip.length > 0)
+		classic.stop()
 	}
 
 	done()

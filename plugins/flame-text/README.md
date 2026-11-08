@@ -24,7 +24,7 @@ If making or saving the GIF fails for any reason, your message is **sent as the 
 ## Settings
 
 - **Preview**: type some words and see the GIF drawn live, with a **Shuffle the flames** button.
-- **Look**: fire colour (Fire, Blue, Green, Purple), size, flame height, background (Dark, White, See-through), movement (Still, Light, Normal, Smooth) and a glow.
+- **Look**: style (Classic: solid red letters with a crown of fire; Wild: tall flames), fire colour (Fire, Blue, Green, Purple), size (Small by default), flame height, background (See-through by default, or Dark, White), movement (Still, Light, Normal, Smooth) and a glow.
 - **Sending**: also send the words as text under the GIF. There is no length limit: a long message is wrapped into a paragraph.
 - **Ways to switch it**: the chat button (and where it goes) and the `/flame` command.
 - **Copy logs and a self-check** at the bottom, made for finding out why it broke after a Discord update. The report has counts, yes/no answers and settings, and never your messages, chats or servers.

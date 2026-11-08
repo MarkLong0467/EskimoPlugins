@@ -35,6 +35,7 @@ const breathe = (): Promise<void> => new Promise(done => setTimeout(done, 0))
 export function looks(text: string, seed?: number): FireOptions {
 	return {
 		style: setting('style'),
+		look: setting('look'),
 		size: setting('size'),
 		height: setting('height'),
 		background: setting('background'),
@@ -114,7 +115,13 @@ export function whyNot(
 	if (text.includes('```') || /`[^`\n]+`/.test(text)) return 'code'
 	if (/<(?:@|#|:|a:|t:|\/)[^>\n]*>|@everyone|@here/.test(text)) return 'special'
 	if (drawable(text) === undefined) return 'unsupported'
-	if (!plan(text, { size: setting('size'), height: setting('height') }))
+	if (
+		!plan(text, {
+			size: setting('size'),
+			height: setting('height'),
+			look: setting('look'),
+		})
+	)
 		return 'toobig'
 	return undefined
 }

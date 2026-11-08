@@ -21,6 +21,7 @@ function reportedSettings(): Record<string, unknown> {
 		'button',
 		'buttonSpot',
 		'style',
+		'look',
 		'size',
 		'height',
 		'background',
@@ -40,6 +41,7 @@ function testGif(): { ok: boolean; detail: string } {
 		const text = 'Test'
 		const prepared = prepareFire(text, {
 			style: 'fire',
+			look: setting('look'),
 			size: 'small',
 			height: 'low',
 			background: 'dark',

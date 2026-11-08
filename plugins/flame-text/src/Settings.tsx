@@ -39,6 +39,10 @@ const STYLES: Array<Choice<FlameSettings['style']>> = [
 	{ value: 'green', label: 'Green' },
 	{ value: 'purple', label: 'Purple' },
 ]
+const LOOKS: Array<Choice<FlameSettings['look']>> = [
+	{ value: 'classic', label: 'Classic' },
+	{ value: 'wild', label: 'Wild' },
+]
 const SIZES: Array<Choice<FlameSettings['size']>> = [
 	{ value: 'small', label: 'Small' },
 	{ value: 'medium', label: 'Medium' },
@@ -158,6 +162,7 @@ function Preview({ text, seed }: { text: string; seed: number }) {
 	const turn = useRef(0)
 	const look = [
 		setting('style'),
+		setting('look'),
 		setting('size'),
 		setting('height'),
 		setting('background'),
@@ -313,6 +318,13 @@ export default function Settings({ api }: Props) {
 
 				<View style={{ marginHorizontal: 16, gap: 20 }}>
 					<Design.Text variant="text-lg/semibold">{LOOK_TITLE}</Design.Text>
+					<Chips
+						title="Style"
+						hint="Classic: solid red letters with a crown of fire on top. Wild: tall flames rising off the letters."
+						options={LOOKS}
+						value={setting('look')}
+						onPick={look => set({ look })}
+					/>
 					<Chips
 						title="Fire"
 						options={STYLES}

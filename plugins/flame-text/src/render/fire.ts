@@ -14,6 +14,8 @@
 import { dotsOf, drawable, LINE_GAP, LINE_ROWS, widthOf } from './font'
 
 export type FireStyle = 'fire' | 'blue' | 'green' | 'purple'
+/** `wild`: tall flames rising off burning letters. `classic`: solid red letters with a crown of fire on top of them. */
+export type FireLook = 'wild' | 'classic'
 export type FireSize = 'small' | 'medium' | 'large'
 export type FireHeight = 'low' | 'medium' | 'high'
 export type FireBackground = 'transparent' | 'dark' | 'white'
@@ -21,6 +23,7 @@ export type FireBackground = 'transparent' | 'dark' | 'white'
 /** How the picture looks. */
 export interface FireOptions {
 	style: FireStyle
+	look: FireLook
 	size: FireSize
 	height: FireHeight
 	background: FireBackground
@@ -108,6 +111,17 @@ const RAMPS: Record<FireStyle, readonly Stop[]> = {
 		[1, 250, 225, 255],
 	],
 }
+
+/** The fire colours for the classic look: letters at a pure red, the crown from orange to yellow. */
+const CLASSIC_FIRE: readonly Stop[] = [
+	[0, 60, 0, 0],
+	[0.1, 140, 0, 0],
+	[0.3, 238, 12, 6],
+	[0.45, 255, 50, 0],
+	[0.62, 255, 125, 0],
+	[0.8, 255, 190, 30],
+	[1, 255, 235, 110],
+]
 
 /** The colour for a heat from 0 to 1. */
 function ramp(stops: readonly Stop[], heat: number): [number, number, number] {
@@ -288,7 +302,7 @@ export interface Plan {
  */
 export function plan(
 	text: string,
-	options: Pick<FireOptions, 'size' | 'height'>,
+	options: Pick<FireOptions, 'size' | 'height' | 'look'>,
 ): Plan | undefined {
 	const clean = drawable(text)
 	if (clean === undefined || clean.trim() === '') return undefined
@@ -298,7 +312,12 @@ export function plan(
 		const lines = wrap(clean.trim(), columns)
 		const widest = Math.max(...lines.map(lineDots))
 		const rows = lines.length * LINE_ROWS + (lines.length - 1) * LINE_GAP
-		const flame = Math.round(7 * scale * FLAME_LENGTHS[options.height])
+		const flame = Math.round(
+			7 *
+				scale *
+				FLAME_LENGTHS[options.height] *
+				(options.look === 'classic' ? 0.35 : 1),
+		)
 		const padTop = Math.round(flame * 0.85) + scale
 		const padBottom = Math.round(scale * 2.5)
 		const width = Math.ceil(widest * scale) + padSide * 2
@@ -369,7 +388,9 @@ export function prepareFire(
 	for (let i = 0; i < size; i++)
 		edge[i] = Math.min(1, (1 - smooth(0.5, 0.9, inner[i] ?? 0)) * 1.1)
 
-	const stops = RAMPS[options.style]
+	const classic = options.look === 'classic'
+	const stops =
+		classic && options.style === 'fire' ? CLASSIC_FIRE : RAMPS[options.style]
 	const see = options.background === 'transparent'
 	const back: [number, number, number] =
 		options.background === 'dark'
@@ -396,6 +417,21 @@ export function prepareFire(
 				palette[at] = colour[0] * amount + back[0] * (1 - amount)
 				palette[at + 1] = colour[1] * amount + back[1] * (1 - amount)
 				palette[at + 2] = colour[2] * amount + back[2] * (1 - amount)
+			}
+		}
+	}
+
+	// The crown: how close to the top of a stroke each pixel of a letter is. The classic look burns there.
+	const crown = new Float32Array(classic ? size : 0)
+	if (classic) {
+		const reach = k * 1.05
+		for (let x = 0; x < width; x++) {
+			let run = 0
+			for (let y = 0; y < height; y++) {
+				const at = y * width + x
+				if ((mask[at] as number) < 0.5) run = 0
+				else run++
+				if ((mask[at] as number) > 0 && run < reach) crown[at] = 1 - run / reach
 			}
 		}
 	}
@@ -466,13 +502,17 @@ export function prepareFire(
 	}
 
 	/** How hot each part of the letters is for picture `n`: a pattern of streaks that rises. */
-	const patternOf = (n: number): Float32Array => {
+	const patternOf = (n: number, flames?: Float32Array): Float32Array => {
 		const phase = frames > 1 ? n / frames : 0
 		const fill = new Float32Array(size2)
 		for (let y = 0; y < h2; y++) {
 			const row = y * w2
 			for (let x = 0; x < w2; x++) {
-				if ((mask2[row + x] as number) === 0) continue
+				if (
+					(mask2[row + x] as number) === 0 &&
+					(!flames || (flames[row + x] as number) === 0)
+				)
+					continue
 				const u = x / (k2 * 1.5)
 				const v = y / (k2 * 3.4) - x / (k2 * 40) + phase * 2
 				const texture =
@@ -508,7 +548,7 @@ export function prepareFire(
 	/** Picture number `n`. */
 	const frame = (n: number): Uint8Array => {
 		const { burn, solid } = n === 0 ? first : sweep(n)
-		const fill = patternOf(n)
+		const fill = patternOf(n, classic ? solid : undefined)
 		const out = base.slice()
 		for (let y = 0; y < height; y++) {
 			const row = y * width
@@ -519,11 +559,22 @@ export function prepareFire(
 				const cell = row2 + (x >> 1)
 				const flameAmount = letter < 1 ? (solid[cell] as number) : 0
 				if (letter === 0 && flameAmount === 0) continue
-				let h = (burn[cell] as number) * 0.9
+				let h = classic
+					? Math.min(
+							1,
+							(fill[cell] as number) * 0.55 + (burn[cell] as number) * 0.5,
+						)
+					: (burn[cell] as number) * 0.9
 				let a = flameAmount
 				if (letter > 0) {
 					const inside = fill[cell] as number
-					const body = inside + (0.15 - inside) * (edge[at] as number)
+					let body: number
+					if (classic) {
+						const c = crown[at] as number
+						const fire = 0.4 + (inside - 0.26) * 0.75
+						body = 0.3 + (fire - 0.3) * c
+						body += (0.1 - body) * (edge[at] as number) * (1 - c)
+					} else body = inside + (0.15 - inside) * (edge[at] as number)
 					h = body * letter + h * (1 - letter)
 					a = letter + (1 - letter) * flameAmount
 				}

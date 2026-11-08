@@ -2,6 +2,7 @@ import { createStore } from '../../../shared/palmdevs/storage'
 import type {
 	FireBackground,
 	FireHeight,
+	FireLook,
 	FireMotion,
 	FireSize,
 	FireStyle,
@@ -22,6 +23,10 @@ export interface Settings {
 	buttonSpot: ButtonSpot
 	/** What the flames look like. */
 	style: FireStyle
+	/** The shape of the letters and flames. */
+	look: FireLook
+	/** Whether the newer defaults (small, see-through) have been put in place. */
+	defaultsSeen: boolean
 	size: FireSize
 	height: FireHeight
 	background: FireBackground
@@ -41,9 +46,11 @@ export const DEFAULT_SETTINGS: Settings = {
 	button: true,
 	buttonSpot: 'send',
 	style: 'fire',
-	size: 'medium',
+	look: 'wild',
+	defaultsSeen: true,
+	size: 'small',
 	height: 'medium',
-	background: 'dark',
+	background: 'transparent',
 	motion: 'normal',
 	glow: true,
 	caption: false,
