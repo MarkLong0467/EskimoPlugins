@@ -7,7 +7,7 @@ The GIF is **drawn on your phone**. No website is used and nothing leaves your p
 ## Switching it on and off
 
 - **A Flame Typing row in the + menu** of the chat box (with Camera, Photos and Poll). Tap it to switch flame text on or off; the row says which it is now.
-- **An optional flame button** to the left of the emoji button in the chat box (off until you turn it on in the settings). Tap it to switch flame text on or off; it glows when it is on.
+- **An optional flame button** next to the emoji button in the chat box (off until you turn it on in the settings). It is a normal chat box button, made of Discord's own button: a grey fire that turns orange when flame text is on. Tap it to switch flame text on or off. Because it is a normal button, plugins that hide or merge the chat box buttons, such as Better Chat Buttons and Chat Buttons (which puts the buttons in one menu and lists this one as "Flame text" with an on/off switch), handle it like the others.
 - **`/flame`** in the `/` menu, off until you turn it on in the settings. With nothing typed after it, it switches flame text on or off. `/flame text:hello` sends "hello" as a flame GIF right now and leaves the switch alone.
 - **A switch at the top of the settings.**
 

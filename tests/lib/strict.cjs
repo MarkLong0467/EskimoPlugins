@@ -52,11 +52,18 @@ function createStrictPatcher() {
 		return { slot, perParent }
 	}
 
+	/** The priority each hook was added with. Valenced runs the highest first, and the newest first among equals. */
+	const priorities = new WeakMap()
+
 	function add(kind) {
-		return (parent, key, hook) => {
+		return (parent, key, hook, options) => {
 			if (typeof parent?.[key] !== 'function') throw new TypeError(`Cannot patch ${String(key)}: it is not a function`)
 			const { slot, perParent } = slotFor(parent, key)
-			slot[kind].push(hook)
+			const priority = options?.priority ?? 0
+			priorities.set(hook, priority)
+			const at = slot[kind].findIndex(other => (priorities.get(other) ?? 0) <= priority)
+			if (at < 0) slot[kind].push(hook)
+			else slot[kind].splice(at, 0, hook)
 			return () => {
 				const index = slot[kind].indexOf(hook)
 				if (index < 0) return false

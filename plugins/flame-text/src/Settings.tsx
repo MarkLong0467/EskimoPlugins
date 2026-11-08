@@ -387,7 +387,7 @@ export default function Settings({ api }: Props) {
 					/>
 					<Design.TableSwitchRow
 						label="Flame button in the chat box"
-						subLabel="Adds a small flame button to the left of the emoji button. Tap it to switch flame text on or off. It glows when it is on. Off unless you turn it on."
+						subLabel="Adds a flame button next to the emoji button, made like Discord's own chat box buttons: a grey fire that turns orange when flame text is on. Works with plugins that merge or hide the chat box buttons. Off unless you turn it on."
 						value={setting('chatButton')}
 						onValueChange={(chatButton: boolean) =>
 							set(

@@ -95,7 +95,7 @@ export const diag = createDiagnostics('Flame Text', {
 			`Command: module ${state.commandModule ? 'found' : 'not found yet'}; patch ${hookText(state.commandHook)}; Discord asked for its commands ${state.listCalls} time(s) and /flame was in the answer ${state.listWithOurs} time(s); copied the kind from roll-dice: ${state.kindCopied ? 'yes' : 'no'}; run ${state.commandRuns} time(s)`,
 			`+ menu: watched ${state.jsx ? 'yes' : 'no'}; menu seen ${state.actionsSeen ? 'yes' : 'not yet'}; Flame Typing row added ${state.buttonDrawn} time(s); tapped ${state.buttonTaps} time(s)`,
 			`Switched on or off ${state.toggles} time(s); previews drawn in the settings: ${state.previews}`,
-			`Button by the emoji button: watched ${state.chatWatched ? 'yes' : 'no'}; emoji button row seen ${state.chatSeen ? 'yes' : 'not yet'}; drawn ${state.chatDrawn} time(s); tapped ${state.chatTaps} time(s)`,
+			`Chat box button: patched ${state.chatWatched ? 'yes' : 'no'}; chat box buttons found ${state.chatSeen ? 'yes' : 'not yet'}; put in the row ${state.chatDrawn} time(s); tapped ${state.chatTaps} time(s)`,
 			`Last thing that happened: ${state.last || 'nothing yet'}`,
 		]
 	},
@@ -160,9 +160,9 @@ export const diag = createDiagnostics('Flame Text', {
 			},
 			{
 				ok: !setting('chatButton') || state.chatSeen,
-				label: 'The chat box emoji button was seen and got the flame button',
+				label: 'The chat box buttons were found and got the flame button',
 				detail:
-					'Open a chat. If it never shows, Discord renamed the part and the button cannot be added',
+					'Open a chat. If it never shows, Discord moved the chat box buttons and the button cannot be added',
 			},
 			{
 				ok: !setting('button') || state.actionsSeen,
