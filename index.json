@@ -3594,10 +3594,10 @@
     },
     "marklong.flame-text": {
       "name": "Flame Text",
-      "description": "Turns the text you send into a burning, animated GIF of your words on fire. Switch it on and off with a flame button in the chat box or the /flame command. The GIF is drawn on your phone.",
+      "description": "Turns the text you send into a burning, animated GIF of your words on fire. Hold the + button in the chat box for a Flame Typing slider, or turn on the /flame command. The GIF is drawn on your phone.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.2.0"
+        "latest": "1.2.1"
       },
       "versions": {
         "1.0.0": {
@@ -3669,6 +3669,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.flame-text@1.2.0.zip",
           "sha256": "adb8e6ad39bd1572021c952a74dbb4a3dc4d9c659587401d0e5111fc48bb2384",
           "size": 19165,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.2.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.flame-text@1.2.1.zip",
+          "sha256": "7c4da6d65dc8502207d46d5bb3e4c8b80bce732870b09c8d997ed2bc95caa949",
+          "size": 19172,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
