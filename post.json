@@ -112,7 +112,7 @@
     {
       "id": "marklong.flame-text",
       "name": "Flame Text",
-      "version": "1.4.2",
+      "version": "1.4.3",
       "short": "turns what you send into a burning, animated GIF of your text on fire, drawn on your phone, with a chat box button and /flame to switch it",
       "suffix": ""
     },
