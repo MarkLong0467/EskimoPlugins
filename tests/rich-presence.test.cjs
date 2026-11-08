@@ -918,7 +918,7 @@ async function type(view, label, value, wait = 1000) {
 
 	// --- A linked image is used instead of the application's own picture
 	{
-		const OWN = '1535583597195427920'
+		const OWN = '1234567890123456789'
 		const LINK = 'https://avatar.example.org/api/pfp/1368350549203746847/image.png'
 		const HOSTED = 'mp:external/abc123/https/avatar.example.org/api/pfp/1368350549203746847/image.png'
 		/** Discord's own asset functions. `loaded` says whether the application's art assets are loaded: then `getAssetIds` answers [null] for a link it has not seen. */
