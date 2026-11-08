@@ -40,6 +40,25 @@ const realNow = Date.now.bind(Date)
 let skew = 0
 Date.now = () => realNow() + skew
 
+/** What a linked image looks like to the plugin: the bytes the link answers with, or `null` for a link that cannot be fetched. */
+let pictures = new Map()
+const fetched = []
+globalThis.fetch = async url => {
+	fetched.push(String(url))
+	const bytes = pictures.get(String(url))
+	if (!bytes) throw new Error('offline in the tests')
+	return { ok: true, status: 200, headers: { get: () => 'image/png' }, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) }
+}
+/** FNV-1a, the same fingerprint the plugin makes, written out here so the test does not borrow the plugin's code. */
+const fnv = bytes => {
+	let h = 0x811c9dc5
+	for (const b of bytes) {
+		h ^= b
+		h = Math.imul(h, 0x01000193)
+	}
+	return (h >>> 0).toString(16).padStart(8, '0')
+}
+
 const PREFIX = 'EskimoRichPresence:'
 const MINUTE = 60000
 const HOUR = 60 * MINUTE
@@ -1014,6 +1033,75 @@ async function type(view, label, value, wait = 1000) {
 			check('with no application id the image is hosted under application 0 only', calls.length === 1 && calls[0] === '/applications/0/external-assets' && sentImage(s) === 'mp:external/yyy/https/avatar.example.org/b.png', [calls, sentImage(s)])
 			await s.restore()
 		}
+	}
+
+	// --- A linked image changes in the presence when the picture behind the link changes
+	{
+		const OWN = '1234567890123456789'
+		const asked = []
+		const utils = {
+			getAssetIds: () => [],
+			fetchAssetIds: async (app, keys) => {
+				asked.push(...keys)
+				return keys.map(key => `mp:external/hash/${key}`)
+			},
+		}
+		const run = async (largeImage, picture) => {
+			pictures = new Map(picture ? [[largeImage, picture]] : [])
+			fetched.length = 0
+			asked.length = 0
+			const s = await setup({
+				profiles: [prof('a', { applicationId: OWN, largeImage })],
+				before: runtime => runtime.valenced.modules.finders.loadModule(utils),
+			})
+			const image = s.lastOf('a')?.activity?.assets?.large_image
+			await s.restore()
+			return { image, asked: [...asked], fetched: [...fetched] }
+		}
+		const LINK = 'https://avatar.example.org/api/pfp/1/image?format=png'
+		const first = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])
+		const second = new Uint8Array([9, 9, 9, 9, 9, 9, 9, 9])
+
+		const a = await run(LINK, first)
+		check('the link Discord is asked to host has a fingerprint of the picture added to it', a.asked[0] === `${LINK}&ev=${fnv(first)}`, a.asked)
+		check('and that is what is sent as the image', a.image === `mp:external/hash/${LINK}&ev=${fnv(first)}`, a.image)
+		const b = await run(LINK, second)
+		check('when the picture behind the same link changes, Discord is given a different link', b.asked[0] === `${LINK}&ev=${fnv(second)}` && b.asked[0] !== a.asked[0], [a.asked, b.asked])
+		const c = await run(LINK, first)
+		check('and the same picture always gives the same link, so Discord keeps its copy', c.asked[0] === a.asked[0])
+
+		const plain = await run('https://avatar.example.org/pic.png', first)
+		check('a link with no query gets ?ev=', plain.asked[0] === `https://avatar.example.org/pic.png?ev=${fnv(first)}`, plain.asked)
+		const frag = await run('https://avatar.example.org/pic.png#top', first)
+		check('a fragment stays at the end', frag.asked[0] === `https://avatar.example.org/pic.png?ev=${fnv(first)}#top`, frag.asked)
+
+		for (const signed of ['https://cdn.discordapp.com/attachments/1/2/pic.png?ex=65&is=64&hm=abcdef', 'https://cdn.discordapp.com/attachments/1/2/pic.png', 'https://media.discordapp.net/attachments/1/2/pic.png', 'https://bucket.s3.amazonaws.com/pic.png?X-Amz-Signature=abc&X-Amz-Expires=60', 'https://host.example.org/pic.png?token=abc']) {
+			const r = await run(signed, first)
+			check(`a signed or Discord storage link is sent as it is: ${signed.slice(0, 58)}`, r.asked[0] === signed && r.fetched.length === 0, [r.asked, r.fetched])
+		}
+
+		const gone = await run('https://offline.example.org/pic.png', null)
+		check('a link that cannot be fetched is sent as it is, and the image is still sent', gone.asked[0] === 'https://offline.example.org/pic.png' && gone.image === 'mp:external/hash/https://offline.example.org/pic.png', [gone.asked, gone.image])
+
+		// A re-apply does not fetch the picture again.
+		pictures = new Map([[LINK, first]])
+		fetched.length = 0
+		const s = await setup({
+			profiles: [prof('a', { applicationId: OWN, largeImage: LINK })],
+			before: runtime => runtime.valenced.modules.finders.loadModule(utils),
+		})
+		const atStart = fetched.filter(url => url === LINK).length
+		const sentBefore = s.sent('a').length
+		pictures = new Map([[LINK, second]])
+		const view = await s.settingsView()
+		await openEditor(view, 'A')
+		await type(view, 'Large image text', 'a caption')
+		const after = fetched.filter(url => url === LINK).length
+		check('the picture is looked at when the presence is first made (once for a page preview, once for the fingerprint)', atStart >= 1 && atStart <= 2, atStart)
+		check('a change that sends the presence again does not fetch the picture again within ten minutes', s.sent('a').length > sentBefore && after === atStart, [atStart, after, s.sent('a').length, sentBefore])
+		check('and the same version is sent', s.lastOf('a').activity.assets.large_image === `mp:external/hash/${LINK}&ev=${fnv(first)}`, s.lastOf('a').activity.assets)
+		view.unmount?.()
+		await s.restore()
 	}
 
 

@@ -22,6 +22,12 @@ Show up to three presences at once on your Discord profile, and the SoundCloud t
   `{uptime}` and `{sc_title}` `{sc_artist}` `{sc_url}` `{sc_art}` `{sc_button}`.
 - **Images** from a direct link, an Imgur link, a page with a picture, or an asset key. Party size, two buttons, and
   **show only when**.
+- **A linked image follows the picture.** Discord keeps a copy of a linked image by its exact link and keeps showing that
+  copy, so a picture that changes behind the same link (a profile picture, say) would not change in the presence. The plugin
+  fetches the picture, adds a short fingerprint of it to the link (`?ev=1a2b3c4d`, or `&ev=` if the link already has a query)
+  and gives Discord that link: a new picture is a new link, and the same picture is the same link. Signed links (Discord's own
+  storage, links with `ex=`/`hm=`/`token=`/`signature`) and links that cannot be fetched are sent as they are. The picture is
+  looked at again after ten minutes or when Discord restarts.
 - **A live preview** that follows what you type.
 
 ## How it works

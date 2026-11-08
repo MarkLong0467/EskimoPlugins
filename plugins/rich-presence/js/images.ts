@@ -94,6 +94,70 @@ export async function findImageUrl(link: string): Promise<string> {
 	return result
 }
 
+/** Links that are signed or expire, where adding anything to the link could make it stop working. */
+const SIGNED_LINK =
+	/[?&](?:ex|is|hm|sig|signature|token|expires|x-amz-[a-z-]+|x-goog-[a-z-]+)=/i
+
+/** Discord's own storage links are signed, and Discord already gives each upload its own link. */
+const DISCORD_STORAGE = /^https?:\/\/(?:cdn|media)\.discordapp\.(?:com|net)\//i
+
+/** How long the version of a link is kept before the picture is looked at again, so a refresh every few seconds costs nothing. */
+const VERSION_TTL_MS = 10 * 60_000
+
+/** The biggest picture that is looked at (bytes). A bigger one is used as it is. */
+const VERSION_MAX_BYTES = 4 * 1024 * 1024
+
+/** The name of the version added to a link. */
+const VERSION_PARAM = 'ev'
+
+/** Links already looked at, with the link to send and when it was made. */
+const versionCache = new Map<string, { link: string; at: number }>()
+
+/** A short fingerprint of some bytes (FNV-1a, 32 bits) as 8 hex digits. */
+export function fingerprint(bytes: Uint8Array): string {
+	let hash = 0x811c9dc5
+	for (let i = 0; i < bytes.length; i++) {
+		hash ^= bytes[i] as number
+		hash = Math.imul(hash, 0x01000193)
+	}
+	return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
+/**
+ * Makes a link change when the picture behind it changes.
+ *
+ * Discord keeps a copy of every linked image, by the exact link, and shows that copy for as long as it likes: a picture that
+ * changes behind the same link (a profile picture that is updated, a "now playing" image) does not change in the presence.
+ * The picture is fetched once, a fingerprint of it is added to the link (`?ev=1a2b3c4d`), and Discord is given that link. A new
+ * picture is a new link, so Discord fetches it again; the same picture is the same link, so nothing is fetched twice. Signed
+ * links are left as they are, and so is any link that cannot be fetched.
+ *
+ * @param link A direct image link.
+ * @returns The link to send.
+ */
+export async function versionedLink(link: string): Promise<string> {
+	if (SIGNED_LINK.test(link) || DISCORD_STORAGE.test(link)) return link
+	const known = versionCache.get(link)
+	if (known && Date.now() - known.at < VERSION_TTL_MS) return known.link
+	let result = link
+	try {
+		const res = await fetch(link, { headers: { Accept: 'image/*' } })
+		if (res.ok) {
+			const bytes = new Uint8Array(await res.arrayBuffer())
+			if (bytes.length > 0 && bytes.length <= VERSION_MAX_BYTES) {
+				const cut = link.indexOf('#')
+				const base = cut >= 0 ? link.slice(0, cut) : link
+				const tail = cut >= 0 ? link.slice(cut) : ''
+				result = `${base}${base.includes('?') ? '&' : '?'}${VERSION_PARAM}=${fingerprint(bytes)}${tail}`
+			}
+		}
+	} catch {
+		// The link is sent as it is.
+	}
+	versionCache.set(link, { link: result, at: Date.now() })
+	return result
+}
+
 /**
  * Asks Discord to host an image link for use in a presence, under the given application.
  *
@@ -200,7 +264,7 @@ export async function resolveImage(
 		findByProps<AssetUtils>('fetchAssetIds') ||
 		findByProps<AssetUtils>('getAssetIds')
 	const isLink = /^https?:\/\//i.test(v)
-	if (isLink) v = await findImageUrl(v)
+	if (isLink) v = await versionedLink(await findImageUrl(v))
 	const wanted = v
 
 	/** Asks Discord's web API to host the link. */
