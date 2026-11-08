@@ -1,114 +1,150 @@
 /**
- * The flame button in the chat box. Tap it to turn flame text on or off. It glows when it is on.
+ * The Flame Typing switch: hold the + button of the chat box and a small menu opens with a Flame Typing row and a slider.
  *
- * Discord draws the chat box's buttons with two components, `ChatInputActions` (the row of small buttons) and
- * `ChatInputSendButton`. The JSX runtime is watched for them; when one is drawn, this wraps what it draws in a row that has the
- * flame button next to it. The settings pick which of the two gets the button.
+ * Discord draws the + button inside `ChatInputActions`. The JSX runtime is watched for it; when it is drawn, this wraps what it
+ * draws in a view that only *watches* the touches (it never takes them, so taps work as before). A finger that stays down on
+ * the row for a moment, without moving, opens the menu.
  */
 
+import { ActionSheetActionCreators } from '@valenced/discord/actions'
+import { Design } from '@valenced/discord/design'
 import { afterJSX } from '@valenced/react/jsx-runtime'
-import { createElement, useEffect, useState } from 'react'
-import { Pressable, Text, View } from 'react-native'
+import { createElement, useEffect, useRef, useState } from 'react'
+import { View } from 'react-native'
 import { installJsxFinder } from '../../../shared/palmdevs/jsxFind'
 import { diag } from './diag'
 import { state } from './state'
 import { setting, store } from './store'
 import { switchFlame } from './toggle'
-import type { ReactElement } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 
 type Cleanup = (...fns: Array<() => unknown>) => unknown
 
-/** The flame, as a constant because React Native text must be passed as an expression. */
-const FLAME = '\u{1F525}'
-const ON_HINT = 'Flame text is on. Tap to turn it off'
-const OFF_HINT = 'Flame text is off. Tap to turn it on'
+const SHEET_KEY = 'MARKLONG_FLAME_TEXT_MENU'
+const TITLE = 'Flame Text'
+const ROW_LABEL = 'Flame Typing'
+const ROW_HINT =
+	'Your messages are sent as burning GIFs while this is on. Hold the + button to open this menu again.'
 
-/** The button. */
-export function FlameButton() {
+/** How long a finger stays down before the menu opens, and how far it may wander. */
+export const HOLD_MS = 450
+export const HOLD_SLOP = 12
+
+/** The menu: one row with a slider. */
+export function FlameMenu() {
 	const [, redraw] = useState(0)
 	useEffect(() => store.subscribe(() => redraw(n => n + 1)), [])
-	if (!setting('button')) return null
-	state.buttonDrawn++
-	const on = setting('on')
 	return (
-		<Pressable
-			accessibilityRole="button"
-			accessibilityLabel={on ? ON_HINT : OFF_HINT}
-			accessibilityState={{ selected: on }}
-			hitSlop={6}
-			onPress={() => {
-				try {
-					state.buttonTaps++
-					switchFlame()
-				} catch (error) {
-					diag.fail('flame button', error)
+		<Design.ActionSheet>
+			<Design.BottomSheetTitleHeader title={TITLE} />
+			<Design.Stack spacing={16} style={{ padding: 16, paddingBottom: 32 }}>
+				<Design.TableRowGroup>
+					<Design.TableSwitchRow
+						label={ROW_LABEL}
+						subLabel={ROW_HINT}
+						value={setting('on')}
+						onValueChange={(on: boolean) => {
+							try {
+								state.buttonTaps++
+								switchFlame(on)
+							} catch (error) {
+								diag.fail('flame menu', error)
+							}
+						}}
+					/>
+				</Design.TableRowGroup>
+			</Design.Stack>
+		</Design.ActionSheet>
+	)
+}
+
+/** Opens the menu. */
+export function openMenu(): void {
+	try {
+		ActionSheetActionCreators.openLazy(
+			Promise.resolve({ default: () => <FlameMenu /> }),
+			SHEET_KEY,
+			{},
+		)
+		state.menuOpened++
+	} catch (error) {
+		diag.fail('open the flame menu', error)
+	}
+}
+
+/** The touch events this reads from a finger. */
+interface Touch {
+	nativeEvent?: { pageX?: number; pageY?: number }
+}
+
+/** A view that opens the menu when a finger is held on what is inside it. It never takes the touch away from what is inside. */
+export function HoldWatcher({ children }: { children?: ReactNode }) {
+	const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+	const from = useRef({ x: 0, y: 0 })
+	const stop = () => {
+		if (timer.current) clearTimeout(timer.current)
+		timer.current = undefined
+	}
+	useEffect(() => stop, [])
+	return (
+		<View
+			style={ROW}
+			onTouchStart={(event: Touch) => {
+				stop()
+				from.current = {
+					x: event.nativeEvent?.pageX ?? 0,
+					y: event.nativeEvent?.pageY ?? 0,
 				}
+				timer.current = setTimeout(() => {
+					timer.current = undefined
+					if (setting('button')) openMenu()
+				}, HOLD_MS)
 			}}
-			style={{
-				width: 36,
-				height: 36,
-				borderRadius: 18,
-				marginHorizontal: 2,
-				alignItems: 'center',
-				justifyContent: 'center',
-				backgroundColor: on ? 'rgba(255,106,0,0.32)' : 'transparent',
-				borderWidth: on ? 1.5 : 0,
-				borderColor: '#ff6a00',
+			onTouchMove={(event: Touch) => {
+				const dx = (event.nativeEvent?.pageX ?? 0) - from.current.x
+				const dy = (event.nativeEvent?.pageY ?? 0) - from.current.y
+				if (Math.hypot(dx, dy) > HOLD_SLOP) stop()
 			}}
+			onTouchEnd={stop}
+			onTouchCancel={stop}
 		>
-			<Text style={{ fontSize: 20, opacity: on ? 1 : 0.5 }}>{FLAME}</Text>
-		</Pressable>
+			{children}
+		</View>
 	)
 }
 
 const ROW = { flexDirection: 'row', alignItems: 'center' } as const
 
 /**
- * Watches for the chat box's buttons and puts the flame button next to them.
+ * Watches for the chat box's buttons and makes holding them open the menu.
  *
  * @param cleanup Where to register what undoes it.
  */
 export function installButton(cleanup: Cleanup): void {
 	const hooked = new WeakSet<object>()
-	const hook = (type: unknown, spot: 'send' | 'actions'): void => {
+	const hook = (type: unknown): void => {
 		if (!type || (typeof type !== 'object' && typeof type !== 'function'))
 			return
 		if (hooked.has(type as object)) return
 		hooked.add(type as object)
-		diag.log(
-			'found',
-			`Found the chat box ${spot === 'send' ? 'send button' : 'buttons'}`,
-		)
+		diag.log('found', 'Found the chat box buttons')
 		cleanup(
 			afterJSX(
 				type as never,
 				((element: ReactElement) => {
-					const chosen = setting('buttonSpot')
-					if (!setting('button') || (chosen !== 'both' && chosen !== spot))
-						return element
-					return createElement(
-						View,
-						{ style: ROW },
-						createElement(FlameButton),
-						element,
-					)
+					if (!setting('button')) return element
+					state.buttonDrawn++
+					return createElement(HoldWatcher, null, element)
 				}) as never,
 			) as never,
 		)
 	}
 	state.jsx = installJsxFinder(cleanup, [
 		{
-			name: 'ChatInputSendButton',
-			seen(type) {
-				state.sendButtonSeen = true
-				hook(type, 'send')
-			},
-		},
-		{
 			name: 'ChatInputActions',
 			seen(type) {
 				state.actionsSeen = true
-				hook(type, 'actions')
+				hook(type)
 			},
 		},
 	])

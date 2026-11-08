@@ -6,8 +6,8 @@ The GIF is **drawn on your phone**. No website is used and nothing leaves your p
 
 ## Switching it on and off
 
-- **A flame button in the chat box.** Tap it to switch flame text on or off. It glows orange when it is on. By default it sits next to the send button (which shows while you type); you can also put it with the row of small buttons, or in both places.
-- **`/flame`** in the `/` menu. With nothing typed after it, it switches flame text on or off. `/flame text:hello` sends "hello" as a flame GIF right now and leaves the switch alone.
+- **Hold the + button** in the chat box for a small menu with a **Flame Typing** slider that switches flame text on or off.
+- **`/flame`** in the `/` menu, off until you turn it on in the settings. With nothing typed after it, it switches flame text on or off. `/flame text:hello` sends "hello" as a flame GIF right now and leaves the switch alone.
 - **A switch at the top of the settings.**
 
 ## What gets burned
@@ -26,7 +26,7 @@ If making or saving the GIF fails for any reason, your message is **sent as the 
 - **Preview**: type some words and see the GIF drawn live, with a **Shuffle the flames** button.
 - **Look**: style (Classic: solid red letters with a crown of fire; Wild: tall flames), fire colour (Fire, Blue, Green, Purple), size (Small by default), flame height, background (See-through by default, or Dark, White), movement (Still, Light, Normal, Smooth) and a glow.
 - **Sending**: also send the words as text under the GIF. There is no length limit: a long message is wrapped into a paragraph.
-- **Ways to switch it**: the chat button (and where it goes) and the `/flame` command.
+- **Ways to switch it**: holding + in the chat box, and the `/flame` command (off by default).
 - **Copy logs and a self-check** at the bottom, made for finding out why it broke after a Discord update. The report has counts, yes/no answers and settings, and never your messages, chats or servers.
 
 ## How it works

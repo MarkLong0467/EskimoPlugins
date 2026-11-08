@@ -12,7 +12,7 @@ import { switchFlame } from './toggle'
 import type { PluginSettingsComponent } from '@valenced/plugins/types'
 import type { ComponentProps } from 'react'
 import type { Made } from './flame'
-import type { ButtonSpot, Settings as FlameSettings } from './store'
+import type { Settings as FlameSettings } from './store'
 
 type Props = ComponentProps<
 	PluginSettingsComponent<{ jsonStorage: FlameSettings }>
@@ -20,7 +20,7 @@ type Props = ComponentProps<
 
 /** Texts as constants because React Native text must be passed as an expression. */
 const INTRO =
-	'Turns the words you send into a burning, animated GIF of your text on fire. Switch it on, type a message and send it: the GIF goes out instead of the text. Switch it on and off with the flame button in the chat box or with /flame. The GIF is drawn on your phone, nothing is sent anywhere to make it.'
+	'Turns the words you send into a burning, animated GIF of your text on fire. Switch it on, type a message and send it: the GIF goes out instead of the text. Switch it on and off by holding the + button in the chat box, or with /flame if you turn that on. The GIF is drawn on your phone, nothing is sent anywhere to make it.'
 const TOAST_KEY = 'MARKLONG_FLAME_TEXT_SETTINGS'
 const PREVIEW_PLACEHOLDER = 'Type something to see it burn'
 const PREVIEW_LIMIT = 300
@@ -63,11 +63,6 @@ const MOTIONS: Array<Choice<FlameSettings['motion']>> = [
 	{ value: 'light', label: 'Light' },
 	{ value: 'normal', label: 'Normal' },
 	{ value: 'smooth', label: 'Smooth' },
-]
-const SPOTS: Array<Choice<ButtonSpot>> = [
-	{ value: 'send', label: 'Next to send' },
-	{ value: 'actions', label: 'With the buttons' },
-	{ value: 'both', label: 'Both' },
 ]
 
 const BACKDROPS: Record<FlameSettings['background'], string> = {
@@ -378,36 +373,25 @@ export default function Settings({ api }: Props) {
 				</Design.TableRowGroup>
 				<Design.TableRowGroup title="Ways to switch it on and off">
 					<Design.TableSwitchRow
-						label="Flame button in the chat box"
-						subLabel="A small flame that glows when flame text is on. Tap it to switch."
+						label="Flame Typing in the + menu"
+						subLabel="Hold the + button in the chat box to get a menu with a Flame Typing slider."
 						value={setting('button')}
 						onValueChange={(button: boolean) =>
 							set(
 								{ button },
-								button ? 'Flame button shown' : 'Flame button hidden',
+								button ? 'Hold + for the flame menu' : 'Flame menu off',
 							)
 						}
 					/>
 					<Design.TableSwitchRow
 						label="/flame command"
-						subLabel="/flame switches it on or off. /flame text:hello sends one GIF without changing the switch."
+						subLabel="Adds /flame to the slash commands. /flame switches it on or off. /flame text:hello sends one GIF without changing the switch. Off unless you turn it on."
 						value={setting('command')}
 						onValueChange={(command: boolean) =>
 							set({ command }, command ? '/flame added' : '/flame removed')
 						}
 					/>
 				</Design.TableRowGroup>
-				{setting('button') ? (
-					<View style={{ marginHorizontal: 16 }}>
-						<Chips
-							title="Where the button goes"
-							hint="The send button only shows while you are typing, the buttons row while you are not. Choose Both to always find it."
-							options={SPOTS}
-							value={setting('buttonSpot')}
-							onPick={buttonSpot => set({ buttonSpot })}
-						/>
-					</View>
-				) : null}
 
 				<Design.TableRowGroup title="Good to know">
 					<Design.TableRow

@@ -19,7 +19,6 @@ function reportedSettings(): Record<string, unknown> {
 		'on',
 		'command',
 		'button',
-		'buttonSpot',
 		'style',
 		'look',
 		'size',
@@ -93,7 +92,7 @@ export const diag = createDiagnostics('Flame Text', {
 			`Last GIF: ${state.lastSize ? `${state.lastSize}, ${state.lastFrames} pictures, ${Math.round(state.lastBytes / 1024)} KB, made in ${state.lastMs} ms` : 'none yet'}`,
 			`Last problem: ${state.lastError || 'none'}`,
 			`Command: module ${state.commandModule ? 'found' : 'not found yet'}; patch ${hookText(state.commandHook)}; Discord asked for its commands ${state.listCalls} time(s) and /flame was in the answer ${state.listWithOurs} time(s); copied the kind from roll-dice: ${state.kindCopied ? 'yes' : 'no'}; run ${state.commandRuns} time(s)`,
-			`Chat box: JSX watched ${state.jsx ? 'yes' : 'no'}; send button seen ${state.sendButtonSeen ? 'yes' : 'not yet'}; button row seen ${state.actionsSeen ? 'yes' : 'not yet'}; flame button drawn ${state.buttonDrawn} time(s); tapped ${state.buttonTaps} time(s)`,
+			`Chat box: JSX watched ${state.jsx ? 'yes' : 'no'}; + button row seen ${state.actionsSeen ? 'yes' : 'not yet'}; drawn ${state.buttonDrawn} time(s); menu opened ${state.menuOpened} time(s); switched in the menu ${state.buttonTaps} time(s)`,
 			`Switched on or off ${state.toggles} time(s); previews drawn in the settings: ${state.previews}`,
 			`Last thing that happened: ${state.last || 'nothing yet'}`,
 		]
@@ -101,15 +100,6 @@ export const diag = createDiagnostics('Flame Text', {
 	checks: () => {
 		const test = testGif()
 		parts()
-		const spot = setting('buttonSpot')
-		const wanted =
-			spot === 'send' ? 'send' : spot === 'actions' ? 'actions' : 'either'
-		const seenButton =
-			wanted === 'send'
-				? state.sendButtonSeen
-				: wanted === 'actions'
-					? state.actionsSeen
-					: state.sendButtonSeen || state.actionsSeen
 		return [
 			{
 				ok: test.ok,
@@ -163,14 +153,14 @@ export const diag = createDiagnostics('Flame Text', {
 			},
 			{
 				ok: !setting('button') || state.jsx,
-				label: 'The chat box can be watched for the flame button',
+				label: 'The chat box can be watched for the + button',
 				detail: 'The JSX runtime could not be hooked',
 			},
 			{
-				ok: !setting('button') || seenButton,
-				label: 'Discord drew the chat box part the flame button goes next to',
+				ok: !setting('button') || state.actionsSeen,
+				label: 'Discord drew the chat box row with the + button',
 				detail:
-					'Open a chat. If it never shows, Discord renamed the part; try the other place in the settings',
+					'Open a chat. If it never shows, Discord renamed the part, and holding + will not open the menu',
 			},
 		]
 	},

@@ -56,7 +56,7 @@ const start = async (saved = {}, extra = {}) => {
 	const files = extra.files ?? fakeFiles()
 	const uploads = extra.uploads ?? fakeUploads()
 	const s = await startPort('flame-text', {
-		saved: { defaultsSeen: true, size: 'medium', background: 'dark', ...saved },
+		saved: { defaultsSeen: true, commandOffSeen: true, command: true, size: 'medium', background: 'dark', ...saved },
 		reactExtras: true,
 		before: runtime => {
 			const load = runtime.valenced.modules.finders.loadModule
@@ -472,38 +472,46 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 		s.stop()
 	}
 
-	// --- The button in the chat box
+	// --- Holding + in the chat box
 	{
 		const s = await start()
-		const send = { $$typeof: 'memo', type: function ChatInputSendButton() { return { type: 'SendButton', props: {} } } }
 		const actions = { $$typeof: 'memo', type: function ChatInputActions() { return { type: 'ActionsRow', props: {} } } }
-		const isRow = element => element.type === 'View'
-		draw(s, send, {})
 		draw(s, actions, {})
-		const element = draw(s, send, {})
-		check('the send button is wrapped in a row', element.type === 'View' && element.props.style.flexDirection === 'row', element)
-		const view = await s.mountRender(() => draw(s, send, {}))
-		const flame = findNode(view.tree, n => n.type === 'Pressable' && /Flame text is off/.test(n.props.accessibilityLabel ?? ''))
-		check('the flame button is next to it and says it is off', !!flame && element.props.children.some(child => child.type === send), textOf(view.tree))
-		flame.props.onPress()
-		await view.settle()
-		check('tapping it switches flame text on', s.storage.cache.on === true)
-		const lit = findNode(view.tree, n => n.type === 'Pressable' && /Flame text is on/.test(n.props.accessibilityLabel ?? ''))
-		check('and it lights up', !!lit && lit.props.accessibilityState.selected === true && lit.props.style.borderWidth > 0)
-		check('with a toast', s.toasts().some(t => /Flame text is on/.test(t ?? '')))
-		lit.props.onPress()
-		await view.settle()
-		check('tapping it again switches it off', s.storage.cache.on === false)
-		check('the other place does not get one by default', !isRow(draw(s, actions, {})))
-		s.storage.set({ buttonSpot: 'actions' })
-		check('the place can be changed', isRow(draw(s, actions, {})) && !isRow(draw(s, send, {})))
-		s.storage.set({ buttonSpot: 'both' })
-		check('or both', isRow(draw(s, actions, {})) && isRow(draw(s, send, {})))
+		const view = await s.mountRender(() => draw(s, actions, {}))
+		const watcher = findNode(view.tree, n => typeof n.props?.onTouchStart === 'function')
+		check('the + buttons are wrapped in a view that watches touches', !!watcher && textOf(view.tree) !== undefined)
+		const down = (x, y) => ({ nativeEvent: { pageX: x, pageY: y } })
+		watcher.props.onTouchStart(down(10, 10))
+		watcher.props.onTouchEnd()
+		await sleep(600)
+		check('a quick tap does not open the menu', s.opened('MARKLONG_FLAME_TEXT_MENU').length === 0)
+		watcher.props.onTouchStart(down(10, 10))
+		watcher.props.onTouchMove(down(80, 10))
+		await sleep(600)
+		check('a finger that moves does not open it either', s.opened('MARKLONG_FLAME_TEXT_MENU').length === 0)
+		watcher.props.onTouchStart(down(10, 10))
+		await sleep(600)
+		check('holding opens the Flame Text menu', s.opened('MARKLONG_FLAME_TEXT_MENU').length === 1)
+		const menu = await s.mountSheet('MARKLONG_FLAME_TEXT_MENU')
+		const row = switchRow(menu, 'Flame Typing')
+		check('the menu has a Flame Typing row with a slider that is off', !!row && row.props.value === false)
+		row.props.onValueChange(true)
+		await menu.settle()
+		check('the slider switches flame text on', s.storage.cache.on === true)
+		check('and shows it', switchRow(menu, 'Flame Typing').props.value === true)
+		check('the chat box has no flame button', !findNode(view.tree, n => /Flame text is/.test(n.props?.accessibilityLabel ?? '')))
 		s.storage.set({ button: false })
-		check('switching the button off takes it away', !isRow(draw(s, send, {})))
+		check('switching the menu off in the settings takes the wrapper away', !(draw(s, actions, {}).type === 'View' && draw(s, actions, {}).props.children?.type?.name === 'HoldWatcher'))
 		s.stop()
-		check('turning the plugin off puts the chat box back', !isRow(draw(s, send, {})))
 		check('no errors', s.errors.length === 0, s.errors)
+	}
+	{
+		const fresh = await startPort('flame-text', { saved: {}, reactExtras: true })
+		check('/flame is off by default', fresh.storage.cache.command !== true, fresh.storage.cache)
+		fresh.stop()
+		const old = await startPort('flame-text', { saved: { command: true }, reactExtras: true })
+		check('/flame saved as on before is moved to off, once', old.storage.cache.command === false, old.storage.cache)
+		old.stop()
 	}
 
 	// --- The settings screen
@@ -536,7 +544,7 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 		await view.settle()
 		const blue = findNode(view.tree, n => n.type === 'Image' && /^data:image\/gif/.test(n.props.source?.uri ?? ''))
 		check('and the preview is drawn again in the new look', !!blue && blue.props.source.uri !== again.props.source.uri)
-		for (const [label, key, value] of [['Large', 'size', 'large'], ['High', 'height', 'high'], ['White', 'background', 'white'], ['Smooth', 'motion', 'smooth'], ['Both', 'buttonSpot', 'both']]) {
+		for (const [label, key, value] of [['Large', 'size', 'large'], ['High', 'height', 'high'], ['White', 'background', 'white'], ['Smooth', 'motion', 'smooth'], ['Classic', 'look', 'classic']]) {
 			chip(label).props.onPress()
 			await view.settle()
 			check(`the ${label} chip sets ${key}`, s.storage.cache[key] === value, s.storage.cache)

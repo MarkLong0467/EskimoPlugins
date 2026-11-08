@@ -31,6 +31,9 @@ export default plugin<{ jsonStorage: FlameSettings }>({
 				size: 'small',
 				background: 'transparent',
 			})
+		// /flame is off unless you turn it on; settings from before that are moved to off, once.
+		if (!jsonStorage.cache?.commandOffSeen)
+			store.set({ commandOffSeen: true, command: false })
 		cleanup(() => store.clear())
 		cleanup(resetState)
 		installFinders(cleanup)
