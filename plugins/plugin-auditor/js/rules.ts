@@ -77,7 +77,7 @@ export const RULES: readonly Rule[] = [
 	{
 		id: 'token.store',
 		category: 'token',
-		severity: 'medium',
+		severity: 'low',
 		title: 'Uses the sign-in store',
 		why: "Discord's sign-in store (AuthenticationStore, TokenManager) is where the token lives. Using it is not proof of anything, but it is the way to the token.",
 		pattern: /\b(?:AuthenticationStore|TokenManager\w*|AuthenticationUtils)\b/g,
@@ -126,7 +126,7 @@ export const RULES: readonly Rule[] = [
 		title: 'Calls actions that change your account or servers',
 		why: 'Sending or deleting messages, joining or leaving servers, changing friends, roles or settings. Fine for a plugin that does it on purpose, harmful if it does it on its own.',
 		pattern:
-			/\b(?:sendMessage|sendBotMessage|editMessage|deleteMessage|createMessage|addReaction|removeReaction|joinGuild|leaveGuild|kickUser|banUser|createChannel|deleteChannel|createInvite|acceptInvite|addRelationship|removeRelationship|blockUser|sendFriendRequest|reportMessage|reportUser|createWebhook|setNickname|changeNickname|createThread|addRole|removeRole|timeoutUser)\w*\s*\(/g,
+			/\b(?:sendMessage|sendBotMessage|editMessage|deleteMessage|createMessage|addReaction|removeReaction|joinGuild|leaveGuild|kickUser|banUser|createChannel|deleteChannel|createInvite|acceptInvite|addRelationship|removeRelationship|blockUser|sendFriendRequest|reportMessage|reportUser|createWebhook|setNickname|changeNickname|createThread|addRole|removeRole|timeoutUser)\s*\(/g,
 	},
 	{
 		id: 'write.settings',

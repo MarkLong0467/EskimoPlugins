@@ -238,14 +238,13 @@ export function findDuplicates(
 		for (const pair of group) {
 			members.add((inputs[pair.a] as DuplicateInput).scan.plugin.id)
 			members.add((inputs[pair.b] as DuplicateInput).scan.plugin.id)
-			// Two weak reasons for the same pair add up to a medium one.
+			// Weak reasons (a similar name, a similar description) stay weak however many there are: sibling plugins from
+			// one author, such as Valenced's three theme plugins, have both.
 			const best = pair.reasons.reduce<Confidence>(
 				(top, r) => (RANK[r.confidence] > RANK[top] ? r.confidence : top),
 				'low',
 			)
-			const lifted: Confidence =
-				best === 'low' && pair.reasons.length >= 2 ? 'medium' : best
-			if (RANK[lifted] > RANK[confidence]) confidence = lifted
+			if (RANK[best] > RANK[confidence]) confidence = best
 			for (const r of pair.reasons) reasons.add(r.text)
 			if (pair.similarity !== null)
 				similarity = Math.max(similarity ?? 0, pair.similarity)
