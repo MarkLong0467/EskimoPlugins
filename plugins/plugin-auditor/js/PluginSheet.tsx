@@ -19,12 +19,15 @@ import { copy, sheets, toast } from './discord'
 import { plural, sizeText } from './format'
 import { CATEGORY_LABEL } from './rules'
 import { SheetFrame } from './SheetFrame'
+import { findingKey } from './scan'
 import { auditor } from './store'
 import { PluginVt } from './VtBlock'
 
 /** Texts as constants because React Native text must be passed as an expression. */
 const GONE = 'This plugin is not in the last scan.'
 const CLEAN = 'Nothing sensitive was found in its code.'
+const NOTHING_LEFT =
+	'Nothing is left once the findings you ignore are set aside.'
 const NO_CODE =
 	'Valenced gave no code for this plugin, so only its manifest was read.'
 
@@ -68,11 +71,14 @@ function PluginSheet({ id }: { id: string }) {
 	}
 
 	const p = scan.plugin
-	const trusted = auditor.isTrusted(scan)
+	const whitelisted = auditor.isWhitelisted(p.id)
+	const view = auditor.view(scan)
 	const links = scan.links.filter(l => l.kind !== 'noise')
-	const color = RISK_COLOR[scan.risk]
+	const color = RISK_COLOR[view.risk]
 	const facts = `${p.id} · v${p.version} · ${p.author}`
-	const acceptHelp = `"I checked it" stops this plugin from counting as a problem. It is asked again if the plugin's code changes. ${plural(scan.findings.length, 'finding')} stay listed.`
+	const whitelistHelp = `A whitelisted plugin never counts as needing attention and is left out of the start-up alert, even after it updates. Its ${plural(view.findings.length, 'finding')} stay listed here.`
+	const ignoreHelp =
+		'Ignore a finding you know is fine. Only that one is hidden, so a new problem still shows.'
 
 	return (
 		<SheetFrame title={p.name} onClose={close}>
@@ -89,7 +95,7 @@ function PluginSheet({ id }: { id: string }) {
 						<View style={{ flex: 1 }}>
 							<Design.Text variant="heading-lg/bold">{p.name}</Design.Text>
 						</View>
-						<RiskBadge risk={scan.risk} big />
+						<RiskBadge risk={view.risk} big />
 					</View>
 					<Design.Text variant="text-sm/medium" color="text-muted">
 						{facts}
@@ -102,7 +108,10 @@ function PluginSheet({ id }: { id: string }) {
 							<Chip text="SIDELOADED" />
 						)}
 						{p.native ? <Chip text="NATIVE PART" /> : null}
-						{trusted ? <Chip text="ACCEPTED BY YOU" /> : null}
+						{whitelisted ? <Chip text="WHITELISTED" /> : null}
+						{view.ignored.length > 0 ? (
+							<Chip text={`${view.ignored.length} IGNORED`} />
+						) : null}
 						<Chip text={scan.sha256 ? sizeText(scan.size) : 'NO CODE'} />
 					</View>
 				</View>
@@ -113,7 +122,7 @@ function PluginSheet({ id }: { id: string }) {
 					</Panel>
 				) : null}
 
-				{scan.combos.map(combo => (
+				{view.combos.map(combo => (
 					<Panel
 						key={combo.id}
 						tint={RISK_COLOR[combo.severity].soft}
@@ -124,22 +133,46 @@ function PluginSheet({ id }: { id: string }) {
 					</Panel>
 				))}
 
-				{scan.findings.length === 0 && !scan.problem ? (
+				{view.findings.length === 0 && !scan.problem ? (
 					<Panel tint={color.soft}>
-						<Design.Text variant="text-md/medium">{CLEAN}</Design.Text>
+						<Design.Text variant="text-md/medium">
+							{view.ignored.length > 0 ? NOTHING_LEFT : CLEAN}
+						</Design.Text>
 					</Panel>
 				) : null}
 
-				{scan.findings.length > 0 ? (
+				{view.findings.length > 0 ? (
 					<View style={{ gap: 10 }}>
-						<Heading text={`Findings · ${scan.findings.length}`} />
-						{scan.findings.map(f => (
+						<Heading text={`Findings · ${view.findings.length}`} />
+						{view.findings.map(f => (
 							<View key={f.rule} style={{ gap: 4 }}>
 								<Design.Text variant="text-xs/bold" color="text-muted">
 									{CATEGORY_LABEL[f.category].toUpperCase()}
 								</Design.Text>
-								<FindingCard finding={f} />
+								<FindingCard
+									finding={f}
+									actionText="Ignore this"
+									onAction={() => auditor.setIgnored(p.id, findingKey(f), true)}
+								/>
 							</View>
+						))}
+						<Design.Text variant="text-xs/medium" color="text-muted">
+							{ignoreHelp}
+						</Design.Text>
+					</View>
+				) : null}
+
+				{view.ignored.length > 0 ? (
+					<View style={{ gap: 10 }}>
+						<Heading text={`Ignored · ${view.ignored.length}`} />
+						{view.ignored.map(f => (
+							<FindingCard
+								key={findingKey(f)}
+								finding={f}
+								dimmed
+								actionText="Notice again"
+								onAction={() => auditor.setIgnored(p.id, findingKey(f), false)}
+							/>
 						))}
 					</View>
 				) : null}
@@ -179,18 +212,17 @@ function PluginSheet({ id }: { id: string }) {
 							}
 						/>
 						<RowButton
-							text={trusted ? 'Stop accepting' : 'I checked it'}
-							variant={trusted ? 'destructive' : 'secondary'}
-							disabled={!scan.sha256}
+							text={whitelisted ? 'Remove whitelist' : 'Whitelist'}
+							variant={whitelisted ? 'destructive' : 'secondary'}
 							onPress={() => {
-								if (trusted) auditor.untrust(p.id)
-								else auditor.trust(scan)
+								if (whitelisted) auditor.unwhitelist(p.id)
+								else auditor.whitelist(p.id)
 							}}
 						/>
 					</ButtonRow>
-					{!trusted && scan.risk !== 'clean' ? (
+					{!whitelisted && view.risk !== 'clean' ? (
 						<Design.Text variant="text-xs/medium" color="text-muted">
-							{acceptHelp}
+							{whitelistHelp}
 						</Design.Text>
 					) : null}
 					<Design.Button text="Close" variant="tertiary" onPress={close} />

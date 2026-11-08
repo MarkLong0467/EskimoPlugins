@@ -33,13 +33,16 @@ export default plugin<{ jsonStorage: AuditorSettings }>({
 		setStorage(jsonStorage)
 		diag.log('plugin', `autoScan ${setting('autoScan') ? 'on' : 'off'}`)
 
-		auditor.onAttention = count => {
-			if (count > 0 && setting('notify'))
-				toast(
-					count === 1
-						? '1 plugin needs attention. See Plugin Auditor.'
-						: `${count} plugins need attention. See Plugin Auditor.`,
-				)
+		// The start-up alert: only high and critical plugins that are not whitelisted, named so it is clear which.
+		auditor.onAttention = names => {
+			if (names.length === 0 || !setting('notify')) return
+			const shown = names.slice(0, 2).join(', ')
+			const more = names.length > 2 ? ` +${names.length - 2}` : ''
+			toast(
+				names.length === 1
+					? `${shown} needs attention. See Plugin Auditor.`
+					: `${shown}${more} need attention. See Plugin Auditor.`,
+			)
 		}
 		cleanup(auditor.scheduleAutoScan())
 		cleanup(() => {

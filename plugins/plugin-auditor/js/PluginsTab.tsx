@@ -7,7 +7,6 @@ import { FilterRow, Heading, RiskBadge } from './components'
 import { plural } from './format'
 import { openPluginSheet } from './PluginSheet'
 import { CATEGORY_LABEL } from './rules'
-import { needsAttention } from './scan'
 import { auditor } from './store'
 import type { Category, PluginScan } from './types'
 
@@ -35,37 +34,41 @@ const CAPABILITIES: readonly Category[] = [
 	'exfil',
 ]
 
-/** The second line of a plugin's row: the worst thing found (in the chosen category if one is), or that nothing was. */
-function subtitle(
-	scan: PluginScan,
-	accepted: boolean,
-	capability: Capability,
-): string {
+/**
+ * The second line of a plugin's row: the worst thing found (in the chosen category if one is), or that nothing was.
+ * Findings the user ignores are not counted.
+ */
+function subtitle(scan: PluginScan, capability: Capability): string {
 	const p = scan.plugin
+	const view = auditor.view(scan)
 	const facts = `v${p.version} · ${p.author}`
 	const inCategory =
 		capability === 'any'
 			? undefined
-			: scan.findings.find(f => f.category === capability)
+			: view.findings.find(f => f.category === capability)
 	const top =
-		inCategory?.title ?? scan.combos[0]?.title ?? scan.findings[0]?.title
-	if (!top) return `${facts} · ${scan.problem ? 'no code' : 'nothing found'}`
-	const more = scan.findings.length > 1 ? ` +${scan.findings.length - 1}` : ''
-	return `${facts}\n${accepted ? 'Accepted · ' : ''}${top}${more}`
+		inCategory?.title ?? view.combos[0]?.title ?? view.findings[0]?.title
+	const tag = auditor.isWhitelisted(p.id) ? 'Whitelisted · ' : ''
+	if (!top)
+		return `${facts}\n${tag}${scan.problem ? 'no code' : 'nothing found'}`
+	const more = view.findings.length > 1 ? ` +${view.findings.length - 1}` : ''
+	return `${facts}\n${tag}${top}${more}`
 }
 
-/** Whether a plugin passes the risk filter. */
-function passes(filter: Filter, scan: PluginScan, accepted: boolean): boolean {
+/** Whether a plugin passes the risk filter, going by what is left after the findings the user ignores. */
+function passes(filter: Filter, scan: PluginScan): boolean {
 	if (filter === 'all') return true
-	if (filter === 'attention') return needsAttention(scan, accepted)
-	if (filter === 'review') return scan.risk === 'medium' || scan.risk === 'low'
-	return scan.risk === 'clean'
+	if (filter === 'attention') return auditor.needsAttention(scan)
+	const risk = auditor.view(scan).risk
+	if (filter === 'review') return risk === 'medium' || risk === 'low'
+	return risk === 'clean'
 }
 
-/** Whether a plugin has a finding in the category chosen. */
+/** Whether a plugin has a finding (that is not ignored) in the category chosen. */
 function can(capability: Capability, scan: PluginScan): boolean {
 	return (
-		capability === 'any' || scan.findings.some(f => f.category === capability)
+		capability === 'any' ||
+		auditor.view(scan).findings.some(f => f.category === capability)
 	)
 }
 
@@ -82,24 +85,17 @@ export function PluginsTab() {
 		)
 	}
 
-	const rows = state.scans.map(scan => ({
-		scan,
-		accepted: auditor.isTrusted(scan),
-	}))
+	const scans = state.scans
 	const count = (f: Filter) =>
-		rows.filter(
-			({ scan, accepted }) =>
-				passes(f, scan, accepted) && can(capability, scan),
-		).length
-	const shown = rows.filter(
-		({ scan, accepted }) =>
-			passes(filter, scan, accepted) && can(capability, scan),
+		scans.filter(scan => passes(f, scan) && can(capability, scan)).length
+	const shown = scans.filter(
+		scan => passes(filter, scan) && can(capability, scan),
 	)
 	// Only categories that at least one plugin has, with how many, so the row never offers an empty choice.
 	const offered = CAPABILITIES.map(category => ({
 		id: category as Capability,
-		label: `${CATEGORY_LABEL[category]} ${rows.filter(r => passes(filter, r.scan, r.accepted) && can(category, r.scan)).length}`,
-		total: rows.filter(r => can(category, r.scan)).length,
+		label: `${CATEGORY_LABEL[category]} ${scans.filter(s => passes(filter, s) && can(category, s)).length}`,
+		total: scans.filter(s => can(category, s)).length,
 	})).filter(c => c.total > 0)
 
 	return (
@@ -141,13 +137,13 @@ export function PluginsTab() {
 				</Design.TableRowGroup>
 			) : (
 				<Design.TableRowGroup title={plural(shown.length, 'plugin')}>
-					{shown.map(({ scan, accepted }) => (
+					{shown.map(scan => (
 						<Design.TableRow
 							key={scan.plugin.id}
 							label={scan.plugin.name}
-							subLabel={subtitle(scan, accepted, capability)}
+							subLabel={subtitle(scan, capability)}
 							subLabelLineClamp={2}
-							trailing={<RiskBadge risk={scan.risk} />}
+							trailing={<RiskBadge risk={auditor.view(scan).risk} />}
 							arrow
 							onPress={() => openPluginSheet(scan.plugin.id)}
 						/>

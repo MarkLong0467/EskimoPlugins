@@ -22,7 +22,8 @@ export const DEFAULT_SETTINGS: AuditorSettings = {
 	vtKey: '',
 	vtDomains: false,
 	vtFast: false,
-	trusted: {},
+	whitelist: {},
+	ignored: {},
 	vtCache: {},
 }
 

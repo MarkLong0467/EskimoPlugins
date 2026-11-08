@@ -13,8 +13,9 @@ Valenced has no permissions. A plugin runs with the same access as Discord itsel
 - **Links tab.** Every link written in the plugins' code, grouped by place, with who uses it and a trust label (**known**, **unknown**, **risky**, or **library** noise, hidden by default). Copy all links, or tap a place for its links and the plugins that use it.
 - **Copies tab.** Plugins with identical code, nearly identical code (a fork or an old version), the same name, or the same plugin id from a different author, with advice on what to remove.
 - **VirusTotal.** Without a key, buttons open the plugin's page on VirusTotal and Hybrid Analysis by hash. With a free key, the plugin asks for you: **Check** (sends only the SHA-256), **Upload code** (asks first, every time) and **Check unknown places** (sends only the names).
-- **I checked it.** Accept a plugin so it stops counting as a problem. It counts again if its code changes.
-- **Scan when Discord starts**, with a toast if something needs attention.
+- **Whitelist.** Open a plugin and tap **Whitelist**: it never counts as needing attention again, even after it updates, and is left out of the start-up alert. It keeps its real risk badge and its findings stay listed.
+- **Ignore a finding.** Under each finding, **Ignore this** hides just that one on that plugin (and any combination it is part of), so a different, new problem on the same plugin still shows. **Notice again** brings it back. Both lists are in Options, where a tap removes an entry.
+- **Scan when Discord starts**, with a toast that names the plugins that need attention. Only **high** and **critical** plugins count, after ignored findings, and whitelisted plugins are left out.
 - **Debugging** section at the bottom: **Copy logs** and **Run self-check** (see below).
 
 ## What it looks for

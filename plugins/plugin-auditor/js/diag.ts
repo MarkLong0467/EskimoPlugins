@@ -20,7 +20,11 @@ export const diag = createDiagnostics('Plugin Auditor', {
 		vtKey: setting('vtKey') ? 'set' : 'not set',
 		vtDomains: setting('vtDomains'),
 		vtFast: setting('vtFast'),
-		trusted: Object.keys(setting('trusted')).length,
+		whitelist: Object.keys(setting('whitelist')).length,
+		ignoredFindings: Object.values(setting('ignored')).reduce(
+			(n, keys) => n + keys.length,
+			0,
+		),
 		vtCache: Object.keys(setting('vtCache')).length,
 	}),
 	extra: () => auditor.reportLines(),

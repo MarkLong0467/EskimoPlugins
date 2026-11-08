@@ -351,8 +351,25 @@ export function Code({ text }: { text: string }) {
 	)
 }
 
-/** A finding: its severity, what it is, why it matters and where it matched. */
-export function FindingCard({ finding }: { finding: Finding }) {
+/**
+ * A finding: its severity, what it is, why it matters and where it matched.
+ *
+ * @param finding The finding.
+ * @param dimmed Draw it faded, for a finding the user ignores.
+ * @param actionText The label of the button under it, such as `Ignore`.
+ * @param onAction What the button does.
+ */
+export function FindingCard({
+	finding,
+	dimmed,
+	actionText,
+	onAction,
+}: {
+	finding: Finding
+	dimmed?: boolean
+	actionText?: string
+	onAction?: () => void
+}) {
 	const c = RISK_COLOR[finding.severity]
 	const placesText = `${finding.count} places`
 	return (
@@ -362,6 +379,7 @@ export function FindingCard({ finding }: { finding: Finding }) {
 				backgroundColor: SURFACE,
 				borderRadius: 14,
 				overflow: 'hidden',
+				opacity: dimmed ? 0.55 : 1,
 			}}
 		>
 			<View style={{ width: 4, backgroundColor: c.solid }} />
@@ -391,6 +409,16 @@ export function FindingCard({ finding }: { finding: Finding }) {
 					<Design.Text variant="text-xs/medium" color="text-muted">
 						{placesText}
 					</Design.Text>
+				) : null}
+				{actionText && onAction ? (
+					<View style={{ alignItems: 'flex-start', marginTop: 2 }}>
+						<Design.Button
+							text={actionText}
+							variant="tertiary"
+							size="sm"
+							onPress={onAction}
+						/>
+					</View>
 				) : null}
 			</View>
 		</View>

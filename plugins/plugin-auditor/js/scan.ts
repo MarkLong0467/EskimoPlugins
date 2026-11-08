@@ -245,7 +245,57 @@ export const RISK_LABEL: Record<Risk, string> = {
 	clean: 'Clean',
 }
 
-/** Whether a plugin needs the user's eyes: high or critical, and not accepted by them. */
-export function needsAttention(scan: PluginScan, trusted: boolean): boolean {
-	return !trusted && (scan.risk === 'critical' || scan.risk === 'high')
+/**
+ * What identifies a finding when the user chooses to ignore it. Most rules are one finding each; the suspicious-link
+ * finding is one per reason, so a webhook can be ignored without ignoring an IP logger.
+ */
+export function findingKey(finding: Finding): string {
+	return finding.rule === 'exfil.link'
+		? `${finding.rule}:${finding.title}`
+		: finding.rule
+}
+
+/** A plugin as the user chose to see it: what is left after the findings they ignore. */
+export interface Judged {
+	/** The findings that still count. */
+	findings: Finding[]
+	/** The combos that still count. A combo goes when a finding it is made of is ignored. */
+	combos: Combo[]
+	/** The findings the user ignores, shown apart. */
+	ignored: Finding[]
+	risk: Risk
+}
+
+/**
+ * Applies the user's ignored findings to a scan.
+ *
+ * @param scan What the scan found, which is never changed.
+ * @param ignoredKeys The {@link findingKey}s the user ignores for this plugin.
+ */
+export function judge(
+	scan: PluginScan,
+	ignoredKeys: readonly string[],
+): Judged {
+	if (ignoredKeys.length === 0) {
+		return {
+			findings: scan.findings,
+			combos: scan.combos,
+			ignored: [],
+			risk: scan.risk,
+		}
+	}
+	const gone = new Set(ignoredKeys)
+	const findings = scan.findings.filter(f => !gone.has(findingKey(f)))
+	const ignored = scan.findings.filter(f => gone.has(findingKey(f)))
+	const goneRules = new Set(ignored.map(f => f.rule))
+	const parts = new Map(COMBOS.map(c => [c.id, c.has]))
+	const combos = scan.combos.filter(
+		c => !(parts.get(c.id) ?? []).some(rule => goneRules.has(rule)),
+	)
+	return { findings, combos, ignored, risk: riskOf(findings, combos) }
+}
+
+/** Whether a plugin needs the user's eyes: high or critical, and not on the whitelist. */
+export function needsAttention(risk: Risk, whitelisted: boolean): boolean {
+	return !whitelisted && (risk === 'critical' || risk === 'high')
 }

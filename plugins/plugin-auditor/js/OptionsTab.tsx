@@ -8,6 +8,7 @@ import { saveSettings, setting } from './config'
 import { RISK_COLOR } from './constants'
 import { open, toast } from './discord'
 import { CATEGORY_HELP, CATEGORY_LABEL } from './rules'
+import { findingKey } from './scan'
 import { auditor } from './store'
 import type { Category } from './types'
 
@@ -33,11 +34,20 @@ const CATEGORIES: readonly Category[] = [
 	'native',
 ]
 
+/** What to call an ignored finding: its title from the last scan, or its key if the plugin is not in the scan. */
+function ignoredTitle(id: string, key: string): string {
+	const found = auditor.scanOf(id)?.findings.find(f => findingKey(f) === key)
+	return found?.title ?? key
+}
+
 /** The Options tab. */
 export function OptionsTab() {
 	const [key, setKey] = useState(String(setting('vtKey') || ''))
 	const [testing, setTesting] = useState(false)
-	const trusted = Object.keys(setting('trusted'))
+	const whitelisted = Object.keys(setting('whitelist'))
+	const ignored = Object.entries(setting('ignored')).flatMap(([id, keys]) =>
+		keys.map(key => ({ id, key, title: ignoredTitle(id, key) })),
+	)
 
 	return (
 		<View style={{ gap: 22 }}>
@@ -135,22 +145,45 @@ export function OptionsTab() {
 			</Design.TableRowGroup>
 
 			<Design.TableRowGroup
-				title="Plugins you accepted"
-				description="Accepted plugins do not count as a problem until their code changes."
+				title="Whitelisted plugins"
+				description="A whitelisted plugin never counts as needing attention and is left out of the start-up alert, even after it updates. Tap one to remove it."
 			>
-				{trusted.length === 0 ? (
+				{whitelisted.length === 0 ? (
 					<Design.TableRow
 						label="None yet"
-						subLabel="Open a plugin and tap I checked it."
+						subLabel="Open a plugin and tap Whitelist."
 					/>
 				) : (
-					trusted.map(id => (
+					whitelisted.map(id => (
 						<Design.TableRow
 							key={id}
 							label={auditor.nameOf(id)}
 							subLabel={id}
 							trailing={<Chip text="REMOVE" />}
-							onPress={() => auditor.untrust(id)}
+							onPress={() => auditor.unwhitelist(id)}
+						/>
+					))
+				)}
+			</Design.TableRowGroup>
+
+			<Design.TableRowGroup
+				title="Ignored findings"
+				description="Findings you hid on a plugin. Only that finding is hidden, so a new problem on the same plugin still shows. Tap one to notice it again."
+			>
+				{ignored.length === 0 ? (
+					<Design.TableRow
+						label="None yet"
+						subLabel="Open a plugin and tap Ignore this under a finding."
+					/>
+				) : (
+					ignored.map(item => (
+						<Design.TableRow
+							key={`${item.id}:${item.key}`}
+							label={item.title}
+							subLabel={auditor.nameOf(item.id)}
+							labelLineClamp={2}
+							trailing={<Chip text="NOTICE" />}
+							onPress={() => auditor.setIgnored(item.id, item.key, false)}
 						/>
 					))
 				)}

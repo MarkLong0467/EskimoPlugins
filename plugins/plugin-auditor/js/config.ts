@@ -37,7 +37,7 @@ export function saveSettings(patch: Partial<AuditorSettings>): void {
  * Saves a whole map setting, so keys that are not in it any more are gone. The storage merges objects, so a key can only
  * be removed by saving everything again with the replace flag.
  */
-export function replaceMap<K extends 'trusted' | 'vtCache'>(
+export function replaceMap<K extends 'whitelist' | 'ignored' | 'vtCache'>(
 	key: K,
 	value: AuditorSettings[K],
 ): void {

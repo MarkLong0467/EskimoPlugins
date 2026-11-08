@@ -135,8 +135,10 @@ export interface AuditorSettings {
 	vtKey: string
 	vtDomains: boolean
 	vtFast: boolean
-	/** Plugins the user has looked at and accepted, by id, with the hash of the code they accepted. */
-	trusted: Record<string, string>
+	/** Plugins the user whitelisted, by id: they never count as needing attention, whatever their code does later. */
+	whitelist: Record<string, true>
+	/** Findings the user ignores, by plugin id: the keys of the findings (see `findingKey`). */
+	ignored: Record<string, string[]>
 	/** VirusTotal answers by SHA-256 of a file, or `domain:<host>`. */
 	vtCache: Record<string, VtVerdict>
 }

@@ -10,7 +10,12 @@ export {
 	hostOf,
 } from '../../plugins/plugin-auditor/js/links'
 export { RULES } from '../../plugins/plugin-auditor/js/rules'
-export { scanPlugin } from '../../plugins/plugin-auditor/js/scan'
+export {
+	findingKey,
+	judge,
+	needsAttention,
+	scanPlugin,
+} from '../../plugins/plugin-auditor/js/scan'
 export {
 	lookupDomain,
 	lookupFile,

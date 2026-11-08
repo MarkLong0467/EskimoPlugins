@@ -2,7 +2,7 @@
  * The auditor: runs scans, keeps what they found, and runs the VirusTotal checks.
  *
  * The screens read it and ask it to do things, and it tells them when something changed. All of it lives in memory except
- * the settings (trusted plugins and VirusTotal answers), which are saved.
+ * the settings (the whitelist, the ignored findings and VirusTotal answers), which are saved.
  */
 
 import { replaceMap, saveSettings, setting } from './config'
@@ -17,7 +17,7 @@ import { diag } from './diag'
 import { findDuplicates, stringsOf } from './duplicates'
 import { sha256 } from './hash'
 import { RULES } from './rules'
-import { needsAttention, RISK_LABEL, scanPlugin } from './scan'
+import { judge, needsAttention, RISK_LABEL, scanPlugin } from './scan'
 import { listInstalled } from './source'
 import {
 	domainLink,
@@ -31,6 +31,7 @@ import {
 	vtLog,
 } from './virustotal'
 import type { DuplicateInput } from './duplicates'
+import type { Judged } from './scan'
 import type { ListSource } from './source'
 import type {
 	DuplicateGroup,
@@ -187,30 +188,53 @@ function createAuditor() {
 		/** The scan of one plugin. */
 		scanOf: (id: string) => state.scans.find(s => s.plugin.id === id),
 
-		/** Whether the user accepted this plugin with the code it has now. */
-		isTrusted(scan: PluginScan): boolean {
-			const saved = setting('trusted')[scan.plugin.id]
-			return !!saved && saved === scan.sha256
-		},
+		/** Whether the plugin is on the whitelist. */
+		isWhitelisted: (id: string): boolean => !!setting('whitelist')[id],
 
-		/** Accepts a plugin as it is. If its code changes, it is checked again. */
-		trust(scan: PluginScan): void {
-			if (!scan.sha256) return
-			saveSettings({ trusted: { [scan.plugin.id]: scan.sha256 } })
-			diag.log('trust', `${scan.plugin.id} accepted`)
+		/** Puts a plugin on the whitelist: it never counts as needing attention, even after it updates. */
+		whitelist(id: string): void {
+			saveSettings({ whitelist: { [id]: true } })
+			diag.log('whitelist', `${id} added`)
 			changed()
 		},
 
-		/** Takes the acceptance of a plugin away. */
-		untrust(id: string): void {
-			const next = { ...setting('trusted') }
+		/** Takes a plugin off the whitelist. */
+		unwhitelist(id: string): void {
+			const next = { ...setting('whitelist') }
 			delete next[id]
-			replaceMap('trusted', next)
-			diag.log('trust', `${id} no longer accepted`)
+			replaceMap('whitelist', next)
+			diag.log('whitelist', `${id} removed`)
 			changed()
 		},
 
-		/** Counts of plugins by risk, not counting accepted ones as a problem. */
+		/** The finding keys the user ignores for a plugin. */
+		ignoredKeys: (id: string): string[] => setting('ignored')[id] ?? [],
+
+		/** Ignores one finding of one plugin, or stops ignoring it. */
+		setIgnored(id: string, key: string, ignore: boolean): void {
+			const all = { ...setting('ignored') }
+			const keys = new Set(all[id] ?? [])
+			if (ignore) keys.add(key)
+			else keys.delete(key)
+			if (keys.size > 0) all[id] = [...keys]
+			else delete all[id]
+			replaceMap('ignored', all)
+			diag.log(
+				'whitelist',
+				`${id}: ${key} ${ignore ? 'ignored' : 'noticed again'}`,
+			)
+			changed()
+		},
+
+		/** What is left of a plugin's scan after the findings the user ignores. */
+		view: (scan: PluginScan): Judged =>
+			judge(scan, api.ignoredKeys(scan.plugin.id)),
+
+		/** Whether a plugin needs attention: high or critical after the ignored findings, and not whitelisted. */
+		needsAttention: (scan: PluginScan): boolean =>
+			needsAttention(api.view(scan).risk, api.isWhitelisted(scan.plugin.id)),
+
+		/** Counts of plugins by risk (after ignored findings), not counting whitelisted ones as a problem. */
 		summary() {
 			const counts: Record<Risk, number> = {
 				critical: 0,
@@ -220,14 +244,13 @@ function createAuditor() {
 				clean: 0,
 			}
 			let attention = 0
-			let trusted = 0
+			let whitelisted = 0
 			for (const scan of state.scans) {
-				counts[scan.risk]++
-				const accepted = api.isTrusted(scan)
-				if (accepted) trusted++
-				if (needsAttention(scan, accepted)) attention++
+				counts[api.view(scan).risk]++
+				if (api.isWhitelisted(scan.plugin.id)) whitelisted++
+				if (api.needsAttention(scan)) attention++
 			}
-			return { counts, attention, trusted, total: state.scans.length }
+			return { counts, attention, whitelisted, total: state.scans.length }
 		},
 
 		/** Every place that scanned plugins link to, worst first. */
@@ -372,18 +395,21 @@ function createAuditor() {
 			autoTimer = setTimeout(async () => {
 				await api.scan()
 				if (!setting('notify')) return
-				const { attention } = api.summary()
-				if (attention > 0)
-					diag.log('scan', `${attention} plugin(s) need attention`, 'warn')
-				api.onAttention?.(attention)
+				// Only high and critical plugins that are not whitelisted, after the findings the user ignores.
+				const names = state.scans
+					.filter(scan => api.needsAttention(scan))
+					.map(scan => scan.plugin.name)
+				if (names.length === 0) return
+				diag.log('scan', `${names.length} plugin(s) need attention`, 'warn')
+				api.onAttention?.(names)
 			}, AUTO_SCAN_DELAY_MS)
 			return () => {
 				if (autoTimer) clearTimeout(autoTimer)
 			}
 		},
 
-		/** Called after an automatic scan with the number of plugins that need attention. */
-		onAttention: undefined as undefined | ((count: number) => void),
+		/** Called after an automatic scan with the names of the plugins that need attention. Not called when there are none. */
+		onAttention: undefined as undefined | ((names: string[]) => void),
 
 		/** Forgets everything when the plugin stops. */
 		stop(): void {
@@ -544,16 +570,18 @@ function createAuditor() {
 		/** A text report of one plugin's scan, to paste into a chat. */
 		reportFor(scan: PluginScan): string {
 			const p = scan.plugin
+			const view = api.view(scan)
 			const lines = [
 				`${p.name} ${p.version} (${p.id}) by ${p.author}`,
-				`Risk: ${RISK_LABEL[scan.risk]}${api.isTrusted(scan) ? ' (accepted by the user)' : ''}`,
+				`Risk: ${RISK_LABEL[view.risk]}${api.isWhitelisted(p.id) ? ' (whitelisted by the user)' : ''}${view.ignored.length ? ` (${view.ignored.length} finding(s) ignored by the user)` : ''}`,
 				`Code: ${scan.sha256 ? `${scan.size} characters, sha256 ${scan.sha256}` : 'none'}`,
 			]
-			for (const c of scan.combos) lines.push(`!! ${c.title}: ${c.why}`)
-			for (const f of scan.findings) {
+			for (const c of view.combos) lines.push(`!! ${c.title}: ${c.why}`)
+			for (const f of view.findings) {
 				lines.push(`[${f.severity.toUpperCase()}] ${f.title} (${f.count}x)`)
 				for (const s of f.samples.slice(0, 2)) lines.push(`    ${s}`)
 			}
+			for (const f of view.ignored) lines.push(`(ignored) ${f.title}`)
 			const links = scan.links.filter(l => l.kind !== 'noise')
 			if (links.length) {
 				lines.push('Links:')
@@ -583,7 +611,7 @@ function createAuditor() {
 				'',
 			]
 			for (const scan of state.scans) {
-				if (scan.risk === 'clean') continue
+				if (api.view(scan).risk === 'clean') continue
 				lines.push(api.reportFor(scan), '')
 			}
 			if (state.groups.length) {
@@ -643,7 +671,7 @@ function createAuditor() {
 			for (const scan of state.scans) {
 				const p = scan.plugin
 				lines.push(
-					`  ${p.id} ${p.version} ${scan.risk} ${scan.findings.length}f ${scan.links.length}l ${scan.size}ch ${scan.sha256 ? scan.sha256.slice(0, 10) : 'no-code'}${p.internal ? ' built-in' : ''}${p.native ? ' native' : ''}`,
+					`  ${p.id} ${p.version} ${scan.risk} ${scan.findings.length}f ${scan.links.length}l ${scan.size}ch ${scan.sha256 ? scan.sha256.slice(0, 10) : 'no-code'}${p.internal ? ' built-in' : ''}${p.native ? ' native' : ''}${api.isWhitelisted(p.id) ? ' whitelisted' : ''}${api.ignoredKeys(p.id).length ? ` ignores=${api.ignoredKeys(p.id).join('+')}` : ''}`,
 				)
 			}
 			lines.push(`VirusTotal key: ${vtOptions().key ? 'set' : 'not set'}`)

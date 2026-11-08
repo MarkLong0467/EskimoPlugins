@@ -7,6 +7,7 @@
  * `BottomSheetScrollView`). The plain scroll view is used only if that one cannot be found or cannot be drawn.
  */
 
+import { getAssetIdByName } from '@valenced/assets'
 import { Design } from '@valenced/discord/design'
 import { BottomSheet } from '@valenced/externals/gorhom'
 import { lookupModule } from '@valenced/modules/finders'
@@ -117,6 +118,22 @@ function scrollView(props: ScrollProps, children: ReactNode): ReactNode {
 const CLOSE_LABEL = 'Close'
 const CLOSE_GLYPH = '✕'
 
+/** The names Discord's X icon has had. */
+const CLOSE_ICONS = ['XSmallIcon', 'CloseIcon', 'XIcon'] as const
+
+/** Discord's own X icon, found by name; a plain character when Discord has none by the names tried. */
+function CloseIcon() {
+	for (const name of CLOSE_ICONS) {
+		const id = getAssetIdByName(name)
+		if (id != null) return <Design.TableRow.Icon source={id} />
+	}
+	return (
+		<NativeText style={{ fontSize: 18, color: '#8A8F98' }}>
+			{CLOSE_GLYPH}
+		</NativeText>
+	)
+}
+
 /**
  * The sheet opens expanded, in its scrollable mode, so the list inside it is the only thing that scrolls: the sheet no
  * longer takes the drag from it. The sheet adds no padding of its own.
@@ -154,9 +171,7 @@ export function SheetFrame({
 						onPress={onClose}
 						style={{ padding: 6 }}
 					>
-						<NativeText style={{ fontSize: 18, color: '#8A8F98' }}>
-							{CLOSE_GLYPH}
-						</NativeText>
+						<CloseIcon />
 					</Pressable>
 				}
 			/>
