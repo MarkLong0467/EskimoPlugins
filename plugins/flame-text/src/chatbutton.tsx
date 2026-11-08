@@ -19,6 +19,7 @@ import {
 	lookupModuleWithImportedPath,
 } from '@valenced/discord/utils/modules/finders'
 import { lookupGeneratedIconComponent } from '@valenced/utils/discord'
+import { after } from '@valenced/patcher'
 import { findInReactFiber } from '@valenced/utils/react'
 import { createElement, useSyncExternalStore } from 'react'
 import { Text as NativeText, View } from 'react-native'
@@ -36,6 +37,16 @@ const RIGHT_ACTIONS_PATH =
 	'modules/chat_input/native/action_buttons/ChatInputRightActions.tsx'
 const ACTION_BUTTON_PATH =
 	'modules/chat_input/native/action_buttons/ChatInputActionButton.tsx'
+
+/**
+ * The priority of the fallback patch. Valenced runs the hooks with the highest priority first, so the button is already in the
+ * row when a plugin that hides, reads or merges the chat box buttons looks at it.
+ */
+const FIRST = 500
+
+/** How often, and how many times, to check that the wrapper was called once a chat is open. */
+const CHECK_MS = 2000
+const CHECKS = 15
 
 /** The key of the button in the list, so it is found again and never added twice. */
 const BUTTON_KEY = 'flame-text'
@@ -453,6 +464,29 @@ export function installChatButton(cleanup: Cleanup): void {
 							return
 						}
 						wrap(Right, exports)
+						// On some phones Discord draws the row without going through the wrapper (the row is never drawn by it). If a chat is
+						// open and the wrapper has not been called, the button is added through Valenced's patcher, which does work there.
+						let tries = 0
+						const check = setInterval(() => {
+							tries++
+							if (state.chatCalls > 0 || tries > CHECKS || !setting('chatButton')) {
+								clearInterval(check)
+								return
+							}
+							if (!currentChat()) return
+							clearInterval(check)
+							try {
+								undo.push(
+									after(Right as never, 'type' as never, placeButton as never, {
+										priority: FIRST,
+									}) as never,
+								)
+								state.chatHow += ', then through the patcher (the wrapper was not called)'
+							} catch (error) {
+								diag.fail('flame button', error)
+							}
+						}, CHECK_MS)
+						undo.push(() => clearInterval(check))
 					},
 				),
 			)
