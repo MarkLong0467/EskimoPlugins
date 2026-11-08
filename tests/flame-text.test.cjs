@@ -726,9 +726,7 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 			},
 		})
 		s.b = s_box
-		check('Flame Text made no patch with Valenced\'s patcher on the chat box buttons', !calls.some(c => c.endsWith(' type')), calls)
 		check('the row has the flame button all the same', drawRow(s, {}).props.children.filter(c => c && c.key === 'flame-text').length === 1)
-		check('the function in place keeps the name and the length of Discord\'s function, which other plugins find it by', s.b.Right.type.displayName === 'ChatInputRightActions' && s.b.Right.type.length === 1 && s.b.Right.type.name === 'ChatInputRightActions', [s.b.Right.type.displayName, s.b.Right.type.length, s.b.Right.type.name])
 		check('and it is Flame Text\'s own function, not a patcher proxy', s.b.Right.type !== s.b.rightType)
 
 		// Another plugin patches over it afterwards: its hooks go into its own patch, and Flame Text's wrapper is only what it wraps.

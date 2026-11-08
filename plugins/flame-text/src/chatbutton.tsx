@@ -19,6 +19,7 @@ import {
 	lookupModuleWithImportedPath,
 } from '@valenced/discord/utils/modules/finders'
 import { lookupGeneratedIconComponent } from '@valenced/utils/discord'
+import { after } from '@valenced/patcher'
 import { findInReactFiber } from '@valenced/utils/react'
 import { createElement, useSyncExternalStore } from 'react'
 import { Text as NativeText } from 'react-native'
@@ -251,74 +252,11 @@ function placeButton(tree: unknown): unknown {
 	return tree
 }
 
-/** What is put in the place of the right-hand actions' function while the button is on. */
-interface Wrapped {
-	/** The memo object Discord exports, whose `type` is the function that draws the buttons. */
-	memo: { type: unknown }
-	/** The function that was there before. */
-	original: (...args: unknown[]) => unknown
-	/** The function that was put there. */
-	wrapper: (...args: unknown[]) => unknown
-	/** Whether the wrapper adds the button. It stays in place, doing nothing, if another plugin patched over it. */
-	active: boolean
-}
-
-/** The wrapper that is in place now, if any. */
-let wrapped: Wrapped | undefined
-
 /**
- * Puts the flame button into what the right-hand actions draw.
- *
- * This is a plain function put in place of `type`, not a hook on Valenced's patcher, on purpose. A patch made with the patcher
- * becomes one shared proxy that every plugin's hooks are added to, and the chat box's buttons were drawn through that proxy
- * from then on. A plugin that later adds a hook of its own that calls a React hook (Better Chat Buttons does) then changes the
- * hooks of every button row that was drawn through the proxy, and React stops with "Should have a queue. You are likely calling
- * Hooks conditionally". A plain wrapper has no hooks to add to and calls no React hook, so what other plugins patch later is
- * theirs alone. The wrapper has the same `length` and `displayName` as the function it wraps, because plugins find the
- * component by them.
+ * The priority of the patch. Valenced runs the hooks with the highest priority first, so the button is already in the row when
+ * a plugin that hides, reads or merges the chat box buttons looks at it, whichever plugin started first.
  */
-function wrap(memo: { type: unknown }): void {
-	const original = memo.type
-	if (typeof original !== 'function') return
-	const own = original as (...args: unknown[]) => unknown
-	const entry: Wrapped = {
-		memo,
-		original: own,
-		wrapper: undefined as never,
-		active: true,
-	}
-	// One named parameter, so `length` is 1 like Discord's function.
-	const wrapper = function (this: unknown, props: unknown, ...rest: unknown[]) {
-		const result = own.call(this, props, ...rest)
-		return entry.active ? placeButton(result) : result
-	}
-	try {
-		const named = own as unknown as { displayName?: string; name?: string }
-		if (named.displayName) {
-			;(wrapper as unknown as { displayName?: string }).displayName =
-				named.displayName
-		}
-		Object.defineProperty(wrapper, 'name', {
-			value: named.name ?? 'ChatInputRightActions',
-		})
-	} catch {
-		// The name is only for readability.
-	}
-	entry.wrapper = wrapper
-	memo.type = wrapper
-	wrapped = entry
-}
-
-/** Takes the wrapper out. If another plugin has patched over it, it stays in place and does nothing. */
-function unwrap(): void {
-	const entry = wrapped
-	if (!entry) return
-	entry.active = false
-	if (entry.memo.type === entry.wrapper) {
-		entry.memo.type = entry.original
-		wrapped = undefined
-	}
-}
+const FIRST = 500
 
 /**
  * Adds the flame button to the chat box while the setting is on.
@@ -339,7 +277,6 @@ export function installChatButton(cleanup: Cleanup): void {
 				// Already gone.
 			}
 		}
-		unwrap()
 	}
 
 	const start = () => {
@@ -351,21 +288,15 @@ export function installChatButton(cleanup: Cleanup): void {
 					RIGHT_ACTIONS_PATH,
 					exports => {
 						const Right = exports?.default as { type: unknown } | undefined
-						if (!Right || typeof Right !== 'object') return
+						if (!Right || (typeof Right !== 'object' && typeof Right !== 'function')) return
 						state.chatSeen = true
 						diag.log('found', 'Found the chat box buttons')
-						if (wrapped?.active && wrapped.memo === Right) return
-						if (
-							wrapped &&
-							!wrapped.active &&
-							wrapped.memo === Right &&
-							Right.type === wrapped.wrapper
-						) {
-							// Still in place from before: switch it on again.
-							wrapped.active = true
-							return
-						}
-						wrap(Right)
+						// The same patch the other chat box button plugins make, which is the one that works on every phone.
+						undo.push(
+							after(Right as never, 'type' as never, placeButton as never, {
+								priority: FIRST,
+							}) as never,
+						)
 					},
 				),
 			)
@@ -378,7 +309,7 @@ export function installChatButton(cleanup: Cleanup): void {
 
 	const sync = () => {
 		if (setting('chatButton')) start()
-		else if (undo.length > 0 || wrapped?.active) {
+		else if (undo.length > 0) {
 			stop()
 			state.chatWatched = false
 		}
