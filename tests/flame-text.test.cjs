@@ -526,7 +526,8 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 			if (props?.keep) return (kept ??= make(props))
 			return make(props)
 		}
-		const Right = { $$typeof: 'memo', type: rightType }
+		rightType.displayName = 'ChatInputRightActions'
+		const Right = { $typeof: 'memo', type: rightType }
 		const FireIcon = function FireIcon(props) { return { type: 'FireDrawn', key: null, props } }
 		const flags = { buttonLoaded: options.buttonLoaded ?? true, finderBroken: false, fire: options.fire ?? true }
 		const modules = { 'modules/chat_input/native/action_buttons/ChatInputRightActions.tsx': { default: Right }, 'modules/chat_input/native/action_buttons/ChatInputActionButton.tsx': { default: ActionButton } }
@@ -664,6 +665,50 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 		check('the name does not change with the state (so the menu keeps one row and its nickname)', new Set([read()[0].id]).size === 1)
 		s.stop()
 		check('stopping leaves the other plugins\' patches working', (() => { try { const t = s.b.Right.type({ shouldShowGiftButton: true }); return t.props.children.length === 2 && t.props.children[0] === null } catch { return false } })())
+		check('no errors', s.errors.length === 0, s.errors)
+	}
+
+	// --- The row is wrapped, not patched with Valenced's patcher, so hooks other plugins add are not shared with it
+	{
+		const calls = []
+		const s_box = chatBox()
+		const s = await startPort('flame-text', {
+			saved: { chatButton: true },
+			reactExtras: true,
+			before: runtime => {
+				s_box.install(runtime)
+				const { patcher } = runtime.valenced
+				for (const kind of ['before', 'after', 'instead']) {
+					const original = patcher[kind]
+					patcher[kind] = (parent, key, ...rest) => {
+						calls.push(`${kind} ${String(key)}`)
+						return original(parent, key, ...rest)
+					}
+				}
+			},
+		})
+		s.b = s_box
+		check('Flame Text made no patch with Valenced\'s patcher on the chat box buttons', !calls.some(c => c.endsWith(' type')), calls)
+		check('the row has the flame button all the same', drawRow(s, {}).props.children.filter(c => c && c.key === 'flame-text').length === 1)
+		check('the function in place keeps the name and the length of Discord\'s function, which other plugins find it by', s.b.Right.type.displayName === 'ChatInputRightActions' && s.b.Right.type.length === 1 && s.b.Right.type.name === 'ChatInputRightActions', [s.b.Right.type.displayName, s.b.Right.type.length, s.b.Right.type.name])
+		check('and it is Flame Text\'s own function, not a patcher proxy', s.b.Right.type !== s.b.rightType)
+
+		// Another plugin patches over it afterwards: its hooks go into its own patch, and Flame Text's wrapper is only what it wraps.
+		const { patcher } = s.runtime.valenced
+		const undoOther = patcher.before(s.b.Right, 'type', args => args)
+		const wrappedByOther = s.b.Right.type
+		check('a plugin that patches the row later patches over Flame Text\'s function', wrappedByOther !== s.b.rightType && drawRow(s, {}).props.children.filter(c => c && c.key === 'flame-text').length === 1)
+
+		// Switched off while the other plugin is over it: the wrapper stays in place, does nothing, and nothing else is disturbed.
+		await flip(s, false)
+		check('switched off while another plugin is over it, the row has no flame button and the other plugin\'s patch is untouched', s.b.Right.type === wrappedByOther && drawRow(s, {}).props.children.length === 2)
+		await flip(s, true)
+		check('switched on again there is exactly one flame button (the old wrapper does nothing, the new one adds it)', drawRow(s, {}).props.children.filter(c => c && c.key === 'flame-text').length === 1 && drawRow(s, {}).props.children.length === 3)
+		await flip(s, false)
+		check('and off again leaves none', drawRow(s, {}).props.children.length === 2)
+		undoOther()
+		s.stop()
+		check('stopping with others around leaves the row working', (() => { try { return drawRow(s, {}).props.children.length === 2 } catch { return false } })())
 		check('no errors', s.errors.length === 0, s.errors)
 	}
 
