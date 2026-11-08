@@ -570,10 +570,12 @@ export function prepareFire(
 					const inside = fill[cell] as number
 					let body: number
 					if (classic) {
-						const c = crown[at] as number
-						const fire = 0.4 + (inside - 0.26) * 0.75
-						body = 0.3 + (fire - 0.3) * c
-						body += (0.1 - body) * (edge[at] as number) * (1 - c)
+						// A red outline round letters filled with mottled fire, which is bare at the top.
+						const rim =
+							smooth(0.2, 0.75, edge[at] as number) *
+							(1 - 0.7 * (crown[at] as number))
+						const fire = 0.34 + (inside - 0.26) * 0.95
+						body = fire + (0.3 - fire) * rim
 					} else body = inside + (0.15 - inside) * (edge[at] as number)
 					h = body * letter + h * (1 - letter)
 					a = letter + (1 - letter) * flameAmount
