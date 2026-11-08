@@ -47,7 +47,7 @@ Updates arrive through the same link.
 | [Colorful Channels](plugins/colorful-channels) | 1.1.5 | colored channel icons for locked and NSFW channels, plus a red NSFW tag |
 | [Crop Plus](plugins/crop-plus) | 1.3.1 | crop pictures much smaller than Discord allows by cropping the result again |
 | [Custom Sounds](plugins/custom-sounds) | 0.1.34 | replace any Discord sound with your own link, with seasonal packs |
-| [Flame Text](plugins/flame-text) | 1.1.1 | turns what you send into a burning, animated GIF of your text on fire, drawn on your phone, with a chat box button and /flame to switch it |
+| [Flame Text](plugins/flame-text) | 1.2.0 | turns what you send into a burning, animated GIF of your text on fire, drawn on your phone, with a chat box button and /flame to switch it |
 | [Force Timestamp Locale](plugins/force-timestamp-locale) | 1.0.1 | show every timestamp in one language, such as en-gb 24-hour times |
 | [Haptics](plugins/haptics) | 0.1.3 | turn Discord's buzzing on or off, with a log of what buzzed |
 | [Hide Slash Apps](plugins/hide-slash-apps) | 1.1.0 | long press an app or command in the / menu to hide it everywhere or in one server, switch off built-in commands (for bots like MEE6) |
