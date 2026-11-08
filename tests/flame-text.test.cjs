@@ -472,37 +472,36 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 		s.stop()
 	}
 
-	// --- Holding + in the chat box
+	// --- The Flame Typing row in the + menu
 	{
 		const s = await start()
-		const actions = { $$typeof: 'memo', type: function ChatInputActions() { return { type: 'ActionsRow', props: {} } } }
-		draw(s, actions, {})
-		const view = await s.mountRender(() => draw(s, actions, {}))
-		const watcher = findNode(view.tree, n => typeof n.props?.onTouchStart === 'function')
-		check('the + buttons are wrapped in a view that watches touches', !!watcher && textOf(view.tree) !== undefined)
-		const down = (x, y) => ({ nativeEvent: { pageX: x, pageY: y } })
-		watcher.props.onTouchStart(down(10, 10))
-		watcher.props.onTouchEnd()
-		await sleep(600)
-		check('a quick tap does not open the menu', s.opened('MARKLONG_FLAME_TEXT_MENU').length === 0)
-		watcher.props.onTouchStart(down(10, 10))
-		watcher.props.onTouchMove(down(80, 10))
-		await sleep(600)
-		check('a finger that moves does not open it either', s.opened('MARKLONG_FLAME_TEXT_MENU').length === 0)
-		watcher.props.onTouchStart(down(10, 10))
-		await sleep(600)
-		check('holding opens the Flame Text menu', s.opened('MARKLONG_FLAME_TEXT_MENU').length === 1)
-		const menu = await s.mountSheet('MARKLONG_FLAME_TEXT_MENU')
-		const row = switchRow(menu, 'Flame Typing')
-		check('the menu has a Flame Typing row with a slider that is off', !!row && row.props.value === false)
-		row.props.onValueChange(true)
-		await menu.settle()
-		check('the slider switches flame text on', s.storage.cache.on === true)
-		check('and shows it', switchRow(menu, 'Flame Typing').props.value === true)
-		check('the chat box has no flame button', !findNode(view.tree, n => /Flame text is/.test(n.props?.accessibilityLabel ?? '')))
+		const jsx = s.runtime.valenced.react.ReactJSXRuntime.jsx
+		const menu = () => ({ items: [
+			{ label: 'Camera', id: 'cam', key: 'cam', action() {}, iconSource: 1 },
+			{ label: 'Photos', id: 'pho', key: 'pho', action() {}, iconSource: 2 },
+			{ label: 'Poll', id: 'pol', key: 'pol', action() {}, iconSource: 3 },
+		] })
+		const element = jsx('ActionSheet', menu())
+		const labels = element.props.items.map(i => i.label)
+		check('the + menu gets a Flame Typing row at the end that says it is off', labels.join() === 'Camera,Photos,Poll,Flame Typing: Off', labels)
+		const row = element.props.items[3]
+		check('the row does not keep the identity of the row it was copied from', row.id === undefined && row.key === undefined && typeof row.action === 'function')
+		row.action()
+		check('tapping it switches flame text on', s.storage.cache.on === true)
+		check('and the menu is closed', s.runtime.log.actions.some(a => a.label === 'actionSheet' && a.name === 'hideAllActionSheets'))
+		const again = jsx('ActionSheet', element.props)
+		check('the row says it is on next time, and is not added twice', again.props.items.map(i => i.label).join() === 'Camera,Photos,Poll,Flame Typing: On', again.props.items.map(i => i.label))
+		await sleep(700)
+		again.props.items[3].action()
+		check('tapping it again switches it off', s.storage.cache.on === false)
+		const other = jsx('ActionSheet', { items: [{ label: 'Block', action() {} }, { label: 'Mute', action() {} }] })
+		check('a menu that is not the + menu is left alone', other.props.items.length === 2)
+		const plain = jsx('View', { children: 'x' })
+		check('an element without items is left alone', plain.props.children === 'x')
 		s.storage.set({ button: false })
-		check('switching the menu off in the settings takes the wrapper away', !(draw(s, actions, {}).type === 'View' && draw(s, actions, {}).props.children?.type?.name === 'HoldWatcher'))
+		check('with the setting off nothing is added', jsx('ActionSheet', menu()).props.items.length === 3)
 		s.stop()
+		check('turning the plugin off puts the menu back', jsx('ActionSheet', menu()).props.items.length === 3)
 		check('no errors', s.errors.length === 0, s.errors)
 	}
 	{
@@ -583,7 +582,7 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 		check('it says whether Discord’s file and upload code were found', /file code \(writeFile\): found; upload object \(CloudUpload\): found; upload platform number: 0/.test(report), report)
 		check('it counts messages, GIFs and problems', /Messages looked at while on: 1; sent as flame GIFs: 1/.test(report) && /Problems: 0; sent as plain text because the GIF failed: 0; the step the last GIF reached: done/.test(report), report)
 		check('it says how big the last GIF was and how long it took', /Last GIF: \d+x\d+, 8 pictures, \d+ KB, made in \d+ ms/.test(report), report)
-		check('it says what the command and the chat box did', /Command: module found; patch patched/.test(report) && /\/flame was in the answer [1-9]/.test(report) && /Chat box: JSX watched yes/.test(report) && /run 1 time\(s\)/.test(report), report)
+		check('it says what the command and the chat box did', /Command: module found; patch patched/.test(report) && /\/flame was in the answer [1-9]/.test(report) && /[+] menu: watched yes/.test(report) && /run 1 time\(s\)/.test(report), report)
 		check('it has the settings', /"on":/.test(report) && /"style": "fire"/.test(report))
 		check('it holds no message text or chat', !/private words here|chan-private-123|chan1/.test(report), report)
 		button(view, 'Run self-check').props.onPress()

@@ -92,7 +92,7 @@ export const diag = createDiagnostics('Flame Text', {
 			`Last GIF: ${state.lastSize ? `${state.lastSize}, ${state.lastFrames} pictures, ${Math.round(state.lastBytes / 1024)} KB, made in ${state.lastMs} ms` : 'none yet'}`,
 			`Last problem: ${state.lastError || 'none'}`,
 			`Command: module ${state.commandModule ? 'found' : 'not found yet'}; patch ${hookText(state.commandHook)}; Discord asked for its commands ${state.listCalls} time(s) and /flame was in the answer ${state.listWithOurs} time(s); copied the kind from roll-dice: ${state.kindCopied ? 'yes' : 'no'}; run ${state.commandRuns} time(s)`,
-			`Chat box: JSX watched ${state.jsx ? 'yes' : 'no'}; + button row seen ${state.actionsSeen ? 'yes' : 'not yet'}; drawn ${state.buttonDrawn} time(s); menu opened ${state.menuOpened} time(s); switched in the menu ${state.buttonTaps} time(s)`,
+			`+ menu: watched ${state.jsx ? 'yes' : 'no'}; menu seen ${state.actionsSeen ? 'yes' : 'not yet'}; Flame Typing row added ${state.buttonDrawn} time(s); tapped ${state.buttonTaps} time(s)`,
 			`Switched on or off ${state.toggles} time(s); previews drawn in the settings: ${state.previews}`,
 			`Last thing that happened: ${state.last || 'nothing yet'}`,
 		]
@@ -153,14 +153,14 @@ export const diag = createDiagnostics('Flame Text', {
 			},
 			{
 				ok: !setting('button') || state.jsx,
-				label: 'The chat box can be watched for the + button',
+				label: 'The + menu can be watched for',
 				detail: 'The JSX runtime could not be hooked',
 			},
 			{
 				ok: !setting('button') || state.actionsSeen,
-				label: 'Discord drew the chat box row with the + button',
+				label: 'The + menu was seen and got its Flame Typing row',
 				detail:
-					'Open a chat. If it never shows, Discord renamed the part, and holding + will not open the menu',
+					'Tap the + in a chat once. If it never shows, Discord changed the + menu and the row cannot be added',
 			},
 		]
 	},

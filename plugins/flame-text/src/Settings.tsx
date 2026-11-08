@@ -20,7 +20,7 @@ type Props = ComponentProps<
 
 /** Texts as constants because React Native text must be passed as an expression. */
 const INTRO =
-	'Turns the words you send into a burning, animated GIF of your text on fire. Switch it on, type a message and send it: the GIF goes out instead of the text. Switch it on and off by holding the + button in the chat box, or with /flame if you turn that on. The GIF is drawn on your phone, nothing is sent anywhere to make it.'
+	'Turns the words you send into a burning, animated GIF of your text on fire. Switch it on, type a message and send it: the GIF goes out instead of the text. Switch it on and off with the Flame Typing row in the + menu, or with /flame if you turn that on. The GIF is drawn on your phone, nothing is sent anywhere to make it.'
 const TOAST_KEY = 'MARKLONG_FLAME_TEXT_SETTINGS'
 const PREVIEW_PLACEHOLDER = 'Type something to see it burn'
 const PREVIEW_LIMIT = 300
@@ -374,12 +374,14 @@ export default function Settings({ api }: Props) {
 				<Design.TableRowGroup title="Ways to switch it on and off">
 					<Design.TableSwitchRow
 						label="Flame Typing in the + menu"
-						subLabel="Hold the + button in the chat box to get a menu with a Flame Typing slider."
+						subLabel="Adds a Flame Typing row to the + menu in the chat box (with Camera, Photos and Poll). Tap it to switch flame text on or off."
 						value={setting('button')}
 						onValueChange={(button: boolean) =>
 							set(
 								{ button },
-								button ? 'Hold + for the flame menu' : 'Flame menu off',
+								button
+									? 'Flame Typing is in the + menu'
+									: 'Flame Typing left the + menu',
 							)
 						}
 					/>
