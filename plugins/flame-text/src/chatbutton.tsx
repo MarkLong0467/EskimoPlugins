@@ -21,7 +21,7 @@ import {
 import { lookupGeneratedIconComponent } from '@valenced/utils/discord'
 import { after } from '@valenced/patcher'
 import { findInReactFiber } from '@valenced/utils/react'
-import { createElement, useSyncExternalStore } from 'react'
+import { createElement, useEffect, useState, useSyncExternalStore } from 'react'
 import { Text as NativeText } from 'react-native'
 import { diag } from './diag'
 import { state } from './state'
@@ -200,10 +200,22 @@ function actionButton(): ComponentType<ActionButtonProps> | undefined {
 export function FlameSlot() {
 	const enabled = useSyncExternalStore(subscribe, enabledNow)
 	const on = useSyncExternalStore(subscribe, onNow)
-	if (!enabled) return null
-	const Button = actionButton()
-	if (!Button) return null
+	// Discord's button module may not be loaded the first time the row is drawn; look again once it is (as other chat box button plugins do).
+	const [late, setButton] = useState<ComponentType<ActionButtonProps> | undefined>()
+	const Button = actionButton() ?? late
+	useEffect(() => {
+		if (Button || !enabled) return
+		return getModuleWithImportedPath<ActionButtonModule>(
+			ACTION_BUTTON_PATH,
+			exports => {
+				foundButton = exports?.default
+				if (foundButton) setButton(() => foundButton)
+			},
+		)
+	}, [Button, enabled])
+	if (!enabled || !Button) return null
 	state.chatShown = on
+	state.chatSlots++
 	// The state is given in every way Discord's button and the plugins that read it understand: `checked` for plugins that
 	// list the buttons with a switch, and `active` with its icon style for Discord's own "on" look.
 	return createElement(Button, {
@@ -231,6 +243,7 @@ const isOurs = (child: ReactNode): boolean =>
  */
 function placeButton(tree: unknown): unknown {
 	try {
+		state.chatCalls++
 		const row = findInReactFiber(
 			tree as ReactElement,
 			(node): node is RowNode =>
@@ -238,7 +251,10 @@ function placeButton(tree: unknown): unknown {
 					(node as { props?: { children?: unknown } }).props?.children,
 				),
 		) as RowNode | undefined
-		if (!row) return tree
+		if (!row) {
+			state.chatNoRow++
+			return tree
+		}
 		const list = row.props.children
 		for (let i = list.length - 1; i >= 0; i--)
 			if (isOurs(list[i])) list.splice(i, 1)

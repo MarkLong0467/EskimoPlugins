@@ -52,6 +52,10 @@ export const state = {
 	chatWatched: false,
 	chatSeen: false,
 	chatDrawn: 0,
+	/** How often the row was drawn by Discord, how often no button list was found in it, how often the button itself was drawn. */
+	chatCalls: 0,
+	chatNoRow: 0,
+	chatSlots: 0,
 	chatTaps: 0,
 	/** What the flame button last drew (on or off), and how many presses were ignored as a doubled event. */
 	chatShown: null as boolean | null,
@@ -96,6 +100,9 @@ export function resetState(): void {
 	state.chatWatched = false
 	state.chatSeen = false
 	state.chatDrawn = 0
+	state.chatCalls = 0
+	state.chatNoRow = 0
+	state.chatSlots = 0
 	state.chatTaps = 0
 	state.chatShown = null
 	state.chatDoubled = 0
