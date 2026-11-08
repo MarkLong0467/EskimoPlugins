@@ -46,7 +46,7 @@ const FIRST = 500
 
 /** How often, and how many times, to check that the wrapper was called once a chat is open. */
 const CHECK_MS = 2000
-const CHECKS = 15
+const CHECKS = 150
 
 /** The key of the button in the list, so it is found again and never added twice. */
 const BUTTON_KEY = 'flame-text'
@@ -464,8 +464,8 @@ export function installChatButton(cleanup: Cleanup): void {
 							return
 						}
 						wrap(Right, exports)
-						// On some phones Discord draws the row without going through the wrapper (the row is never drawn by it). If a chat is
-						// open and the wrapper has not been called, the button is added through Valenced's patcher, which does work there.
+						// On some phones Discord draws the row without going through the wrapper (the row is never drawn by it). If the wrapper has still
+						// not been called after a few seconds, the button is added through Valenced's patcher, which does work there.
 						let tries = 0
 						const check = setInterval(() => {
 							tries++
@@ -473,7 +473,7 @@ export function installChatButton(cleanup: Cleanup): void {
 								clearInterval(check)
 								return
 							}
-							if (!currentChat()) return
+							if (tries < 2) return
 							clearInterval(check)
 							try {
 								undo.push(
