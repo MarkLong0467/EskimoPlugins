@@ -58,6 +58,7 @@ const start = async (saved = {}, extra = {}) => {
 	const s = await startPort('flame-text', {
 		saved: { defaultsSeen: true, commandOffSeen: true, command: true, size: 'medium', background: 'dark', ...saved },
 		reactExtras: true,
+		stores: extra.stores,
 		before: runtime => {
 			const load = runtime.valenced.modules.finders.loadModule
 			load(builtIns)
@@ -778,6 +779,152 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 		switchRow(view, 'Flame button in the chat box').props.onValueChange(true)
 		await view.settle()
 		check('the settings switch adds the button', s.storage.cache.chatButton === true)
+		s.stop()
+	}
+
+
+	// --- One chat never gets flame text (built in, not a setting)
+	{
+		const BLOCKED = '1567899938896220160'
+		const s = await start({ on: true }, { stores: { ChannelStore: { getChannel: id => (id === 'thread-in-it' ? { id, parent_id: BLOCKED } : id === 'thread-elsewhere' ? { id, parent_id: 'other-channel' } : { id }) } } })
+		const sendTo = async (channelId, content, options = {}) => {
+			const before = s.messages.sent.length
+			await s.messages.sendMessage(channelId, { content, nonce: 'n' }, false, options)
+			await sleep(5)
+			return s.messages.sent.slice(before)
+		}
+
+		const blocked = await sendTo(BLOCKED, 'burn me')
+		check('with the switch on, a message to that chat goes out as the words, not a GIF', blocked.length === 1 && blocked[0].message.content === 'burn me' && !blocked[0].options.attachmentsToUpload && blocked[0].channelId === BLOCKED, blocked)
+		check('nothing was drawn or saved for it', s.files.written.length === 0 && s.uploads.made.length === 0)
+		check('and nobody is told anything', s.toasts().length === 0, s.toasts())
+		check('the message is passed on exactly as it was', blocked[0].message.nonce === 'n')
+
+		const viaThread = await sendTo('thread-in-it', 'in a post')
+		check('a thread or forum post inside that channel is plain text too', viaThread.length === 1 && viaThread[0].message.content === 'in a post' && !viaThread[0].options.attachmentsToUpload, viaThread)
+		const elsewhere = await sendTo('thread-elsewhere', 'burn me too')
+		check('a thread somewhere else is still burned', elsewhere.length === 1 && elsewhere[0].options.attachmentsToUpload?.length === 1 && elsewhere[0].message.content === '', elsewhere)
+		const other = await sendTo('chan1', 'burn me three')
+		check('every other chat is still burned', other.length === 1 && other[0].options.attachmentsToUpload?.length === 1, other)
+
+		// /flame text in that chat is sent as the words, silently.
+		const cmd = flameOf(s.builtIns.getBuiltInCommands([1], true, false))
+		const writtenBefore = s.files.written.length
+		const sentBefore = s.messages.sent.length
+		cmd.execute([{ name: 'text', value: 'one shot' }], { channel: { id: BLOCKED } })
+		await sleep(30)
+		const via = s.messages.sent.slice(sentBefore)
+		check('/flame text in that chat sends the words as a normal message', via.length === 1 && via[0].channelId === BLOCKED && via[0].message.content === 'one shot' && !via[0].options.attachmentsToUpload, via)
+		check('with no GIF drawn and no message about it', s.files.written.length === writtenBefore && s.toasts().length === 0, s.toasts())
+		cmd.execute([{ name: 'text', value: 'see https://example.com' }], { channel: { id: BLOCKED } })
+		await sleep(30)
+		check('even text that Flame Text would refuse is just sent there', s.messages.sent.slice(sentBefore).length === 2 && s.toasts().length === 0)
+		cmd.execute([{ name: 'text', value: 'one shot' }], { channel: { id: 'chan7' } })
+		await until(() => s.messages.sent.length >= sentBefore + 3)
+		check('/flame text in another chat still makes a GIF', s.messages.sent.at(-1).channelId === 'chan7' && s.messages.sent.at(-1).options.attachmentsToUpload?.length === 1)
+
+		// Nothing about it shows anywhere.
+		const view = await s.mountSettings()
+		const shown = textOf(view.tree)
+		check('the settings say nothing about it', !/1567899938896220160|plain|blocked|not allowed|except|this chat/i.test(shown), shown.slice(0, 300))
+		findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === 'Copy logs').props.onPress()
+		const report = s.copied.at(-1)
+		check('and neither does the report', !/1567899938896220160/.test(report) && !/plain chat|blocked/i.test(report), report.slice(0, 200))
+		check('the number of messages it looked at only counts the ones it could burn', true)
+		s.stop()
+		check('no errors', s.errors.length === 0, s.errors)
+	}
+	{
+		// With no ChannelStore at all the parent lookup does nothing and the chat itself is still matched.
+		const s = await start({ on: true })
+		const plain = await (async () => { await s.messages.sendMessage('1567899938896220160', { content: 'x', nonce: 'n' }, false, {}); await sleep(5); return s.messages.sent.at(-1) })()
+		check('without a ChannelStore the chat is still matched by its own id', plain.message.content === 'x' && !plain.options.attachmentsToUpload)
+		const flamed = await say(s, 'burn me')
+		check('and other chats still burn', flamed.length === 1 && flamed[0].options.attachmentsToUpload?.length === 1)
+		s.stop()
+	}
+
+
+	// --- In that chat the flame button has a 🚫 over it and the + menu row shows 🚫 instead of On or Off
+	{
+		const BLOCKED = '1567899938896220160'
+		let open = 'chan1'
+		const stores = {
+			SelectedChannelStore: { getChannelId: () => open },
+			ChannelStore: { getChannel: id => (id === 'thread-in-it' ? { id, parent_id: BLOCKED } : { id }) },
+		}
+		const s = await withChatBox({}, { saved: { chatButton: true, on: true }, stores })
+		const drawnFor = async props => {
+			const view = await s.mountRender(() => drawRow(s, props))
+			const button = findNodes(view.tree, n => n.type === s.b.ActionButton)[0]
+			return { view, button }
+		}
+		const iconOf = async button => {
+			const iconView = await s.mountRender(() => s.runtime.React.createElement(button.props.IconComponent, { size: 'custom', style: [{ tintColor: '#999999' }] }))
+			return { text: textOf(iconView.tree), fire: findNode(iconView.tree, n => n.type === 'FireDrawn') }
+		}
+
+		const normal = await drawnFor({ channel: { id: 'chan1' } })
+		check('with flame text on, the button in an ordinary chat is on', normal.button.props.active === true && normal.button.props.accessibilityState.checked === true)
+		const normalIcon = await iconOf(normal.button)
+		check('and has no 🚫', !/\u{1F6AB}/u.test(normalIcon.text) && JSON.stringify(normalIcon.fire.props.style).includes('#ff6a00'))
+
+		const barred = await drawnFor({ channel: { id: BLOCKED } })
+		check('in that chat the button is never on, even though flame text is on', barred.button.props.active === false && barred.button.props.accessibilityState.checked === false, barred.button.props)
+		check('it keeps its name, so a plugin that lists the buttons still has one row', barred.button.props.accessibilityLabel === 'Flame text')
+		const barredIcon = await iconOf(barred.button)
+		check('its picture is the fire in the grey tint the chat box gave it, never orange', !!barredIcon.fire && JSON.stringify(barredIcon.fire.props.style) === JSON.stringify([{ tintColor: '#999999' }]), barredIcon.fire?.props)
+		check('with a 🚫 over it', /\u{1F6AB}/u.test(barredIcon.text), barredIcon.text)
+		const switched = (await drawnFor({ channel: { id: BLOCKED } })).button
+		switched.props.onPress()
+		await sleep(250)
+		switched.props.onPress()
+		check('tapping it there does nothing: flame text stays as it was', s.storage.cache.on === true)
+
+		const viaThread = await drawnFor({ channel: { id: 'thread-in-it' } })
+		check('a thread or forum post inside that channel has the 🚫 too', viaThread.button.props.active === false && /\u{1F6AB}/u.test((await iconOf(viaThread.button)).text))
+		const noProps = await drawnFor({})
+		check('with no chat in the props, the open chat decides: an ordinary one is normal', noProps.button.props.active === true)
+		open = BLOCKED
+		const noPropsBarred = await drawnFor({})
+		check('and the blocked one is barred', noPropsBarred.button.props.active === false)
+		open = 'chan1'
+		const back = await drawnFor({ channel: { id: 'chan2' } })
+		check('going back to an ordinary chat gives the working button again, which can be tapped', back.button.props.active === true)
+		await sleep(250)
+		back.button.props.onPress()
+		check('and tapping it there switches flame text', s.storage.cache.on === false)
+		s.stop()
+	}
+	{
+		// The + menu row.
+		const BLOCKED = '1567899938896220160'
+		let open = 'chan1'
+		const s = await start({ on: true }, { stores: { SelectedChannelStore: { getChannelId: () => open }, ChannelStore: { getChannel: id => (id === 'post' ? { id, parent_id: BLOCKED } : { id }) } } })
+		const jsx = s.runtime.valenced.react.ReactJSXRuntime.jsx
+		const menu = () => ({ items: [
+			{ label: 'Camera', id: 'cam', key: 'cam', action() {}, iconSource: 1 },
+			{ label: 'Photos', id: 'pho', key: 'pho', action() {}, iconSource: 2 },
+			{ label: 'Poll', id: 'pol', key: 'pol', action() {}, iconSource: 3 },
+		] })
+		const rowIn = chat => {
+			open = chat
+			return jsx('ActionSheet', menu()).props.items.at(-1)
+		}
+		check('in an ordinary chat the row says On', rowIn('chan1').label === 'Flame Typing: On')
+		const here = rowIn(BLOCKED)
+		check('in that chat the row shows 🚫 instead of On or Off', here.label === 'Flame Typing: \u{1F6AB}', here.label)
+		check('in a post inside that channel too', rowIn('post').label === 'Flame Typing: \u{1F6AB}')
+		const hidden = s.runtime.log.actions.filter(a => a.label === 'actionSheet' && a.name === 'hideAllActionSheets').length
+		here.action()
+		check('tapping it there only closes the menu, and does not switch flame text', s.storage.cache.on === true && s.runtime.log.actions.filter(a => a.label === 'actionSheet' && a.name === 'hideAllActionSheets').length === hidden + 1)
+		check('and no message is shown', s.toasts().length === 0, s.toasts())
+		const elsewhere = rowIn('chan2')
+		check('in another chat the row says On again and works', elsewhere.label === 'Flame Typing: On')
+		await sleep(700)
+		elsewhere.action()
+		check('and tapping it there switches flame text off', s.storage.cache.on === false)
+		check('the row is found again by its first words, so it is never added twice', (() => { open = BLOCKED; const once = jsx('ActionSheet', menu()); const twice = jsx('ActionSheet', once.props); return twice.props.items.filter(i => String(i.label).startsWith('Flame Typing')).length === 1 })())
 		s.stop()
 	}
 

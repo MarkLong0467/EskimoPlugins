@@ -8,6 +8,7 @@
  * When something goes wrong before the send, the message goes out as the plain text you wrote, so nothing is lost.
  */
 
+import { Stores } from '@valenced/discord/flux'
 import { getModules, lookupModule } from '@valenced/modules/finders'
 import { withProps } from '@valenced/modules/finders/filters'
 import { instead } from '@valenced/patcher'
@@ -132,6 +133,45 @@ export function parts(): { files: Files; Upload: UploadClass } | undefined {
 		if (Upload) state.uploadModule = true
 	}
 	return files && Upload ? { files, Upload } : undefined
+}
+
+/**
+ * Chats where flame text is never used: whatever is typed there is sent as plain text. This is not a setting and is not shown
+ * anywhere, on purpose. A chat is matched by its own id and by the id of the channel it is in (a thread or a forum post).
+ */
+const PLAIN_CHATS: ReadonlySet<string> = new Set(['1567899938896220160'])
+
+/** Whether flame text is not allowed in this chat. Never throws: a chat that cannot be looked up is allowed. */
+export function plainOnly(channelId: unknown): boolean {
+	if (typeof channelId !== 'string') return false
+	if (PLAIN_CHATS.has(channelId)) return true
+	try {
+		const channel = (
+			Stores as unknown as {
+				ChannelStore?: {
+					getChannel?: (id: string) => { parent_id?: string | null } | undefined
+				}
+			}
+		).ChannelStore?.getChannel?.(channelId)
+		const parent = channel?.parent_id
+		return typeof parent === 'string' && PLAIN_CHATS.has(parent)
+	} catch {
+		return false
+	}
+}
+
+/** The chat that is open now, or nothing if it cannot be told. Never throws. */
+export function currentChat(): string | undefined {
+	try {
+		const id = (
+			Stores as unknown as {
+				SelectedChannelStore?: { getChannelId?: () => string | undefined }
+			}
+		).SelectedChannelStore?.getChannelId?.()
+		return typeof id === 'string' ? id : undefined
+	} catch {
+		return undefined
+	}
 }
 
 /** The step a send was at when it failed. */
@@ -265,17 +305,27 @@ export function sendOnce(channelId: string | undefined, text: string): void {
 		state.last = 'could not send: no message module or no chat'
 		return
 	}
-	const reason = whyNot({ content: text }, undefined)
-	if (reason) {
-		openToast(TOAST_KEY, REASONS[reason])
-		state.last = `/flame text was not sent: ${reason}`
-		return
-	}
 	const message: Message = {
 		content: text,
 		tts: false,
 		invalidEmojis: [],
 		validNonShortcutEmojis: [],
+	}
+	if (plainOnly(channelId)) {
+		// Sent as the words, with nothing said about it.
+		passing = true
+		try {
+			module.sendMessage(channelId, message, false, {})
+		} finally {
+			passing = false
+		}
+		return
+	}
+	const reason = whyNot({ content: text }, undefined)
+	if (reason) {
+		openToast(TOAST_KEY, REASONS[reason])
+		state.last = `/flame text was not sent: ${reason}`
+		return
 	}
 	const through = (m: Message, o: Options) => {
 		passing = true
@@ -326,6 +376,7 @@ export function installSend(cleanup: Cleanup): void {
 											unknown,
 											Options | undefined,
 										]
+										if (plainOnly(channelId)) return pass()
 										state.seen++
 										const reason = whyNot(message, options)
 										if (reason || !message || typeof channelId !== 'string') {

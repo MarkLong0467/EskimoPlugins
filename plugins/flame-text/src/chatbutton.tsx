@@ -21,8 +21,9 @@ import {
 import { lookupGeneratedIconComponent } from '@valenced/utils/discord'
 import { findInReactFiber } from '@valenced/utils/react'
 import { createElement, useSyncExternalStore } from 'react'
-import { Text as NativeText } from 'react-native'
+import { Text as NativeText, View } from 'react-native'
 import { diag } from './diag'
+import { currentChat, plainOnly } from './send'
 import { state } from './state'
 import { setting, store } from './store'
 import { switchFlame } from './toggle'
@@ -44,6 +45,9 @@ const ORANGE = '#ff6a00'
 
 /** The flame, as a constant because React Native text must be passed as an expression. */
 const FLAME = '\u{1F525}'
+
+/** Drawn over the flame in the chat where flame text is not allowed. */
+const NOT_HERE = '\u{1F6AB}'
 const LABEL = 'Flame text'
 
 /** The names Discord's fire icon may have, the first one that exists is used. */
@@ -143,6 +147,28 @@ const DOUBLE_PRESS_MS = 200
 /** When the button was last pressed. */
 let lastPress = 0
 
+/**
+ * The picture on the button in the chat where flame text is not allowed: the same grey fire as when it is off, with a 🚫 over
+ * it. It is never orange there.
+ */
+export function BarredFlameIcon(props: IconProps) {
+	const enabled = useSyncExternalStore(subscribe, enabledNow)
+	if (!enabled) return null
+	const Fire = fireIcon()
+	return (
+		<View style={{ alignItems: 'center', justifyContent: 'center' }}>
+			{Fire ? (
+				createElement(Fire, props)
+			) : (
+				<NativeText style={{ fontSize: 22, opacity: 0.45 }}>{FLAME}</NativeText>
+			)}
+			<NativeText style={{ position: 'absolute', fontSize: 20 }}>
+				{NOT_HERE}
+			</NativeText>
+		</View>
+	)
+}
+
 /** What tapping the button does. */
 function tap(): void {
 	try {
@@ -196,12 +222,15 @@ function actionButton(): ComponentType<ActionButtonProps> | undefined {
  * such as Chat Buttons builds from the buttons it finds. The label never changes (it is the button's name for those
  * plugins), and the button is drawn by Discord's own component, so every plugin that changes or reads that component sees it.
  */
-export function FlameSlot() {
+export function FlameSlot({ channelId }: { channelId?: string }) {
 	const enabled = useSyncExternalStore(subscribe, enabledNow)
-	const on = useSyncExternalStore(subscribe, onNow)
+	const allowed = useSyncExternalStore(subscribe, onNow)
 	if (!enabled) return null
 	const Button = actionButton()
 	if (!Button) return null
+	// In the chat where flame text is not allowed the button is never on, and tapping it does nothing.
+	const barred = plainOnly(channelId)
+	const on = allowed && !barred
 	state.chatShown = on
 	// The state is given in every way Discord's button and the plugins that read it understand: `checked` for plugins that
 	// list the buttons with a switch, and `active` with its icon style for Discord's own "on" look.
@@ -210,13 +239,28 @@ export function FlameSlot() {
 		accessibilityState: { checked: on },
 		active: on,
 		activeIconStyle: ACTIVE_ICON,
-		IconComponent: FlameIcon,
-		onPress: tap,
+		IconComponent: barred ? BarredFlameIcon : FlameIcon,
+		onPress: barred ? nothing : tap,
 	})
 }
 
-/** The slot as it goes in the list: the same element every draw, so React keeps it and cached trees can find it. */
-const SLOT = createElement(FlameSlot, { key: BUTTON_KEY })
+/** What tapping the button does in the chat where flame text is not allowed. */
+const nothing = (): void => {}
+
+/** The slots as they go in the list, one for each chat: the same element every draw, so React keeps it. */
+const slots = new Map<string, ReactElement>()
+
+/** The element to put in the list for a chat. */
+function slotFor(channelId: string | undefined): ReactElement {
+	const key = channelId ?? ''
+	let slot = slots.get(key)
+	if (!slot) {
+		if (slots.size >= 40) slots.clear()
+		slot = createElement(FlameSlot, { key: BUTTON_KEY, channelId })
+		slots.set(key, slot)
+	}
+	return slot
+}
 
 /** Whether a list item is this plugin's button. */
 const isOurs = (child: ReactNode): boolean =>
@@ -228,7 +272,7 @@ const isOurs = (child: ReactNode): boolean =>
  * Puts the button into the list of buttons the right-hand actions returned, just before the emoji button (the last one), or
  * takes it out when the setting is off. The tree can be one that was kept from an earlier draw, so an old copy is removed first.
  */
-function placeButton(tree: unknown): unknown {
+function placeButton(tree: unknown, props: unknown): unknown {
 	try {
 		const row = findInReactFiber(
 			tree as ReactElement,
@@ -243,7 +287,11 @@ function placeButton(tree: unknown): unknown {
 			if (isOurs(list[i])) list.splice(i, 1)
 		if (!setting('chatButton')) return tree
 		const at = Math.max(0, list.length - 1)
-		list.splice(at, 0, SLOT)
+		// The row is drawn for a chat: it is in the props, and the open chat is the answer if it is not.
+		const channel = (props as { channel?: { id?: unknown } } | undefined)
+			?.channel
+		const id = typeof channel?.id === 'string' ? channel.id : currentChat()
+		list.splice(at, 0, slotFor(id))
 		state.chatDrawn++
 	} catch (error) {
 		diag.fail('flame button', error)
@@ -290,7 +338,7 @@ function wrap(memo: { type: unknown }): void {
 	// One named parameter, so `length` is 1 like Discord's function.
 	const wrapper = function (this: unknown, props: unknown, ...rest: unknown[]) {
 		const result = own.call(this, props, ...rest)
-		return entry.active ? placeButton(result) : result
+		return entry.active ? placeButton(result, props) : result
 	}
 	try {
 		const named = own as unknown as { displayName?: string; name?: string }
