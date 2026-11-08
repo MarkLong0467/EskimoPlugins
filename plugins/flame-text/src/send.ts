@@ -297,7 +297,12 @@ export function sendOnce(channelId: string | undefined, text: string): void {
 		try {
 			module.sendMessage(
 				channelId,
-				{ content: text, tts: false, invalidEmojis: [], validNonShortcutEmojis: [] },
+				{
+					content: text,
+					tts: false,
+					invalidEmojis: [],
+					validNonShortcutEmojis: [],
+				},
 				false,
 				{},
 			)

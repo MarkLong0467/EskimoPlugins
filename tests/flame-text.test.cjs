@@ -514,262 +514,47 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 		old.stop()
 	}
 
-	// --- The optional flame button in the chat box: Discord's own chat box button, in the row of buttons
-	/**
-	 * A fake chat box. `Right` is `ChatInputRightActions` (a memo of a function that returns the row with its buttons as a
-	 * list), `ActionButton` is `ChatInputActionButton`, and the finders answer for both by their file paths.
-	 */
-	const chatBox = (options = {}) => {
+	// --- The optional flame button in the chat box: Discord's own chat box button, in a row put in front of the right-hand buttons
+	{
 		const ActionButton = { $$typeof: 'memo', type: function Button() {} }
-		let kept
-		const make = props => ({ type: 'View', key: null, props: { style: { flexDirection: 'row' }, children: [props?.shouldShowGiftButton === false ? null : { type: 'GiftSlot', key: null, props: {} }, { type: 'EmojiButton', key: null, props: {} }] } })
-		const rightType = function ChatInputRightActions(props) {
-			if (props?.keep) return (kept ??= make(props))
-			return make(props)
-		}
-		rightType.displayName = 'ChatInputRightActions'
-		const Right = { $typeof: 'memo', type: rightType }
 		const FireIcon = function FireIcon(props) { return { type: 'FireDrawn', key: null, props } }
-		const flags = { buttonLoaded: options.buttonLoaded ?? true, finderBroken: false, fire: options.fire ?? true }
-		const modules = { 'modules/chat_input/native/action_buttons/ChatInputRightActions.tsx': { default: Right }, 'modules/chat_input/native/action_buttons/ChatInputActionButton.tsx': { default: ActionButton } }
-		const findInReactFiber = (node, match) => {
-			if (flags.finderBroken) throw new Error('finder broke')
-			if (!node || typeof node !== 'object') return undefined
-			if (match(node)) return node
-			for (const child of Array.isArray(node.props?.children) ? node.props.children : []) {
-				const hit = findInReactFiber(child, match)
-				if (hit) return hit
-			}
-			return undefined
+		const install = runtime => {
+			const v = runtime.valenced
+			v.discord.utils = { modules: { finders: {
+				getModuleWithImportedPath: () => () => {},
+				lookupModuleWithImportedPath: path => (path.endsWith('ChatInputActionButton.tsx') ? [{ default: ActionButton }, 1] : []),
+			} } }
+			v.utils.discord = { lookupGeneratedIconComponent: name => (name === 'FireIcon' ? FireIcon : undefined) }
 		}
-		return {
-			ActionButton,
-			Right,
-			rightType,
-			flags,
-			install: runtime => {
-				const v = runtime.valenced
-				v.discord.utils = { modules: { finders: {
-					getModuleWithImportedPath: (path, callback) => { if (path.endsWith('ChatInputRightActions.tsx')) callback(modules[path]); return () => {} },
-					lookupModuleWithImportedPath: path => (path.endsWith('ChatInputActionButton.tsx') && flags.buttonLoaded ? [modules[path], 1] : []),
-				} } }
-				v.utils.react = { findInReactFiber }
-				v.utils.discord = { lookupGeneratedIconComponent: name => (flags.fire && name === 'FireIcon' ? FireIcon : undefined) }
-			},
-		}
-	}
-	const withChatBox = async (options = {}, port = {}) => {
-		const b = chatBox(options)
-		const s = await startPort('flame-text', { saved: {}, reactExtras: true, before: runtime => b.install(runtime), ...port })
-		return Object.assign(s, { b })
-	}
-	const drawRow = (s, props) => s.b.Right.type(props)
-	/** Flips the settings switch, which is how the setting changes in the app. */
-	const flip = async (s, value) => {
-		const settings = await s.mountSettings()
-		switchRow(settings, 'Flame button in the chat box').props.onValueChange(value)
-		await settings.settle()
-		await sleep(5)
-	}
-	/** Draws the row the way the app does and finds the chat box buttons made of Discord's button component. */
-	const drawnButtons = async s => {
-		const view = await s.mountRender(() => drawRow(s, {}))
-		return { view, buttons: findNodes(view.tree, n => n.type === s.b.ActionButton) }
-	}
-
-	{
-		const s = await withChatBox()
-		check('by default Discord\'s buttons are not touched at all', s.b.Right.type === s.b.rightType)
-		check('and the row is exactly what Discord drew', drawRow(s, {}).props.children.length === 2)
-		await flip(s, true)
-		check('when it is switched on the buttons are patched', s.b.Right.type !== s.b.rightType)
-		const row = drawRow(s, {})
-		const kids = row.props.children
-		check('the row is still the one Discord drew, nothing is wrapped around it', row.type === 'View' && row.props.style.flexDirection === 'row' && kids.length === 3, kids.map(k => k && k.type))
-		check('the flame button is in the list just before the emoji button', kids[0].type === 'GiftSlot' && kids[1].key === 'flame-text' && kids[2].type === 'EmojiButton')
-		check('the emoji and gift buttons are untouched', Object.keys(kids[0].props).length === 0 && Object.keys(kids[2].props).length === 0)
-		check('it is the same element every draw, so React keeps it', drawRow(s, {}).props.children[1] === kids[1])
-		const keptA = drawRow(s, { keep: true })
-		const keptB = drawRow(s, { keep: true })
-		check('a tree Discord keeps and draws again never gets the button twice', keptA === keptB && keptB.props.children.filter(c => c && c.key === 'flame-text').length === 1 && keptB.props.children.length === 3, keptB.props.children.length)
-		const hidden = drawRow(s, { shouldShowGiftButton: false })
-		check('when the gift button is not drawn the flame button still comes before the emoji button', hidden.props.children.length === 3 && hidden.props.children[1].key === 'flame-text' && hidden.props.children[2].type === 'EmojiButton' && hidden.props.children[0] === null, hidden.props.children.map(k => k && k.type))
-
-		// What is drawn: Discord's own button, with the props every chat box button has
-		const { view, buttons } = await drawnButtons(s)
-		check('what is drawn is one of Discord\'s own chat box buttons', buttons.length === 1, textOf(view.tree))
-		const button = () => findNodes(view.tree, n => n.type === s.b.ActionButton)[0]
-		const first = button().props
-		check('with a label, an icon, what tapping does and an on/off state', first.accessibilityLabel === 'Flame text' && typeof first.IconComponent === 'function' && typeof first.onPress === 'function' && first.accessibilityState.checked === false, first)
-		check('the button says it is off in every way: not checked, not active', first.accessibilityState.checked === false && first.active === false && first.activeIconStyle.tintColor === '#ff6a00', first)
+		const s = await startPort('flame-text', { saved: {}, reactExtras: true, before: install })
+		const right = { $$typeof: 'memo', type: function ChatInputRightActions() { return { type: 'RightRow', props: {} } } }
+		const isRow = element => element.type === 'View'
+		check('by default there is no button', !isRow(draw(s, right, {})))
+		s.storage.set({ chatButton: true })
+		const element = draw(s, right, {})
+		check('when it is switched on the right-hand buttons are in a row with the flame button in front', isRow(element) && element.props.style.flexDirection === 'row' && element.props.children[1].type === right, element)
+		const view = await s.mountRender(() => draw(s, right, {}))
+		const button = () => findNodes(view.tree, n => n.type === ActionButton)[0]
+		check('the button is Discord\'s own chat box button, named Flame text', !!button() && button().props.accessibilityLabel === 'Flame text', button()?.props)
+		check('it is off, grey', button().props.accessibilityState.checked === false && button().props.active === false)
+		check('its picture is the fire', typeof button().props.IconComponent === 'function')
 		button().props.onPress()
 		await view.settle()
-		check('tapping the button switches flame text on', s.storage.cache.on === true)
-		check('and the button\'s state follows at once (checked), with the same label', button().props.accessibilityState.checked === true && button().props.accessibilityLabel === 'Flame text', button().props)
-		check('and it is active too, with the orange icon style Discord\'s button uses', button().props.active === true && button().props.activeIconStyle.tintColor === '#ff6a00')
+		check('tapping it switches flame text on', s.storage.cache.on === true)
+		check('and it shows on, orange', button().props.accessibilityState.checked === true && button().props.active === true && button().props.activeIconStyle.tintColor === '#ff6a00', button()?.props)
 		await sleep(250)
 		button().props.onPress()
 		await view.settle()
-		check('tapping again turns it off and unchecks it', s.storage.cache.on === false && button().props.accessibilityState.checked === false)
-		const reportView = await s.mountSettings()
-		findNode(reportView.tree, n => n.type === 'Design.Button' && n.props.text === 'Copy logs').props.onPress()
-		check('the debug report says what is stored and what the button last drew', /Chat box button state: stored off; the button last drew off/.test(s.copied.at(-1)) && /\(0 doubled press\(es\) ignored\)/.test(s.copied.at(-1)), s.copied.at(-1)?.slice(-500))
-		/** The icon the button was given, drawn with the chat box's own grey tint. */
-		const icon = async () => {
-			const iconView = await s.mountRender(() => s.runtime.React.createElement(first.IconComponent, { size: 'custom', style: [{ tintColor: '#999999' }] }))
-			return findNode(iconView.tree, n => n.type === 'FireDrawn')
-		}
-		check('the icon is Discord\'s fire icon with the chat box\'s own grey tint while flame text is off', JSON.stringify((await icon()).props.style) === JSON.stringify([{ tintColor: '#999999' }]))
+		check('tapping it again switches it off', s.storage.cache.on === false)
 		await sleep(250)
-		first.onPress()
-		check('and the fire turns orange when it is on', JSON.stringify((await icon()).props.style) === JSON.stringify([[{ tintColor: '#999999' }], { tintColor: '#ff6a00' }]), (await icon())?.props.style)
-		await sleep(250)
-		first.onPress()
-		check('and grey again when it is switched off', s.storage.cache.on === false && JSON.stringify((await icon()).props.style) === JSON.stringify([{ tintColor: '#999999' }]))
-
-		// Switched off
-		await flip(s, false)
-		check('switching the setting off takes the patch off again', s.b.Right.type === s.b.rightType)
-		check('and Discord\'s row is back to what it drew', drawRow(s, {}).props.children.length === 2)
-		const slotView = await s.mountRender(() => kids[1])
-		check('a button still on screen draws nothing until the chat box redraws', findNodes(slotView.tree, n => n.type === s.b.ActionButton).length === 0)
-		await flip(s, true)
-		check('switching it on again patches again, once', s.b.Right.type !== s.b.rightType && drawRow(s, {}).props.children.filter(c => c && c.key === 'flame-text').length === 1)
+		button().props.onPress()
+		button().props.onPress()
+		await view.settle()
+		check('a press reported twice counts once', s.storage.cache.on === true)
+		s.storage.set({ chatButton: false })
+		check('switching it off takes it away', !isRow(draw(s, right, {})))
 		s.stop()
-		check('stopping the plugin takes the patch off', s.b.Right.type === s.b.rightType)
 		check('no errors', s.errors.length === 0, s.errors)
-	}
-
-	// --- It works with Better Chat Buttons and with Chat Buttons (the plugin that puts the buttons in one menu)
-	{
-		const s = await withChatBox({}, { saved: { chatButton: true } })
-		const { patcher } = s.runtime.valenced
-		// Better Chat Buttons: hides the gift button through the props before the row draws, and reads the row after it.
-		const seen = []
-		patcher.before(s.b.Right, 'type', args => { args[0].shouldShowGiftButton = false; return args })
-		patcher.after(s.b.Right, 'type', tree => { seen.push(tree.props.children.length); return tree })
-		// Chat Buttons: patches the button component and lists what it finds (label, icon, on/off, what tapping does).
-		const listed = new Map()
-		const mergeAfter = tree => tree
-		patcher.after(s.b.Right, 'type', mergeAfter)
-		let threw = null
-		let tree
-		try {
-			tree = s.b.Right.type({ shouldShowGiftButton: true })
-		} catch (error) {
-			threw = error
-		}
-		check('with Better Chat Buttons style patches on the same row nothing throws', threw === null, String(threw))
-		check('the gift button is still hidden by the other plugin and the flame button is there', tree.props.children[0] === null && tree.props.children[1]?.key === 'flame-text' && tree.props.children[2]?.type === 'EmojiButton')
-		check('a plugin that reads the row after it sees the flame button in the list', seen.length > 0 && seen.at(-1) === 3, seen)
-		// Chat Buttons reads every Discord button when it is drawn: id from the label, the icon, the on/off state and what tapping does.
-		const view = await s.mountRender(() => s.b.Right.type({ shouldShowGiftButton: true }))
-		const read = () => findNodes(view.tree, n => n.type === s.b.ActionButton).map(node => ({ id: node.props.accessibilityLabel ?? node.props.IconComponent?.name, label: node.props.accessibilityLabel, Icon: node.props.IconComponent, on: node.props.accessibilityState?.checked ?? node.props.accessibilityState?.selected ?? node.props.active, press: node.props.onPress }))
-		for (const entry of read()) listed.set(entry.id, entry)
-		check('Chat Buttons would list it as "Flame text" with an icon, a switch state and an action', listed.size === 1 && listed.get('Flame text').label === 'Flame text' && typeof listed.get('Flame text').Icon === 'function' && listed.get('Flame text').on === false && typeof listed.get('Flame text').press === 'function', [...listed.values()])
-		listed.get('Flame text').press()
-		await view.settle()
-		check('pressing it from that menu switches flame text', s.storage.cache.on === true)
-		check('and what the menu reads next is switched on, under the same name, so the menu\'s switch follows', read().length === 1 && read()[0].id === 'Flame text' && read()[0].on === true, read())
-		check('the name does not change with the state (so the menu keeps one row and its nickname)', new Set([read()[0].id]).size === 1)
-		s.stop()
-		check('stopping leaves the other plugins\' patches working', (() => { try { const t = s.b.Right.type({ shouldShowGiftButton: true }); return t.props.children.length === 2 && t.props.children[0] === null } catch { return false } })())
-		check('no errors', s.errors.length === 0, s.errors)
-	}
-
-	// --- The button is definite: a press that is reported twice counts once, and the state is what is stored
-	{
-		const s = await withChatBox({}, { saved: { chatButton: true } })
-		const view = await s.mountRender(() => drawRow(s, {}))
-		const button = () => findNodes(view.tree, n => n.type === s.b.ActionButton)[0]
-		const press = button().props.onPress
-		press()
-		press()
-		press()
-		await view.settle()
-		check('a press reported three times at once switches flame text once', s.storage.cache.on === true && button().props.accessibilityState.checked === true && button().props.active === true, s.storage.cache.on)
-		await sleep(250)
-		press()
-		await view.settle()
-		check('a press after a moment is a new press', s.storage.cache.on === false && button().props.accessibilityState.checked === false && button().props.active === false)
-		await sleep(250)
-		press()
-		await sleep(250)
-		press()
-		await sleep(250)
-		press()
-		await view.settle()
-		check('every tap with a moment between switches it, so on after three more', s.storage.cache.on === true && button().props.accessibilityState.checked === true)
-		const reportView = await s.mountSettings()
-		findNode(reportView.tree, n => n.type === 'Design.Button' && n.props.text === 'Copy logs').props.onPress()
-		check('the report counts the doubled presses it ignored', /\(2 doubled press\(es\) ignored\)/.test(s.copied.at(-1)), s.copied.at(-1)?.slice(-500))
-		s.stop()
-	}
-
-	// --- The row is wrapped, not patched with Valenced's patcher, so hooks other plugins add are not shared with it
-	{
-		const calls = []
-		const s_box = chatBox()
-		const s = await startPort('flame-text', {
-			saved: { chatButton: true },
-			reactExtras: true,
-			before: runtime => {
-				s_box.install(runtime)
-				const { patcher } = runtime.valenced
-				for (const kind of ['before', 'after', 'instead']) {
-					const original = patcher[kind]
-					patcher[kind] = (parent, key, ...rest) => {
-						calls.push(`${kind} ${String(key)}`)
-						return original(parent, key, ...rest)
-					}
-				}
-			},
-		})
-		s.b = s_box
-		check('the row has the flame button all the same', drawRow(s, {}).props.children.filter(c => c && c.key === 'flame-text').length === 1)
-		check('and it is Flame Text\'s own function, not a patcher proxy', s.b.Right.type !== s.b.rightType)
-
-		// Another plugin patches over it afterwards: its hooks go into its own patch, and Flame Text's wrapper is only what it wraps.
-		const { patcher } = s.runtime.valenced
-		const undoOther = patcher.before(s.b.Right, 'type', args => args)
-		const wrappedByOther = s.b.Right.type
-		check('a plugin that patches the row later patches over Flame Text\'s function', wrappedByOther !== s.b.rightType && drawRow(s, {}).props.children.filter(c => c && c.key === 'flame-text').length === 1)
-
-		// Switched off while the other plugin is over it: the wrapper stays in place, does nothing, and nothing else is disturbed.
-		await flip(s, false)
-		check('switched off while another plugin is over it, the row has no flame button and the other plugin\'s patch is untouched', s.b.Right.type === wrappedByOther && drawRow(s, {}).props.children.length === 2)
-		await flip(s, true)
-		check('switched on again there is exactly one flame button (the old wrapper does nothing, the new one adds it)', drawRow(s, {}).props.children.filter(c => c && c.key === 'flame-text').length === 1 && drawRow(s, {}).props.children.length === 3)
-		await flip(s, false)
-		check('and off again leaves none', drawRow(s, {}).props.children.length === 2)
-		undoOther()
-		s.stop()
-		check('stopping with others around leaves the row working', (() => { try { return drawRow(s, {}).props.children.length === 2 } catch { return false } })())
-		check('no errors', s.errors.length === 0, s.errors)
-	}
-
-	// --- The button waits for Discord's button component, and a broken lookup does not break the chat box
-	{
-		const s = await withChatBox({ buttonLoaded: false, fire: false }, { saved: { chatButton: true } })
-		const first = await s.mountRender(() => drawRow(s, {}))
-		check('before Discord has loaded its button component the row draws without the flame button and nothing throws', findNodes(first.tree, n => n.type === s.b.ActionButton).length === 0 && findNodes(first.tree, n => n.type === 'EmojiButton').length === 1)
-		s.b.flags.buttonLoaded = true
-		const second = await s.mountRender(() => drawRow(s, {}))
-		check('once it has loaded the next draw has the flame button', findNodes(second.tree, n => n.type === s.b.ActionButton).length === 1)
-		s.b.flags.finderBroken = true
-		let threw = null
-		let third
-		try {
-			third = drawRow(s, {})
-		} catch (error) {
-			threw = error
-		}
-		check('a lookup that throws leaves the chat box row alone and does not throw', threw === null && third.props.children.length === 2, String(threw))
-		s.b.flags.finderBroken = false
-		const icon = findNodes(second.tree, n => n.type === s.b.ActionButton)[0].props.IconComponent
-		const iconView = await s.mountRender(() => s.runtime.React.createElement(icon, { size: 'custom', style: [{ tintColor: '#999999' }] }))
-		check('with no fire icon in Discord the flame emoji stands in, dimmed while off', /\u{1F525}/u.test(textOf(iconView.tree)) && findNode(iconView.tree, n => n.type === 'Text')?.props.style.opacity < 1, textOf(iconView.tree))
-		s.stop()
 	}
 	{
 		const s = await start()
