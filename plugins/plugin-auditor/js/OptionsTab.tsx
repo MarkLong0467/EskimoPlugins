@@ -34,6 +34,14 @@ const CATEGORIES: readonly Category[] = [
 	'native',
 ]
 
+/** The second line of a whitelisted plugin: its id, the version it was whitelisted at, and whether update checks are off. */
+function whitelistLine(id: string): string {
+	const entry = auditor.whitelistEntry(id)
+	const version = entry?.version ? ` · v${entry.version}` : ''
+	const checks = entry?.ignoreUpdates ? ' · update checks off' : ''
+	return `${id}${version}${checks}`
+}
+
 /** What to call an ignored finding: its title from the last scan, or its key if the plugin is not in the scan. */
 function ignoredTitle(id: string, key: string): string {
 	const found = auditor.scanOf(id)?.findings.find(f => findingKey(f) === key)
@@ -158,7 +166,7 @@ export function OptionsTab() {
 						<Design.TableRow
 							key={id}
 							label={auditor.nameOf(id)}
-							subLabel={id}
+							subLabel={whitelistLine(id)}
 							trailing={<Chip text="REMOVE" />}
 							onPress={() => auditor.unwhitelist(id)}
 						/>

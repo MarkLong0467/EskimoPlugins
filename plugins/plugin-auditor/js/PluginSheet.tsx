@@ -25,6 +25,7 @@ import { PluginVt } from './VtBlock'
 
 /** Texts as constants because React Native text must be passed as an expression. */
 const GONE = 'This plugin is not in the last scan.'
+const UPDATED_TITLE = 'Updated since you whitelisted it'
 const CLEAN = 'Nothing sensitive was found in its code.'
 const NOTHING_LEFT =
 	'Nothing is left once the findings you ignore are set aside.'
@@ -76,7 +77,13 @@ function PluginSheet({ id }: { id: string }) {
 	const links = scan.links.filter(l => l.kind !== 'noise')
 	const color = RISK_COLOR[view.risk]
 	const facts = `${p.id} · v${p.version} · ${p.author}`
-	const whitelistHelp = `A whitelisted plugin never counts as needing attention and is left out of the start-up alert, even after it updates. Its ${plural(view.findings.length, 'finding')} stay listed here.`
+	const entry = auditor.whitelistEntry(p.id)
+	const updated = auditor.updateAlert(scan)
+	const updatedText = `It was whitelisted at v${entry?.version ?? '?'} and is v${p.version} now, and it is critical. It is shown again until you whitelist this version or turn update checks off for it.`
+	const whitelistHelp = `A whitelisted plugin does not count as needing attention and is left out of the start-up alert. If it updates to a different version and turns critical, it is shown again. Its ${plural(view.findings.length, 'finding')} stay listed here.`
+	const updateHelp = entry?.ignoreUpdates
+		? 'Update checks are off: this plugin stays quiet even if an update makes it critical.'
+		: 'Update checks are on: if an update makes this plugin critical, it is shown again.'
 	const ignoreHelp =
 		'Ignore a finding you know is fine. Only that one is hidden, so a new problem still shows.'
 
@@ -108,13 +115,38 @@ function PluginSheet({ id }: { id: string }) {
 							<Chip text="SIDELOADED" />
 						)}
 						{p.native ? <Chip text="NATIVE PART" /> : null}
-						{whitelisted ? <Chip text="WHITELISTED" /> : null}
+						{whitelisted ? (
+							<Chip
+								text={
+									entry?.version
+										? `WHITELISTED AT V${entry.version}`
+										: 'WHITELISTED'
+								}
+							/>
+						) : null}
+						{whitelisted && entry?.ignoreUpdates ? (
+							<Chip text="UPDATE CHECKS OFF" />
+						) : null}
 						{view.ignored.length > 0 ? (
 							<Chip text={`${view.ignored.length} IGNORED`} />
 						) : null}
 						<Chip text={scan.sha256 ? sizeText(scan.size) : 'NO CODE'} />
 					</View>
 				</View>
+
+				{updated ? (
+					<Panel tint={RISK_COLOR.critical.soft} style={{ gap: 10 }}>
+						<Design.Text variant="text-md/bold">{UPDATED_TITLE}</Design.Text>
+						<Design.Text variant="text-sm/medium">{updatedText}</Design.Text>
+						<ButtonRow>
+							<RowButton
+								text="Whitelist this version"
+								variant="primary"
+								onPress={() => auditor.whitelist(p.id)}
+							/>
+						</ButtonRow>
+					</Panel>
+				) : null}
 
 				{scan.problem ? (
 					<Panel tint={RISK_COLOR.medium.soft}>
@@ -220,11 +252,24 @@ function PluginSheet({ id }: { id: string }) {
 							}}
 						/>
 					</ButtonRow>
-					{!whitelisted && view.risk !== 'clean' ? (
-						<Design.Text variant="text-xs/medium" color="text-muted">
-							{whitelistHelp}
-						</Design.Text>
+					{whitelisted ? (
+						<ButtonRow>
+							<RowButton
+								text={
+									entry?.ignoreUpdates
+										? 'Check new updates again'
+										: 'Ignore new update checks'
+								}
+								variant="secondary"
+								onPress={() =>
+									auditor.setIgnoreUpdates(p.id, !entry?.ignoreUpdates)
+								}
+							/>
+						</ButtonRow>
 					) : null}
+					<Design.Text variant="text-xs/medium" color="text-muted">
+						{whitelisted ? updateHelp : whitelistHelp}
+					</Design.Text>
 					<Design.Button text="Close" variant="tertiary" onPress={close} />
 				</View>
 			</>

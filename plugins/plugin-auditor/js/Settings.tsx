@@ -7,6 +7,7 @@ import { Tabs } from './components'
 import { setStorage, setting } from './config'
 import { diag } from './diag'
 import { Hero } from './Hero'
+import { HowItWorks } from './HowItWorks'
 import { LinksTab } from './LinksTab'
 import { OptionsTab } from './OptionsTab'
 import { PluginsTab } from './PluginsTab'
@@ -71,6 +72,7 @@ export default function SettingsScreen({ api }: Props) {
 				{tab === 'links' ? <LinksTab /> : null}
 				{tab === 'copies' ? <CopiesTab /> : null}
 				{tab === 'options' ? <OptionsTab /> : null}
+				<HowItWorks />
 				<DebugSection diag={diag} />
 			</Design.Stack>
 		</ScrollView>

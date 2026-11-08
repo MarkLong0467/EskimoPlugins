@@ -385,7 +385,7 @@ async function pluginTests(real) {
 		const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugins', 'plugin-auditor', 'manifest.json'), 'utf8'))
 		const cleanups = []
 		const errors = []
-		const self = { manifest: { ...manifest, version: { nums: [1, 0, 3] } }, errors, reportError: e => errors.push(e), requireReload() {}, startedLate: false }
+		const self = { manifest: { ...manifest, version: { nums: [1, 0, 4] } }, errors, reportError: e => errors.push(e), requireReload() {}, startedLate: false }
 		const api = { cleanup: (...fns) => cleanups.push(...fns), decorate() {}, jsonStorage: storage, logger: { log() {}, warn() {}, error() {}, info() {}, debug() {} }, plugin: self, unscoped: runtime.valenced }
 		self.api = api
 		await definition.start.call(self, { ...api, plugin: self })
@@ -535,9 +535,9 @@ async function pluginTests(real) {
 		button(sheet, 'Whitelist').props.onPress()
 		await sleep(10)
 		await sheet.settle()
-		check('Whitelist saves the plugin by id, not by its code', s.storage.cache.whitelist['bad.stealer'] === true, s.storage.cache.whitelist)
+		check('Whitelist saves the plugin by id with the version it has now', JSON.stringify(s.storage.cache.whitelist['bad.stealer']) === JSON.stringify({ version: '1.0.0', ignoreUpdates: false }), s.storage.cache.whitelist)
 		check('the sheet then says WHITELISTED and offers to remove it', textOf(sheet.tree).includes('WHITELISTED') && !!button(sheet, 'Remove whitelist'))
-		check('the report marks it as whitelisted', /Risk: Critical \(whitelisted by the user\)/.test(s.copied.at(-1) && (button(sheet, 'Copy report').props.onPress(), s.copied.at(-1))))
+		check('the report marks it as whitelisted', /Risk: Critical \(whitelisted by the user at 1\.0\.0\)/.test(s.copied.at(-1) && (button(sheet, 'Copy report').props.onPress(), s.copied.at(-1))))
 		button(sheet, 'Remove whitelist').props.onPress()
 		await sleep(10)
 		check('Remove whitelist really removes it (not merged back)', !('bad.stealer' in s.storage.cache.whitelist), s.storage.cache.whitelist)
@@ -571,12 +571,19 @@ async function pluginTests(real) {
 		await sleep(50)
 		await view.settle()
 		check('with one whitelisted and the webhook ignored nothing needs attention', /No serious problems found/.test(textOf(view.tree)), textOf(view.tree).slice(0, 250))
+		findNode(view.tree, n => n.type === 'Pressable' && textOf(n) === 'Whitelisted 1').props.onPress()
+		await view.settle()
+		const wlRows = findNodes(view.tree, n => n.type === 'Design.TableRow' && n.props.trailing).map(n => n.props.label)
+		check('the Whitelisted chip lists only the whitelisted plugins, with its count', wlRows.length === 1 && wlRows[0] === 'Totally Legit', wlRows)
+		findNode(view.tree, n => n.type === 'Pressable' && textOf(n).startsWith('Attention')).props.onPress()
+		await view.settle()
+		check('Attention is empty when the only serious plugin is whitelisted and the other one ignored', !!row(view, 'Nothing needs attention') && !row(view, 'Totally Legit'))
 		findNode(view.tree, n => n.type === 'Pressable' && textOf(n).startsWith('All')).props.onPress()
 		await view.settle()
 		check('a whitelisted plugin keeps its real risk badge and its row says Whitelisted', /Whitelisted · /.test(row(view, 'Totally Legit').props.subLabel) && findNode(row(view, 'Totally Legit').props.trailing, n => true) !== undefined, row(view, 'Totally Legit').props)
 		await openTab(view, 'Options')
 		const rows = findNodes(view.tree, n => n.type === 'Design.TableRow').map(n => `${n.props.label}|${n.props.subLabel}`)
-		check('the Options tab lists the whitelisted plugin', rows.includes('Totally Legit|bad.stealer'), rows)
+		check('the Options tab lists the whitelisted plugin', rows.includes('Totally Legit|bad.stealer · v1.0.0'), rows)
 		check('and the ignored finding by its title with its plugin', rows.includes('Has a Discord webhook|Hook Sender'), rows)
 		findNode(view.tree, n => n.type === 'Design.TableRow' && n.props.label === 'Has a Discord webhook').props.onPress()
 		await sleep(10)
@@ -623,6 +630,116 @@ async function pluginTests(real) {
 		} finally {
 			globalThis.setTimeout = realSetTimeout
 		}
+	}
+
+	// --- A whitelisted plugin that updates and is critical is shown again
+	{
+		const realSetTimeout = globalThis.setTimeout
+		globalThis.setTimeout = (fn, ms, ...rest) => realSetTimeout(fn, ms > 50 ? 0 : ms, ...rest)
+		const pause = ms => new Promise(resolve => realSetTimeout(resolve, ms))
+		const toastsOf = s => s.runtime.log.actions.filter(a => a.label === 'toast').map(a => a.args[1]?.text)
+		const entry = (version, ignoreUpdates = false) => ({ version, ignoreUpdates })
+		try {
+			// version differs + critical + checks on -> alert, marked as updated
+			const a = await setup({ saved: { autoScan: true, notify: true, whitelist: { 'bad.stealer': entry('0.9.0') } } })
+			await pause(150)
+			check('whitelisted at an older version and critical now: it is named again, marked updated', toastsOf(a).some(t => /^Totally Legit \(updated\), Hook Sender need attention\./.test(t)), toastsOf(a))
+			await a.running.stop()
+
+			// same version -> quiet
+			const b = await setup({ saved: { autoScan: true, notify: true, whitelist: { 'bad.stealer': entry('1.0.0') } } })
+			await pause(150)
+			check('whitelisted at the same version: not named', toastsOf(b).every(t => !/Totally Legit/.test(t)) && toastsOf(b).some(t => /^Hook Sender needs attention/.test(t)), toastsOf(b))
+			await b.running.stop()
+
+			// checks off -> quiet
+			const c = await setup({ saved: { autoScan: true, notify: true, whitelist: { 'bad.stealer': entry('0.9.0', true) } } })
+			await pause(150)
+			check('with update checks turned off it stays quiet even after an update', toastsOf(c).every(t => !/Totally Legit/.test(t)), toastsOf(c))
+			await c.running.stop()
+
+			// updated but only High (token on its own, known places) -> quiet
+			const high = plugin('known.token', 'var t=getToken();fetch("https://discord.com/api/v9/x")', { name: 'Known Token' })
+			const d = await setup({ saved: { autoScan: true, notify: true, whitelist: { 'known.token': entry('0.1.0') } }, list: [nativeEntry(high)] })
+			await pause(150)
+			check('an update that is only High (not Critical) stays quiet', toastsOf(d).length === 0, toastsOf(d))
+			await d.running.stop()
+
+			// updated and clean -> quiet
+			const e = await setup({ saved: { autoScan: true, notify: true, whitelist: { 'good.reminders': entry('0.1.0') } } })
+			await pause(150)
+			check('an update that is clean stays quiet', toastsOf(e).every(t => !/Good Reminders/.test(t)))
+			await e.running.stop()
+
+			// ignoring the critical finding makes it non-critical -> quiet
+			const f = await setup({ saved: { autoScan: true, notify: true, whitelist: { 'bad.stealer': entry('0.9.0') }, ignored: { 'bad.stealer': ['token.read'] } } })
+			await pause(150)
+			check('findings the user ignores are not counted when deciding if an update is critical', toastsOf(f).every(t => !/Totally Legit/.test(t)), toastsOf(f))
+			await f.running.stop()
+		} finally {
+			globalThis.setTimeout = realSetTimeout
+		}
+
+		// The sheet: banner, Whitelist this version, and the Ignore new update checks button
+		const s = await setup({ saved: { whitelist: { 'bad.stealer': entry('0.9.0') } } })
+		const view = await s.mountSettings()
+		await press(view, 'Scan now')
+		await sleep(50)
+		await view.settle()
+		check('the summary counts the updated plugin and the other serious one', /2 plugins need attention/.test(textOf(view.tree)), textOf(view.tree).slice(0, 200))
+		check('its row says Updated since whitelisted', /Updated since whitelisted · /.test(row(view, 'Totally Legit').props.subLabel), row(view, 'Totally Legit').props.subLabel)
+		row(view, 'Totally Legit').props.onPress()
+		await sleep(5)
+		const call = s.runtime.log.actions.filter(a => a.label === 'actionSheet' && a.name === 'openLazy').at(-1)
+		const Sheet = (await call.args[0]).default
+		const sheet = s.runtime.mount(s.runtime.React.createElement(Sheet, {}))
+		await sheet.settle()
+		const text = textOf(sheet.tree)
+		check('the sheet explains it was whitelisted at the old version and is critical now', text.includes('Updated since you whitelisted it') && text.includes('whitelisted at v0.9.0 and is v1.0.0 now, and it is critical'), text.slice(0, 500))
+		check('the chip shows the version it was whitelisted at', text.includes('WHITELISTED AT V0.9.0'))
+		check('it offers Whitelist this version and Ignore new update checks', !!button(sheet, 'Whitelist this version') && !!button(sheet, 'Ignore new update checks'))
+		button(sheet, 'Ignore new update checks').props.onPress()
+		await sleep(10)
+		await sheet.settle()
+		check('Ignore new update checks saves it and keeps the version', JSON.stringify(s.storage.cache.whitelist['bad.stealer']) === JSON.stringify({ version: '0.9.0', ignoreUpdates: true }), s.storage.cache.whitelist)
+		check('then the banner is gone and the button reads Check new updates again', !textOf(sheet.tree).includes('Updated since you whitelisted it') && !!button(sheet, 'Check new updates again') && textOf(sheet.tree).includes('UPDATE CHECKS OFF'), textOf(sheet.tree).slice(0, 300))
+		button(sheet, 'Check new updates again').props.onPress()
+		await sleep(10)
+		await sheet.settle()
+		check('Check new updates again turns it back on and the banner returns', s.storage.cache.whitelist['bad.stealer'].ignoreUpdates === false && textOf(sheet.tree).includes('Updated since you whitelisted it'))
+		button(sheet, 'Whitelist this version').props.onPress()
+		await sleep(10)
+		await sheet.settle()
+		check('Whitelist this version saves the version it has now', s.storage.cache.whitelist['bad.stealer'].version === '1.0.0' && s.storage.cache.whitelist['bad.stealer'].ignoreUpdates === false, s.storage.cache.whitelist)
+		check('and the banner goes away', !textOf(sheet.tree).includes('Updated since you whitelisted it'))
+		button(sheet, 'Copy report').props.onPress()
+		check('the report says what version it was whitelisted at', /whitelisted by the user at 1\.0\.0\)/.test(s.copied.at(-1)), s.copied.at(-1)?.slice(0, 200))
+		await s.running.stop()
+
+		// legacy entries (1.0.3 saved `true`) get the version the plugin has at the next scan
+		const l = await setup({ saved: { whitelist: { 'bad.stealer': true, 'gone.plugin': true } } })
+		const lv = await l.mountSettings()
+		await press(lv, 'Scan now')
+		await sleep(50)
+		await lv.settle()
+		check('an old whitelist entry gets the version the plugin has now, so it does not alert', JSON.stringify(l.storage.cache.whitelist['bad.stealer']) === JSON.stringify({ version: '1.0.0', ignoreUpdates: false }), l.storage.cache.whitelist)
+		check('an old entry for a plugin that is not installed never alerts (no version)', JSON.stringify(l.storage.cache.whitelist['gone.plugin']) === JSON.stringify({ version: '', ignoreUpdates: false }), l.storage.cache.whitelist)
+		await openTab(lv, 'Options')
+		const lrows = findNodes(lv.tree, n => n.type === 'Design.TableRow').map(n => `${n.props.label}|${n.props.subLabel}`)
+		check('the Options tab shows the version and the update-check state', lrows.includes('Totally Legit|bad.stealer · v1.0.0'), lrows)
+		await l.running.stop()
+	}
+
+	// --- The note at the bottom
+	{
+		const s = await setup()
+		const view = await s.mountSettings()
+		const t = textOf(view.tree)
+		check('the settings end with a "How Plugin Auditor works" note above the debugging section', t.includes('HOW PLUGIN AUDITOR WORKS') && t.indexOf('HOW PLUGIN AUDITOR WORKS') < t.indexOf('DEBUGGING'), t.slice(-300))
+		check('the note says when it scans and when it alerts', /Every time Discord starts/.test(t) && /only if a plugin is High or Critical/.test(t) && /Plugins on your whitelist are left out/.test(t))
+		check('the note explains whitelist, updated plugins, the update-check button and ignoring a finding', /Whitelist this version/.test(t) && /Ignore new update checks/.test(t) && /Ignore this hides just that one finding/.test(t) && /A whitelisted plugin that updates and is not Critical stays quiet/.test(t))
+		check('the note explains VirusTotal privacy and the limits', /sends only the SHA-256/.test(t) && /What it cannot see/.test(t))
+		await s.running.stop()
 	}
 
 	// --- VirusTotal from the sheet
@@ -752,7 +869,7 @@ async function pluginTests(real) {
 		await view.settle()
 		findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === 'Copy logs').props.onPress()
 		const report = s.copied.at(-1)
-		check('the debug report names the plugin, the phone and Discord', report.startsWith('Plugin Auditor debug report') && report.includes('marklong.plugin-auditor 1.0.3') && report.includes('Discord: 354.5'), report.slice(0, 400))
+		check('the debug report names the plugin, the phone and Discord', report.startsWith('Plugin Auditor debug report') && report.includes('marklong.plugin-auditor 1.0.4') && report.includes('Discord: 354.5'), report.slice(0, 400))
 		check('it shows how the scan went', report.includes('Plugin list: native list') && report.includes('Scanned: 6 plugins, 1 duplicate group(s)') && /Rules: \d+/.test(report) && report.includes('Slowest:'), report)
 		check('it lists every plugin with risk, counts, size and a short hash but no code', /bad\.stealer 1\.0\.0 critical \d+f \d+l \d+ch [0-9a-f]{10}/.test(report) && !report.includes('collector.example.net/t?x'), report)
 		check('it says which plugin Valenced gave no code for', report.includes('No code from Valenced for: empty.nocode'))

@@ -40,6 +40,7 @@ import type {
 	PluginScan,
 	Risk,
 	VtVerdict,
+	WhitelistEntry,
 } from './types'
 import type { VtFailure, VtOptions } from './virustotal'
 
@@ -188,14 +189,65 @@ function createAuditor() {
 		/** The scan of one plugin. */
 		scanOf: (id: string) => state.scans.find(s => s.plugin.id === id),
 
+		/**
+		 * The whitelist entry of a plugin. An entry saved by version 1.0.3 is only `true`: it has no version yet, and gets
+		 * the plugin's current one at the next scan.
+		 */
+		whitelistEntry(id: string): WhitelistEntry | undefined {
+			const raw = setting('whitelist')[id] as WhitelistEntry | true | undefined
+			if (!raw) return undefined
+			return raw === true ? { version: '', ignoreUpdates: false } : raw
+		},
+
 		/** Whether the plugin is on the whitelist. */
 		isWhitelisted: (id: string): boolean => !!setting('whitelist')[id],
 
-		/** Puts a plugin on the whitelist: it never counts as needing attention, even after it updates. */
+		/**
+		 * Puts a plugin on the whitelist at the version it has now. It does not count as needing attention, and the start-up
+		 * alert leaves it out. When it updates and turns critical it is shown again (see {@link updateAlert}); tapping this
+		 * again accepts the new version.
+		 */
 		whitelist(id: string): void {
-			saveSettings({ whitelist: { [id]: true } })
-			diag.log('whitelist', `${id} added`)
+			const version = api.scanOf(id)?.plugin.version ?? ''
+			saveSettings({
+				whitelist: {
+					[id]: {
+						version,
+						ignoreUpdates: api.whitelistEntry(id)?.ignoreUpdates ?? false,
+					},
+				},
+			})
+			diag.log('whitelist', `${id} added at ${version || 'an unknown version'}`)
 			changed()
+		},
+
+		/** Turns the "show it again when it updates and is critical" check off or on for a whitelisted plugin. */
+		setIgnoreUpdates(id: string, ignore: boolean): void {
+			const entry = api.whitelistEntry(id)
+			if (!entry) return
+			saveSettings({
+				whitelist: { [id]: { version: entry.version, ignoreUpdates: ignore } },
+			})
+			diag.log(
+				'whitelist',
+				`${id}: update checks ${ignore ? 'ignored' : 'on again'}`,
+			)
+			changed()
+		},
+
+		/**
+		 * Whether a whitelisted plugin must be shown again: it is a different version from the one that was whitelisted, it
+		 * is critical now (after the findings the user ignores), and the user did not turn update checks off for it.
+		 */
+		updateAlert(scan: PluginScan): boolean {
+			const entry = api.whitelistEntry(scan.plugin.id)
+			return (
+				!!entry &&
+				!entry.ignoreUpdates &&
+				entry.version !== '' &&
+				entry.version !== scan.plugin.version &&
+				api.view(scan).risk === 'critical'
+			)
 		},
 
 		/** Takes a plugin off the whitelist. */
@@ -230,9 +282,13 @@ function createAuditor() {
 		view: (scan: PluginScan): Judged =>
 			judge(scan, api.ignoredKeys(scan.plugin.id)),
 
-		/** Whether a plugin needs attention: high or critical after the ignored findings, and not whitelisted. */
+		/**
+		 * Whether a plugin needs attention: high or critical after the ignored findings and not whitelisted, or whitelisted
+		 * but updated to a different version and critical now.
+		 */
 		needsAttention: (scan: PluginScan): boolean =>
-			needsAttention(api.view(scan).risk, api.isWhitelisted(scan.plugin.id)),
+			needsAttention(api.view(scan).risk, api.isWhitelisted(scan.plugin.id)) ||
+			api.updateAlert(scan),
 
 		/** Counts of plugins by risk (after ignored findings), not counting whitelisted ones as a problem. */
 		summary() {
@@ -361,6 +417,20 @@ function createAuditor() {
 					} catch (error) {
 						diag.fail('duplicates', error)
 					}
+					// A whitelist entry from 1.0.3 has no version yet: it gets the one the plugin has now.
+					const legacy = Object.entries(setting('whitelist')).filter(
+						([, entry]) => (entry as unknown) === true,
+					)
+					if (legacy.length > 0) {
+						const all = { ...setting('whitelist') }
+						for (const [id] of legacy)
+							all[id] = {
+								version:
+									scans.find(s => s.plugin.id === id)?.plugin.version ?? '',
+								ignoreUpdates: false,
+							}
+						replaceMap('whitelist', all)
+					}
 					patch({
 						status: 'done',
 						scans,
@@ -395,10 +465,15 @@ function createAuditor() {
 			autoTimer = setTimeout(async () => {
 				await api.scan()
 				if (!setting('notify')) return
-				// Only high and critical plugins that are not whitelisted, after the findings the user ignores.
+				// Only high and critical plugins that are not whitelisted, after the findings the user ignores, and whitelisted
+				// ones that updated and are critical now (marked, so it is clear why a whitelisted plugin is named).
 				const names = state.scans
 					.filter(scan => api.needsAttention(scan))
-					.map(scan => scan.plugin.name)
+					.map(scan =>
+						api.updateAlert(scan)
+							? `${scan.plugin.name} (updated)`
+							: scan.plugin.name,
+					)
 				if (names.length === 0) return
 				diag.log('scan', `${names.length} plugin(s) need attention`, 'warn')
 				api.onAttention?.(names)
@@ -573,7 +648,7 @@ function createAuditor() {
 			const view = api.view(scan)
 			const lines = [
 				`${p.name} ${p.version} (${p.id}) by ${p.author}`,
-				`Risk: ${RISK_LABEL[view.risk]}${api.isWhitelisted(p.id) ? ' (whitelisted by the user)' : ''}${view.ignored.length ? ` (${view.ignored.length} finding(s) ignored by the user)` : ''}`,
+				`Risk: ${RISK_LABEL[view.risk]}${api.isWhitelisted(p.id) ? ` (whitelisted by the user at ${api.whitelistEntry(p.id)?.version || 'an unknown version'}${api.updateAlert(scan) ? '; UPDATED since and critical' : ''})` : ''}${view.ignored.length ? ` (${view.ignored.length} finding(s) ignored by the user)` : ''}`,
 				`Code: ${scan.sha256 ? `${scan.size} characters, sha256 ${scan.sha256}` : 'none'}`,
 			]
 			for (const c of view.combos) lines.push(`!! ${c.title}: ${c.why}`)
@@ -671,7 +746,7 @@ function createAuditor() {
 			for (const scan of state.scans) {
 				const p = scan.plugin
 				lines.push(
-					`  ${p.id} ${p.version} ${scan.risk} ${scan.findings.length}f ${scan.links.length}l ${scan.size}ch ${scan.sha256 ? scan.sha256.slice(0, 10) : 'no-code'}${p.internal ? ' built-in' : ''}${p.native ? ' native' : ''}${api.isWhitelisted(p.id) ? ' whitelisted' : ''}${api.ignoredKeys(p.id).length ? ` ignores=${api.ignoredKeys(p.id).join('+')}` : ''}`,
+					`  ${p.id} ${p.version} ${scan.risk} ${scan.findings.length}f ${scan.links.length}l ${scan.size}ch ${scan.sha256 ? scan.sha256.slice(0, 10) : 'no-code'}${p.internal ? ' built-in' : ''}${p.native ? ' native' : ''}${api.isWhitelisted(p.id) ? ` whitelisted@${api.whitelistEntry(p.id)?.version || '?'}${api.whitelistEntry(p.id)?.ignoreUpdates ? ' no-update-alerts' : ''}${api.updateAlert(scan) ? ' UPDATE-ALERT' : ''}` : ''}${api.ignoredKeys(p.id).length ? ` ignores=${api.ignoredKeys(p.id).join('+')}` : ''}`,
 				)
 			}
 			lines.push(`VirusTotal key: ${vtOptions().key ? 'set' : 'not set'}`)

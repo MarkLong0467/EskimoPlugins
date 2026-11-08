@@ -125,6 +125,14 @@ export interface VtVerdict {
 	checkedAt: number
 }
 
+/** What the plugin remembers about a plugin on the whitelist. */
+export interface WhitelistEntry {
+	/** The version it had when it was whitelisted. A different version that is critical is shown again. Empty if not known yet. */
+	version: string
+	/** Do not show it again when it updates and is critical. */
+	ignoreUpdates: boolean
+}
+
 /** What the plugin saves. */
 export interface AuditorSettings {
 	includeBuiltIn: boolean
@@ -135,8 +143,8 @@ export interface AuditorSettings {
 	vtKey: string
 	vtDomains: boolean
 	vtFast: boolean
-	/** Plugins the user whitelisted, by id: they never count as needing attention, whatever their code does later. */
-	whitelist: Record<string, true>
+	/** Plugins the user whitelisted, by id: they do not count as needing attention (but see `WhitelistEntry`). */
+	whitelist: Record<string, WhitelistEntry>
 	/** Findings the user ignores, by plugin id: the keys of the findings (see `findingKey`). */
 	ignored: Record<string, string[]>
 	/** VirusTotal answers by SHA-256 of a file, or `domain:<host>`. */

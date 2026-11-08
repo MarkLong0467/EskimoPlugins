@@ -10,12 +10,15 @@ import { CATEGORY_LABEL } from './rules'
 import { auditor } from './store'
 import type { Category, PluginScan } from './types'
 
-type Filter = 'attention' | 'all' | 'review' | 'clean'
+type Filter = 'attention' | 'all' | 'review' | 'clean' | 'whitelisted'
 type Capability = 'any' | Category
 
 /** Texts as constants because React Native text must be passed as an expression. */
 const NOTHING_ATTENTION = 'Nothing needs attention'
 const NOTHING_HELP = 'Pick All to see every plugin.'
+const NOTHING_WHITELISTED = 'No whitelisted plugins'
+const NOTHING_WHITELISTED_HELP =
+	'Open a plugin and tap Whitelist. Whitelisted plugins stay quiet, and are only shown again if an update makes them critical.'
 const NOTHING_CAPABILITY = 'No plugin matches'
 const NOTHING_CAPABILITY_HELP = 'Try another risk filter above.'
 const NO_SCAN = 'No scan yet'
@@ -48,7 +51,11 @@ function subtitle(scan: PluginScan, capability: Capability): string {
 			: view.findings.find(f => f.category === capability)
 	const top =
 		inCategory?.title ?? view.combos[0]?.title ?? view.findings[0]?.title
-	const tag = auditor.isWhitelisted(p.id) ? 'Whitelisted · ' : ''
+	const tag = auditor.updateAlert(scan)
+		? 'Updated since whitelisted · '
+		: auditor.isWhitelisted(p.id)
+			? 'Whitelisted · '
+			: ''
 	if (!top)
 		return `${facts}\n${tag}${scan.problem ? 'no code' : 'nothing found'}`
 	const more = view.findings.length > 1 ? ` +${view.findings.length - 1}` : ''
@@ -59,6 +66,7 @@ function subtitle(scan: PluginScan, capability: Capability): string {
 function passes(filter: Filter, scan: PluginScan): boolean {
 	if (filter === 'all') return true
 	if (filter === 'attention') return auditor.needsAttention(scan)
+	if (filter === 'whitelisted') return auditor.isWhitelisted(scan.plugin.id)
 	const risk = auditor.view(scan).risk
 	if (filter === 'review') return risk === 'medium' || risk === 'low'
 	return risk === 'clean'
@@ -108,6 +116,7 @@ export function PluginsTab() {
 						{ id: 'attention', label: `Attention ${count('attention')}` },
 						{ id: 'review', label: `Worth a look ${count('review')}` },
 						{ id: 'clean', label: `Clean ${count('clean')}` },
+						{ id: 'whitelisted', label: `Whitelisted ${count('whitelisted')}` },
 						{ id: 'all', label: `All ${count('all')}` },
 					]}
 				/>
@@ -128,10 +137,18 @@ export function PluginsTab() {
 				<Design.TableRowGroup>
 					<Design.TableRow
 						label={
-							capability === 'any' ? NOTHING_ATTENTION : NOTHING_CAPABILITY
+							capability !== 'any'
+								? NOTHING_CAPABILITY
+								: filter === 'whitelisted'
+									? NOTHING_WHITELISTED
+									: NOTHING_ATTENTION
 						}
 						subLabel={
-							capability === 'any' ? NOTHING_HELP : NOTHING_CAPABILITY_HELP
+							capability !== 'any'
+								? NOTHING_CAPABILITY_HELP
+								: filter === 'whitelisted'
+									? NOTHING_WHITELISTED_HELP
+									: NOTHING_HELP
 						}
 					/>
 				</Design.TableRowGroup>
