@@ -274,6 +274,7 @@ const isOurs = (child: ReactNode): boolean =>
  */
 function placeButton(tree: unknown, props: unknown): unknown {
 	try {
+		state.chatCalls++
 		const row = findInReactFiber(
 			tree as ReactElement,
 			(node): node is RowNode =>
@@ -281,7 +282,10 @@ function placeButton(tree: unknown, props: unknown): unknown {
 					(node as { props?: { children?: unknown } }).props?.children,
 				),
 		) as RowNode | undefined
-		if (!row) return tree
+		if (!row) {
+			state.chatNoRow++
+			return tree
+		}
 		const list = row.props.children
 		for (let i = list.length - 1; i >= 0; i--)
 			if (isOurs(list[i])) list.splice(i, 1)
@@ -309,6 +313,10 @@ interface Wrapped {
 	wrapper: (...args: unknown[]) => unknown
 	/** Whether the wrapper adds the button. It stays in place, doing nothing, if another plugin patched over it. */
 	active: boolean
+	/** The memo put in the module's `default` in place of Discord's, if that worked. */
+	fresh?: object
+	/** The module the memo was found in, so Discord's memo can be put back. */
+	exports?: RightActionsModule
 }
 
 /** The wrapper that is in place now, if any. */
@@ -325,7 +333,7 @@ let wrapped: Wrapped | undefined
  * theirs alone. The wrapper has the same `length` and `displayName` as the function it wraps, because plugins find the
  * component by them.
  */
-function wrap(memo: { type: unknown }): void {
+function wrap(memo: { type: unknown }, exports?: RightActionsModule): void {
 	const original = memo.type
 	if (typeof original !== 'function') return
 	const own = original as (...args: unknown[]) => unknown
@@ -334,6 +342,7 @@ function wrap(memo: { type: unknown }): void {
 		original: own,
 		wrapper: undefined as never,
 		active: true,
+		exports,
 	}
 	// One named parameter, so `length` is 1 like Discord's function.
 	const wrapper = function (this: unknown, props: unknown, ...rest: unknown[]) {
@@ -353,7 +362,30 @@ function wrap(memo: { type: unknown }): void {
 		// The name is only for readability.
 	}
 	entry.wrapper = wrapper
-	memo.type = wrapper
+	const how: string[] = []
+	try {
+		memo.type = wrapper
+		how.push(memo.type === wrapper ? 'type replaced' : 'type kept by Discord')
+	} catch {
+		how.push('type is read-only')
+	}
+	// A row that is already on screen keeps the function it was first drawn with. Giving the module a fresh memo of the
+	// wrapper makes the parent draw a new kind of element, so the row is drawn again from the start, with the button.
+	if (exports) {
+		try {
+			const fresh = { ...(memo as object), type: wrapper }
+			exports.default = fresh
+			how.push(
+				exports.default === fresh
+					? 'module export replaced'
+					: 'module export kept by Discord',
+			)
+			entry.fresh = fresh
+		} catch {
+			how.push('module export is read-only')
+		}
+	}
+	state.chatHow = how.join(', ')
 	wrapped = entry
 }
 
@@ -365,6 +397,12 @@ function unwrap(): void {
 	if (entry.memo.type === entry.wrapper) {
 		entry.memo.type = entry.original
 		wrapped = undefined
+	}
+	try {
+		if (entry.exports && entry.fresh && entry.exports.default === entry.fresh)
+			entry.exports.default = entry.memo
+	} catch {
+		// Left as it is; the wrapper does nothing while it is switched off.
 	}
 }
 
@@ -403,6 +441,7 @@ export function installChatButton(cleanup: Cleanup): void {
 						state.chatSeen = true
 						diag.log('found', 'Found the chat box buttons')
 						if (wrapped?.active && wrapped.memo === Right) return
+						if (wrapped?.active && wrapped.fresh === Right) return
 						if (
 							wrapped &&
 							!wrapped.active &&
@@ -413,7 +452,7 @@ export function installChatButton(cleanup: Cleanup): void {
 							wrapped.active = true
 							return
 						}
-						wrap(Right)
+						wrap(Right, exports)
 					},
 				),
 			)
