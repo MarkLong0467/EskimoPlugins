@@ -3744,6 +3744,29 @@
       "contributors": [
         "dka (https://github.com/Equicord/Equicord/tree/main/src/equicordplugins/silenceUsers \"Original SilenceUsers plugin for Equicord, GPL-3.0\")"
       ]
+    },
+    "marklong.plugin-auditor": {
+      "name": "Plugin Auditor",
+      "description": "Scans your installed plugins for sensitive access (your token, changes to your account or servers, running downloaded code), lists every link in their code, finds duplicate plugins and can check them on VirusTotal.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.plugin-auditor@1.0.0.zip",
+          "sha256": "9bfa33009e6757f83943bc344dd4a9288f29c3bc161cd93b93fd49165dd72a4c",
+          "size": 26671,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
     }
   }
 }

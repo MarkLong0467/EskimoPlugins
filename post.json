@@ -187,6 +187,13 @@
       "suffix": ""
     },
     {
+      "id": "marklong.plugin-auditor",
+      "name": "Plugin Auditor",
+      "version": "1.0.0",
+      "short": "scan your plugins for token access, account changes, downloaded code and suspicious links, find duplicates, and check them on VirusTotal",
+      "suffix": ""
+    },
+    {
       "id": "marklong.quiet-hours",
       "name": "Quiet Hours",
       "version": "1.0.0",
