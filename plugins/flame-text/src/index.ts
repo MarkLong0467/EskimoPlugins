@@ -7,6 +7,7 @@
  */
 
 import { installButton } from './button'
+import { installChatButton } from './chatbutton'
 import { installCommand } from './command'
 import { diag } from './diag'
 import Settings from './Settings'
@@ -43,5 +44,6 @@ export default plugin<{ jsonStorage: FlameSettings }>({
 			else switchFlame()
 		})
 		installButton(cleanup)
+		installChatButton(cleanup)
 	},
 })

@@ -48,6 +48,11 @@ export const state = {
 	actionsSeen: false,
 	buttonDrawn: 0,
 	buttonTaps: 0,
+	/** The flame button next to the emoji button: watched, seen, drawn, tapped. */
+	chatWatched: false,
+	chatSeen: false,
+	chatDrawn: 0,
+	chatTaps: 0,
 	/** Messages looked at while it was on, made into GIFs, sent as text instead, and why. */
 	seen: 0,
 	flamed: 0,
@@ -85,6 +90,10 @@ export function resetState(): void {
 	state.actionsSeen = false
 	state.buttonDrawn = 0
 	state.buttonTaps = 0
+	state.chatWatched = false
+	state.chatSeen = false
+	state.chatDrawn = 0
+	state.chatTaps = 0
 	state.seen = 0
 	state.flamed = 0
 	state.fellBack = 0

@@ -513,6 +513,38 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 		old.stop()
 	}
 
+	// --- The optional flame button next to the emoji button
+	{
+		const s = await start()
+		const right = { $$typeof: 'memo', type: function ChatInputRightActions() { return { type: 'RightRow', props: {} } } }
+		const isRow = element => element.type === 'View'
+		check('by default there is no button', !isRow(draw(s, right, {})))
+		s.storage.set({ chatButton: true })
+		const element = draw(s, right, {})
+		check('when it is switched on the emoji buttons are wrapped in a row', isRow(element) && element.props.style.flexDirection === 'row', element)
+		check('the flame button is in front of them', element.props.children[1].type === right)
+		const view = await s.mountRender(() => draw(s, right, {}))
+		const flame = findNode(view.tree, n => n.type === 'Pressable' && /Flame text is off/.test(n.props.accessibilityLabel ?? ''))
+		check('and says it is off', !!flame)
+		flame.props.onPress()
+		await view.settle()
+		check('tapping it switches flame text on', s.storage.cache.on === true)
+		const lit = findNode(view.tree, n => n.type === 'Pressable' && /Flame text is on/.test(n.props.accessibilityLabel ?? ''))
+		check('and it lights up', !!lit && lit.props.accessibilityState.selected === true && lit.props.style.borderWidth > 0)
+		s.storage.set({ chatButton: false })
+		check('switching it off takes it away', !isRow(draw(s, right, {})))
+		s.stop()
+		check('no errors', s.errors.length === 0, s.errors)
+	}
+	{
+		const s = await start()
+		const view = await s.mountSettings()
+		switchRow(view, 'Flame button in the chat box').props.onValueChange(true)
+		await view.settle()
+		check('the settings switch adds the button', s.storage.cache.chatButton === true)
+		s.stop()
+	}
+
 	// --- The settings screen
 	{
 		const s = await start({ previewText: 'Spark' })

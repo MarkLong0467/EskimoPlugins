@@ -16,6 +16,8 @@ export interface Settings {
 	command: boolean
 	/** Whether holding the + button of the chat box opens the Flame Typing menu. */
 	button: boolean
+	/** Whether a flame button sits left of the emoji button in the chat box. */
+	chatButton: boolean
 	/** What the flames look like. */
 	style: FireStyle
 	/** The shape of the letters and flames. */
@@ -41,6 +43,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	on: false,
 	command: false,
 	button: true,
+	chatButton: false,
 	style: 'fire',
 	look: 'wild',
 	defaultsSeen: true,

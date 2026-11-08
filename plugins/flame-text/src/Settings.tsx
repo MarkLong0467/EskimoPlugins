@@ -386,6 +386,17 @@ export default function Settings({ api }: Props) {
 						}
 					/>
 					<Design.TableSwitchRow
+						label="Flame button in the chat box"
+						subLabel="Adds a small flame button to the left of the emoji button. Tap it to switch flame text on or off. It glows when it is on. Off unless you turn it on."
+						value={setting('chatButton')}
+						onValueChange={(chatButton: boolean) =>
+							set(
+								{ chatButton },
+								chatButton ? 'Flame button added' : 'Flame button removed',
+							)
+						}
+					/>
+					<Design.TableSwitchRow
 						label="/flame command"
 						subLabel="Adds /flame to the slash commands. /flame switches it on or off. /flame text:hello sends one GIF without changing the switch. Off unless you turn it on."
 						value={setting('command')}
