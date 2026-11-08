@@ -3750,7 +3750,7 @@
       "description": "Scans your installed plugins for sensitive access (your token, changes to your account or servers, running downloaded code), lists every link in their code, finds duplicate plugins and can check them on VirusTotal.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.0.1"
+        "latest": "1.0.2"
       },
       "versions": {
         "1.0.0": {
@@ -3770,6 +3770,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.plugin-auditor@1.0.1.zip",
           "sha256": "9843e04a19b9ff9afb80cafee39a87773e2cfaaae4b2391a3d920a40d6600a7f",
           "size": 26651,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.0.2": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.plugin-auditor@1.0.2.zip",
+          "sha256": "1d1cdca9eb04985fd5999e6c2f5a75f6a53116c3bb204f4d5c786c5a0a0ac3aa",
+          "size": 27890,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
