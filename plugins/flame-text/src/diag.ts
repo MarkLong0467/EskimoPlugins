@@ -95,7 +95,8 @@ export const diag = createDiagnostics('Flame Text', {
 			`Command: module ${state.commandModule ? 'found' : 'not found yet'}; patch ${hookText(state.commandHook)}; Discord asked for its commands ${state.listCalls} time(s) and /flame was in the answer ${state.listWithOurs} time(s); copied the kind from roll-dice: ${state.kindCopied ? 'yes' : 'no'}; run ${state.commandRuns} time(s)`,
 			`+ menu: watched ${state.jsx ? 'yes' : 'no'}; menu seen ${state.actionsSeen ? 'yes' : 'not yet'}; Flame Typing row added ${state.buttonDrawn} time(s); tapped ${state.buttonTaps} time(s)`,
 			`Switched on or off ${state.toggles} time(s); previews drawn in the settings: ${state.previews}`,
-			`Chat box button: patched ${state.chatWatched ? 'yes' : 'no'}; chat box buttons found ${state.chatSeen ? 'yes' : 'not yet'}; put in the row ${state.chatDrawn} time(s); tapped ${state.chatTaps} time(s)`,
+			`Chat box button: patched ${state.chatWatched ? 'yes' : 'no'}; chat box buttons found ${state.chatSeen ? 'yes' : 'not yet'}; put in the row ${state.chatDrawn} time(s); tapped ${state.chatTaps} time(s) (${state.chatDoubled} doubled press(es) ignored)`,
+			`Chat box button state: stored ${setting('on') ? 'on' : 'off'}; the button last drew ${state.chatShown === null ? 'nothing yet' : state.chatShown ? 'on' : 'off'}`,
 			`Last thing that happened: ${state.last || 'nothing yet'}`,
 		]
 	},

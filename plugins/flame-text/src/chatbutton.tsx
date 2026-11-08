@@ -20,7 +20,7 @@ import {
 } from '@valenced/discord/utils/modules/finders'
 import { lookupGeneratedIconComponent } from '@valenced/utils/discord'
 import { findInReactFiber } from '@valenced/utils/react'
-import { createElement, useEffect, useState } from 'react'
+import { createElement, useSyncExternalStore } from 'react'
 import { Text as NativeText } from 'react-native'
 import { diag } from './diag'
 import { state } from './state'
@@ -59,6 +59,9 @@ interface IconProps {
 interface ActionButtonProps {
 	accessibilityLabel: string
 	accessibilityState?: { checked?: boolean }
+	/** Discord's own "this button is on" state: the icon gets `activeIconStyle` while it is true. */
+	active?: boolean
+	activeIconStyle?: { tintColor: string }
 	IconComponent: ComponentType<IconProps>
 	onPress: () => void
 }
@@ -108,10 +111,9 @@ function tintOf(style: unknown): string | undefined {
  * flame text is switched, because the list of buttons is not drawn again for that.
  */
 export function FlameIcon(props: IconProps) {
-	const [, redraw] = useState(0)
-	useEffect(() => store.subscribe(() => redraw(n => n + 1)), [])
-	if (!setting('chatButton')) return null
-	const on = !!setting('on')
+	const enabled = useSyncExternalStore(subscribe, enabledNow)
+	const on = useSyncExternalStore(subscribe, onNow)
+	if (!enabled) return null
 	const Fire = fireIcon()
 	if (Fire) {
 		const style = on ? [props.style, { tintColor: ORANGE }] : props.style
@@ -126,15 +128,49 @@ export function FlameIcon(props: IconProps) {
 	)
 }
 
+/**
+ * How the button reads the settings. `useSyncExternalStore` always draws what is stored now: it checks again after it
+ * has subscribed, so a change made while the button was being drawn is not missed, and every part that shows the state
+ * changes in the same pass.
+ */
+const subscribe = (notify: () => void): (() => void) => store.subscribe(notify)
+const onNow = (): boolean => !!setting('on')
+const enabledNow = (): boolean => !!setting('chatButton')
+
+/** Two presses closer than this are one: a button that reports a press twice would switch flame text on and straight off. */
+const DOUBLE_PRESS_MS = 200
+
+/** When the button was last pressed. */
+let lastPress = 0
+
 /** What tapping the button does. */
 function tap(): void {
 	try {
+		const now = Date.now()
+		if (now - lastPress < DOUBLE_PRESS_MS) {
+			state.chatDoubled++
+			return
+		}
+		lastPress = now
 		state.chatTaps++
-		switchFlame()
+		const next = !setting('on')
+		switchFlame(next)
+		// The stored state is what messages are sent by, so it must now be what was asked for.
+		if (!!setting('on') !== next) {
+			diag.log(
+				'flame button',
+				'The switch did not hold; setting it again',
+				'warn',
+			)
+			switchFlame(next, true)
+		}
 	} catch (error) {
 		diag.fail('flame button', error)
 	}
 }
+
+/** The orange icon Discord's button uses while it is on. */
+const ACTIVE_ICON = { tintColor: ORANGE }
 
 /** Discord's chat box button component, once its module has been loaded. It is looked for again until it is found. */
 let foundButton: ComponentType<ActionButtonProps> | undefined
@@ -161,14 +197,19 @@ function actionButton(): ComponentType<ActionButtonProps> | undefined {
  * plugins), and the button is drawn by Discord's own component, so every plugin that changes or reads that component sees it.
  */
 export function FlameSlot() {
-	const [, redraw] = useState(0)
-	useEffect(() => store.subscribe(() => redraw(n => n + 1)), [])
-	if (!setting('chatButton')) return null
+	const enabled = useSyncExternalStore(subscribe, enabledNow)
+	const on = useSyncExternalStore(subscribe, onNow)
+	if (!enabled) return null
 	const Button = actionButton()
 	if (!Button) return null
+	state.chatShown = on
+	// The state is given in every way Discord's button and the plugins that read it understand: `checked` for plugins that
+	// list the buttons with a switch, and `active` with its icon style for Discord's own "on" look.
 	return createElement(Button, {
 		accessibilityLabel: LABEL,
-		accessibilityState: { checked: !!setting('on') },
+		accessibilityState: { checked: on },
+		active: on,
+		activeIconStyle: ACTIVE_ICON,
 		IconComponent: FlameIcon,
 		onPress: tap,
 	})

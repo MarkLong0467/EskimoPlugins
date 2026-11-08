@@ -600,21 +600,29 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 		const button = () => findNodes(view.tree, n => n.type === s.b.ActionButton)[0]
 		const first = button().props
 		check('with a label, an icon, what tapping does and an on/off state', first.accessibilityLabel === 'Flame text' && typeof first.IconComponent === 'function' && typeof first.onPress === 'function' && first.accessibilityState.checked === false, first)
+		check('the button says it is off in every way: not checked, not active', first.accessibilityState.checked === false && first.active === false && first.activeIconStyle.tintColor === '#ff6a00', first)
 		button().props.onPress()
 		await view.settle()
 		check('tapping the button switches flame text on', s.storage.cache.on === true)
 		check('and the button\'s state follows at once (checked), with the same label', button().props.accessibilityState.checked === true && button().props.accessibilityLabel === 'Flame text', button().props)
+		check('and it is active too, with the orange icon style Discord\'s button uses', button().props.active === true && button().props.activeIconStyle.tintColor === '#ff6a00')
+		await sleep(250)
 		button().props.onPress()
 		await view.settle()
 		check('tapping again turns it off and unchecks it', s.storage.cache.on === false && button().props.accessibilityState.checked === false)
+		const reportView = await s.mountSettings()
+		findNode(reportView.tree, n => n.type === 'Design.Button' && n.props.text === 'Copy logs').props.onPress()
+		check('the debug report says what is stored and what the button last drew', /Chat box button state: stored off; the button last drew off/.test(s.copied.at(-1)) && /\(0 doubled press\(es\) ignored\)/.test(s.copied.at(-1)), s.copied.at(-1)?.slice(-500))
 		/** The icon the button was given, drawn with the chat box's own grey tint. */
 		const icon = async () => {
 			const iconView = await s.mountRender(() => s.runtime.React.createElement(first.IconComponent, { size: 'custom', style: [{ tintColor: '#999999' }] }))
 			return findNode(iconView.tree, n => n.type === 'FireDrawn')
 		}
 		check('the icon is Discord\'s fire icon with the chat box\'s own grey tint while flame text is off', JSON.stringify((await icon()).props.style) === JSON.stringify([{ tintColor: '#999999' }]))
+		await sleep(250)
 		first.onPress()
 		check('and the fire turns orange when it is on', JSON.stringify((await icon()).props.style) === JSON.stringify([[{ tintColor: '#999999' }], { tintColor: '#ff6a00' }]), (await icon())?.props.style)
+		await sleep(250)
 		first.onPress()
 		check('and grey again when it is switched off', s.storage.cache.on === false && JSON.stringify((await icon()).props.style) === JSON.stringify([{ tintColor: '#999999' }]))
 
@@ -666,6 +674,35 @@ const gifOf = s => readGif(bytesOf(s.files.written.at(-1).data))
 		s.stop()
 		check('stopping leaves the other plugins\' patches working', (() => { try { const t = s.b.Right.type({ shouldShowGiftButton: true }); return t.props.children.length === 2 && t.props.children[0] === null } catch { return false } })())
 		check('no errors', s.errors.length === 0, s.errors)
+	}
+
+	// --- The button is definite: a press that is reported twice counts once, and the state is what is stored
+	{
+		const s = await withChatBox({}, { saved: { chatButton: true } })
+		const view = await s.mountRender(() => drawRow(s, {}))
+		const button = () => findNodes(view.tree, n => n.type === s.b.ActionButton)[0]
+		const press = button().props.onPress
+		press()
+		press()
+		press()
+		await view.settle()
+		check('a press reported three times at once switches flame text once', s.storage.cache.on === true && button().props.accessibilityState.checked === true && button().props.active === true, s.storage.cache.on)
+		await sleep(250)
+		press()
+		await view.settle()
+		check('a press after a moment is a new press', s.storage.cache.on === false && button().props.accessibilityState.checked === false && button().props.active === false)
+		await sleep(250)
+		press()
+		await sleep(250)
+		press()
+		await sleep(250)
+		press()
+		await view.settle()
+		check('every tap with a moment between switches it, so on after three more', s.storage.cache.on === true && button().props.accessibilityState.checked === true)
+		const reportView = await s.mountSettings()
+		findNode(reportView.tree, n => n.type === 'Design.Button' && n.props.text === 'Copy logs').props.onPress()
+		check('the report counts the doubled presses it ignored', /\(2 doubled press\(es\) ignored\)/.test(s.copied.at(-1)), s.copied.at(-1)?.slice(-500))
+		s.stop()
 	}
 
 	// --- The row is wrapped, not patched with Valenced's patcher, so hooks other plugins add are not shared with it

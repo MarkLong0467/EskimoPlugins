@@ -53,6 +53,9 @@ export const state = {
 	chatSeen: false,
 	chatDrawn: 0,
 	chatTaps: 0,
+	/** What the flame button last drew (on or off), and how many presses were ignored as a doubled event. */
+	chatShown: null as boolean | null,
+	chatDoubled: 0,
 	/** Messages looked at while it was on, made into GIFs, sent as text instead, and why. */
 	seen: 0,
 	flamed: 0,
@@ -94,6 +97,8 @@ export function resetState(): void {
 	state.chatSeen = false
 	state.chatDrawn = 0
 	state.chatTaps = 0
+	state.chatShown = null
+	state.chatDoubled = 0
 	state.seen = 0
 	state.flamed = 0
 	state.fellBack = 0
