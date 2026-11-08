@@ -3623,7 +3623,7 @@
       "description": "Turns the text you send into a burning, animated GIF of your words on fire. Switch it with the Flame Typing row in the + menu, or turn on the /flame command. The GIF is drawn on your phone.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.4.9"
+        "latest": "1.4.10"
       },
       "versions": {
         "1.0.0": {
@@ -3851,6 +3851,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.flame-text@1.4.9.zip",
           "sha256": "913e92df78bb2e56ab2a63d61ebd7363983731b1492a40abd48d5cce903c8094",
           "size": 20429,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.4.10": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.flame-text@1.4.10.zip",
+          "sha256": "e6ac915f6b5ef64a2fc18728faf3f9606167ff8c29258d898aaf80762accfa60",
+          "size": 20565,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
