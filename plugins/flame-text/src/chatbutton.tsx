@@ -19,12 +19,10 @@ import {
 	lookupModuleWithImportedPath,
 } from '@valenced/discord/utils/modules/finders'
 import { lookupGeneratedIconComponent } from '@valenced/utils/discord'
-import { after } from '@valenced/patcher'
 import { findInReactFiber } from '@valenced/utils/react'
 import { createElement, useSyncExternalStore } from 'react'
-import { Text as NativeText, View } from 'react-native'
+import { Text as NativeText } from 'react-native'
 import { diag } from './diag'
-import { currentChat, plainOnly } from './send'
 import { state } from './state'
 import { setting, store } from './store'
 import { switchFlame } from './toggle'
@@ -38,16 +36,6 @@ const RIGHT_ACTIONS_PATH =
 const ACTION_BUTTON_PATH =
 	'modules/chat_input/native/action_buttons/ChatInputActionButton.tsx'
 
-/**
- * The priority of the fallback patch. Valenced runs the hooks with the highest priority first, so the button is already in the
- * row when a plugin that hides, reads or merges the chat box buttons looks at it.
- */
-const FIRST = 500
-
-/** How often, and how many times, to check that the wrapper was called once a chat is open. */
-const CHECK_MS = 2000
-const CHECKS = 150
-
 /** The key of the button in the list, so it is found again and never added twice. */
 const BUTTON_KEY = 'flame-text'
 
@@ -56,9 +44,6 @@ const ORANGE = '#ff6a00'
 
 /** The flame, as a constant because React Native text must be passed as an expression. */
 const FLAME = '\u{1F525}'
-
-/** Drawn over the flame in the chat where flame text is not allowed. */
-const NOT_HERE = '\u{1F6AB}'
 const LABEL = 'Flame text'
 
 /** The names Discord's fire icon may have, the first one that exists is used. */
@@ -158,28 +143,6 @@ const DOUBLE_PRESS_MS = 200
 /** When the button was last pressed. */
 let lastPress = 0
 
-/**
- * The picture on the button in the chat where flame text is not allowed: the same grey fire as when it is off, with a 🚫 over
- * it. It is never orange there.
- */
-export function BarredFlameIcon(props: IconProps) {
-	const enabled = useSyncExternalStore(subscribe, enabledNow)
-	if (!enabled) return null
-	const Fire = fireIcon()
-	return (
-		<View style={{ alignItems: 'center', justifyContent: 'center' }}>
-			{Fire ? (
-				createElement(Fire, props)
-			) : (
-				<NativeText style={{ fontSize: 22, opacity: 0.45 }}>{FLAME}</NativeText>
-			)}
-			<NativeText style={{ position: 'absolute', fontSize: 20 }}>
-				{NOT_HERE}
-			</NativeText>
-		</View>
-	)
-}
-
 /** What tapping the button does. */
 function tap(): void {
 	try {
@@ -233,15 +196,12 @@ function actionButton(): ComponentType<ActionButtonProps> | undefined {
  * such as Chat Buttons builds from the buttons it finds. The label never changes (it is the button's name for those
  * plugins), and the button is drawn by Discord's own component, so every plugin that changes or reads that component sees it.
  */
-export function FlameSlot({ channelId }: { channelId?: string }) {
+export function FlameSlot() {
 	const enabled = useSyncExternalStore(subscribe, enabledNow)
-	const allowed = useSyncExternalStore(subscribe, onNow)
+	const on = useSyncExternalStore(subscribe, onNow)
 	if (!enabled) return null
 	const Button = actionButton()
 	if (!Button) return null
-	// In the chat where flame text is not allowed the button is never on, and tapping it does nothing.
-	const barred = plainOnly(channelId)
-	const on = allowed && !barred
 	state.chatShown = on
 	// The state is given in every way Discord's button and the plugins that read it understand: `checked` for plugins that
 	// list the buttons with a switch, and `active` with its icon style for Discord's own "on" look.
@@ -250,28 +210,13 @@ export function FlameSlot({ channelId }: { channelId?: string }) {
 		accessibilityState: { checked: on },
 		active: on,
 		activeIconStyle: ACTIVE_ICON,
-		IconComponent: barred ? BarredFlameIcon : FlameIcon,
-		onPress: barred ? nothing : tap,
+		IconComponent: FlameIcon,
+		onPress: tap,
 	})
 }
 
-/** What tapping the button does in the chat where flame text is not allowed. */
-const nothing = (): void => {}
-
-/** The slots as they go in the list, one for each chat: the same element every draw, so React keeps it. */
-const slots = new Map<string, ReactElement>()
-
-/** The element to put in the list for a chat. */
-function slotFor(channelId: string | undefined): ReactElement {
-	const key = channelId ?? ''
-	let slot = slots.get(key)
-	if (!slot) {
-		if (slots.size >= 40) slots.clear()
-		slot = createElement(FlameSlot, { key: BUTTON_KEY, channelId })
-		slots.set(key, slot)
-	}
-	return slot
-}
+/** The slot as it goes in the list: the same element every draw, so React keeps it and cached trees can find it. */
+const SLOT = createElement(FlameSlot, { key: BUTTON_KEY })
 
 /** Whether a list item is this plugin's button. */
 const isOurs = (child: ReactNode): boolean =>
@@ -283,9 +228,8 @@ const isOurs = (child: ReactNode): boolean =>
  * Puts the button into the list of buttons the right-hand actions returned, just before the emoji button (the last one), or
  * takes it out when the setting is off. The tree can be one that was kept from an earlier draw, so an old copy is removed first.
  */
-function placeButton(tree: unknown, props: unknown): unknown {
+function placeButton(tree: unknown): unknown {
 	try {
-		state.chatCalls++
 		const row = findInReactFiber(
 			tree as ReactElement,
 			(node): node is RowNode =>
@@ -293,20 +237,13 @@ function placeButton(tree: unknown, props: unknown): unknown {
 					(node as { props?: { children?: unknown } }).props?.children,
 				),
 		) as RowNode | undefined
-		if (!row) {
-			state.chatNoRow++
-			return tree
-		}
+		if (!row) return tree
 		const list = row.props.children
 		for (let i = list.length - 1; i >= 0; i--)
 			if (isOurs(list[i])) list.splice(i, 1)
 		if (!setting('chatButton')) return tree
 		const at = Math.max(0, list.length - 1)
-		// The row is drawn for a chat: it is in the props, and the open chat is the answer if it is not.
-		const channel = (props as { channel?: { id?: unknown } } | undefined)
-			?.channel
-		const id = typeof channel?.id === 'string' ? channel.id : currentChat()
-		list.splice(at, 0, slotFor(id))
+		list.splice(at, 0, SLOT)
 		state.chatDrawn++
 	} catch (error) {
 		diag.fail('flame button', error)
@@ -324,10 +261,6 @@ interface Wrapped {
 	wrapper: (...args: unknown[]) => unknown
 	/** Whether the wrapper adds the button. It stays in place, doing nothing, if another plugin patched over it. */
 	active: boolean
-	/** The memo put in the module's `default` in place of Discord's, if that worked. */
-	fresh?: object
-	/** The module the memo was found in, so Discord's memo can be put back. */
-	exports?: RightActionsModule
 }
 
 /** The wrapper that is in place now, if any. */
@@ -344,7 +277,7 @@ let wrapped: Wrapped | undefined
  * theirs alone. The wrapper has the same `length` and `displayName` as the function it wraps, because plugins find the
  * component by them.
  */
-function wrap(memo: { type: unknown }, exports?: RightActionsModule): void {
+function wrap(memo: { type: unknown }): void {
 	const original = memo.type
 	if (typeof original !== 'function') return
 	const own = original as (...args: unknown[]) => unknown
@@ -353,12 +286,11 @@ function wrap(memo: { type: unknown }, exports?: RightActionsModule): void {
 		original: own,
 		wrapper: undefined as never,
 		active: true,
-		exports,
 	}
 	// One named parameter, so `length` is 1 like Discord's function.
 	const wrapper = function (this: unknown, props: unknown, ...rest: unknown[]) {
 		const result = own.call(this, props, ...rest)
-		return entry.active ? placeButton(result, props) : result
+		return entry.active ? placeButton(result) : result
 	}
 	try {
 		const named = own as unknown as { displayName?: string; name?: string }
@@ -373,30 +305,7 @@ function wrap(memo: { type: unknown }, exports?: RightActionsModule): void {
 		// The name is only for readability.
 	}
 	entry.wrapper = wrapper
-	const how: string[] = []
-	try {
-		memo.type = wrapper
-		how.push(memo.type === wrapper ? 'type replaced' : 'type kept by Discord')
-	} catch {
-		how.push('type is read-only')
-	}
-	// A row that is already on screen keeps the function it was first drawn with. Giving the module a fresh memo of the
-	// wrapper makes the parent draw a new kind of element, so the row is drawn again from the start, with the button.
-	if (exports) {
-		try {
-			const fresh = { ...(memo as object), type: wrapper }
-			exports.default = fresh
-			how.push(
-				exports.default === fresh
-					? 'module export replaced'
-					: 'module export kept by Discord',
-			)
-			entry.fresh = fresh
-		} catch {
-			how.push('module export is read-only')
-		}
-	}
-	state.chatHow = how.join(', ')
+	memo.type = wrapper
 	wrapped = entry
 }
 
@@ -408,12 +317,6 @@ function unwrap(): void {
 	if (entry.memo.type === entry.wrapper) {
 		entry.memo.type = entry.original
 		wrapped = undefined
-	}
-	try {
-		if (entry.exports && entry.fresh && entry.exports.default === entry.fresh)
-			entry.exports.default = entry.memo
-	} catch {
-		// Left as it is; the wrapper does nothing while it is switched off.
 	}
 }
 
@@ -452,7 +355,6 @@ export function installChatButton(cleanup: Cleanup): void {
 						state.chatSeen = true
 						diag.log('found', 'Found the chat box buttons')
 						if (wrapped?.active && wrapped.memo === Right) return
-						if (wrapped?.active && wrapped.fresh === Right) return
 						if (
 							wrapped &&
 							!wrapped.active &&
@@ -463,30 +365,7 @@ export function installChatButton(cleanup: Cleanup): void {
 							wrapped.active = true
 							return
 						}
-						wrap(Right, exports)
-						// On some phones Discord draws the row without going through the wrapper (the row is never drawn by it). If the wrapper has still
-						// not been called after a few seconds, the button is added through Valenced's patcher, which does work there.
-						let tries = 0
-						const check = setInterval(() => {
-							tries++
-							if (state.chatCalls > 0 || tries > CHECKS || !setting('chatButton')) {
-								clearInterval(check)
-								return
-							}
-							if (tries < 2) return
-							clearInterval(check)
-							try {
-								undo.push(
-									after(Right as never, 'type' as never, placeButton as never, {
-										priority: FIRST,
-									}) as never,
-								)
-								state.chatHow += ', then through the patcher (the wrapper was not called)'
-							} catch (error) {
-								diag.fail('flame button', error)
-							}
-						}, CHECK_MS)
-						undo.push(() => clearInterval(check))
+						wrap(Right)
 					},
 				),
 			)

@@ -16,7 +16,6 @@ import { after } from '@valenced/patcher'
 import { lookupGeneratedIconComponent } from '@valenced/utils/discord'
 import { cloneElement } from 'react'
 import { diag } from './diag'
-import { currentChat, plainOnly } from './send'
 import { state } from './state'
 import { setting } from './store'
 import { switchFlame } from './toggle'
@@ -34,11 +33,8 @@ interface MenuItem {
 
 /** The row's words. The first part is the same in every state, so the row is found again. */
 export const ROW_LABEL = 'Flame Typing'
-export const rowText = (on: boolean, barred = false): string =>
-	`${ROW_LABEL}: ${barred ? NOT_HERE : on ? 'On' : 'Off'}`
-
-/** Shown instead of On or Off in the chat where flame text is not allowed. */
-const NOT_HERE = '\u{1F6AB}'
+export const rowText = (on: boolean): string =>
+	`${ROW_LABEL}: ${on ? 'On' : 'Off'}`
 
 /** Labels of the rows of the + menu. A menu with two of them is taken for the + menu. */
 const PLUS_LABELS: Record<string, 1> = {
@@ -168,19 +164,15 @@ function decorateItems(result: ReactElement, items: MenuItem[]): ReactElement {
 			),
 	)
 
-	const barred = plainOnly(currentChat())
 	let lastPress = 0
 	const press = () => {
 		if (Date.now() - lastPress < PRESS_DEBOUNCE_MS) return
 		lastPress = Date.now()
-		// In the chat where flame text is not allowed the row only closes the menu.
-		if (!barred) {
-			try {
-				state.buttonTaps++
-				switchFlame()
-			} catch (error) {
-				diag.fail('flame row', error)
-			}
+		try {
+			state.buttonTaps++
+			switchFlame()
+		} catch (error) {
+			diag.fail('flame row', error)
 		}
 		try {
 			ActionSheetActionCreators.hideAllActionSheets()
@@ -188,7 +180,7 @@ function decorateItems(result: ReactElement, items: MenuItem[]): ReactElement {
 			// No sheet was open.
 		}
 	}
-	const row: MenuItem = { ...template, label: rowText(setting('on'), barred) }
+	const row: MenuItem = { ...template, label: rowText(setting('on')) }
 	for (const name of IDENTITY_PROPS) delete row[name]
 	for (const name of PRESS_PROPS) {
 		if (name in template || name === 'action') row[name] = press

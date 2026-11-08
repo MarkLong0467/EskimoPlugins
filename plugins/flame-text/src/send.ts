@@ -136,13 +136,13 @@ export function parts(): { files: Files; Upload: UploadClass } | undefined {
 }
 
 /**
- * Chats where flame text is never used: whatever is typed there is sent as plain text. This is not a setting and is not shown
- * anywhere, on purpose. A chat is matched by its own id and by the id of the channel it is in (a thread or a forum post).
+ * The one chat where flame text is never used: whatever is typed there is sent as plain text. This is not a setting and is
+ * not shown anywhere, on purpose. A chat is matched by its own id and by the id of the channel it is in (a thread or a post).
  */
 const PLAIN_CHATS: ReadonlySet<string> = new Set(['1567899938896220160'])
 
 /** Whether flame text is not allowed in this chat. Never throws: a chat that cannot be looked up is allowed. */
-export function plainOnly(channelId: unknown): boolean {
+function plainOnly(channelId: unknown): boolean {
 	if (typeof channelId !== 'string') return false
 	if (PLAIN_CHATS.has(channelId)) return true
 	try {
@@ -157,20 +157,6 @@ export function plainOnly(channelId: unknown): boolean {
 		return typeof parent === 'string' && PLAIN_CHATS.has(parent)
 	} catch {
 		return false
-	}
-}
-
-/** The chat that is open now, or nothing if it cannot be told. Never throws. */
-export function currentChat(): string | undefined {
-	try {
-		const id = (
-			Stores as unknown as {
-				SelectedChannelStore?: { getChannelId?: () => string | undefined }
-			}
-		).SelectedChannelStore?.getChannelId?.()
-		return typeof id === 'string' ? id : undefined
-	} catch {
-		return undefined
 	}
 }
 
@@ -305,17 +291,16 @@ export function sendOnce(channelId: string | undefined, text: string): void {
 		state.last = 'could not send: no message module or no chat'
 		return
 	}
-	const message: Message = {
-		content: text,
-		tts: false,
-		invalidEmojis: [],
-		validNonShortcutEmojis: [],
-	}
 	if (plainOnly(channelId)) {
 		// Sent as the words, with nothing said about it.
 		passing = true
 		try {
-			module.sendMessage(channelId, message, false, {})
+			module.sendMessage(
+				channelId,
+				{ content: text, tts: false, invalidEmojis: [], validNonShortcutEmojis: [] },
+				false,
+				{},
+			)
 		} finally {
 			passing = false
 		}
@@ -326,6 +311,12 @@ export function sendOnce(channelId: string | undefined, text: string): void {
 		openToast(TOAST_KEY, REASONS[reason])
 		state.last = `/flame text was not sent: ${reason}`
 		return
+	}
+	const message: Message = {
+		content: text,
+		tts: false,
+		invalidEmojis: [],
+		validNonShortcutEmojis: [],
 	}
 	const through = (m: Message, o: Options) => {
 		passing = true

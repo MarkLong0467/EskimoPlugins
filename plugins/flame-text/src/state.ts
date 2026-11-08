@@ -56,10 +56,6 @@ export const state = {
 	/** What the flame button last drew (on or off), and how many presses were ignored as a doubled event. */
 	chatShown: null as boolean | null,
 	chatDoubled: 0,
-	/** How often the wrapped row was drawn, how often no button list was found in it, and how the wrapper was put in place. */
-	chatCalls: 0,
-	chatNoRow: 0,
-	chatHow: '',
 	/** Messages looked at while it was on, made into GIFs, sent as text instead, and why. */
 	seen: 0,
 	flamed: 0,
@@ -100,9 +96,6 @@ export function resetState(): void {
 	state.chatWatched = false
 	state.chatSeen = false
 	state.chatDrawn = 0
-	state.chatCalls = 0
-	state.chatNoRow = 0
-	state.chatHow = ''
 	state.chatTaps = 0
 	state.chatShown = null
 	state.chatDoubled = 0

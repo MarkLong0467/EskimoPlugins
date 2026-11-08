@@ -5,7 +5,7 @@
 	"description": "Turns the text you send into a burning, animated GIF of your words on fire. Switch it with the Flame Typing row in the + menu, or turn on the /flame command. The GIF is drawn on your phone.",
 	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
 	"icon": "ActivityIcon",
-	"version": "1.4.7",
+	"version": "1.4.8",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"
