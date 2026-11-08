@@ -33,6 +33,7 @@
 		"marklong.markdown-toolbar": "a floating formatting bar under the chat input that pops up with the keyboard",
 		"marklong.message-preview": "preview your message before sending it",
 		"marklong.message-reminders": "hold a message, tap Remind Me, and get a Jump / Snooze / Done sheet when it's due",
+		"marklong.plugin-auditor": "scan your plugins for token access, account changes, downloaded code and suspicious links, find duplicates, and check them on VirusTotal",
 		"marklong.minecraft-servers": "see if your servers are online, who is playing, and the ping",
 		"marklong.nef-viewer": "shows RAW photos (Nikon, Canon, Sony, Fujifilm and more) in chat, with a photo info sheet",
 		"marklong.no-suggestions": "removes the Suggested channels section that keeps coming back",
