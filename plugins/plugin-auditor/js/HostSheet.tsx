@@ -2,13 +2,14 @@
 
 import { Design } from '@valenced/discord/design'
 import { useEffect, useState } from 'react'
-import { ScrollView, View } from 'react-native'
+import { View } from 'react-native'
 import { ButtonRow, Heading, KindBadge, Panel, RowButton } from './components'
 import { HOST_SHEET_KEY, RISK_COLOR } from './constants'
 import { diag } from './diag'
 import { copy, open, sheets, toast } from './discord'
 import { plural } from './format'
 import { openPluginSheet } from './PluginSheet'
+import { SheetFrame } from './SheetFrame'
 import { auditor } from './store'
 import { HostVt } from './VtBlock'
 
@@ -57,11 +58,8 @@ function HostSheet({ host }: { host: string }) {
 	const counts = `${plural(entry.urls.length, 'link')} in ${plural(entry.plugins.length, 'plugin')}`
 
 	return (
-		<Design.ActionSheet>
-			<ScrollView
-				style={{ maxHeight: 620 }}
-				contentContainerStyle={{ padding: 16, gap: 14 }}
-			>
+		<SheetFrame title={entry.host} onClose={close}>
+			<>
 				<View style={{ gap: 6 }}>
 					<View
 						style={{
@@ -141,7 +139,7 @@ function HostSheet({ host }: { host: string }) {
 					</ButtonRow>
 					<Design.Button text="Close" variant="tertiary" onPress={close} />
 				</View>
-			</ScrollView>
-		</Design.ActionSheet>
+			</>
+		</SheetFrame>
 	)
 }

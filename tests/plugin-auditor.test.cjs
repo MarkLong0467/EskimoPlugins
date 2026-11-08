@@ -344,12 +344,12 @@ async function pluginTests(real) {
 		plugin('empty.nocode', null, { name: 'No Code' }),
 	]
 
-	async function setup({ saved = {}, list = fakePlugins.map(nativeEntry), listFails = false, disk = {} } = {}) {
+	async function setup({ saved = {}, list = fakePlugins.map(nativeEntry), listFails = false, disk = {}, gorhom = true } = {}) {
 		const copied = []
 		const nativeCalls = []
 		const runtime = createRuntime({
 			overrides: {
-				externals: { ReactNativeClipboard: { Clipboard: { setString: text => copied.push(text), getString: async () => '' } } },
+				externals: { ReactNativeClipboard: { Clipboard: { setString: text => copied.push(text), getString: async () => '' } }, Gorhom: gorhom ? { BottomSheet: { BottomSheetScrollView: 'Gorhom.ScrollView' } } : undefined },
 				discord: { native: { ClientInfoModule: { getConstants: () => ({ Version: '354.5', Build: '354205', ReleaseChannel: 'stable' }) } } },
 				modules: {
 					native: {
@@ -368,7 +368,7 @@ async function pluginTests(real) {
 		const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugins', 'plugin-auditor', 'manifest.json'), 'utf8'))
 		const cleanups = []
 		const errors = []
-		const self = { manifest: { ...manifest, version: { nums: [1, 0, 1] } }, errors, reportError: e => errors.push(e), requireReload() {}, startedLate: false }
+		const self = { manifest: { ...manifest, version: { nums: [1, 0, 2] } }, errors, reportError: e => errors.push(e), requireReload() {}, startedLate: false }
 		const api = { cleanup: (...fns) => cleanups.push(...fns), decorate() {}, jsonStorage: storage, logger: { log() {}, warn() {}, error() {}, info() {}, debug() {} }, plugin: self, unscoped: runtime.valenced }
 		self.api = api
 		await definition.start.call(self, { ...api, plugin: self })
@@ -494,6 +494,14 @@ async function pluginTests(real) {
 		const sheet = s.runtime.mount(s.runtime.React.createElement(Sheet, {}))
 		await sheet.settle()
 		const text = textOf(sheet.tree)
+		const frame = findNode(sheet.tree, n => n.type === 'Design.ActionSheet')
+		check('the sheet opens expanded and in scrollable mode, like Discord own tall sheets', frame?.props.scrollable === true && frame?.props.startExpanded === true, frame?.props)
+		check('the sheet has a title bar with the plugin name and a close button', findNode(sheet.tree, n => n.type === 'Design.BottomSheetTitleHeader')?.props.title === 'Totally Legit' && findNode(sheet.tree, n => n.type === 'Design.BottomSheetTitleHeader')?.props.trailing?.props.accessibilityLabel === 'Close')
+		const scroller = findNode(sheet.tree, n => n.type === 'Gorhom.ScrollView')
+		check('the body is scrolled by the sheet library own scroll view, not a plain one', !!scroller && scroller.props.nestedScrollEnabled === true && scroller.props.style.flex === 1 && !findNode(sheet.tree, n => n.type === 'ScrollView'), sheet.tree)
+		const padding = findNode(scroller, n => n.type === 'View' && n.props.style?.paddingBottom >= 100)
+		check('there is room under the last button so everything can be scrolled into view', !!padding)
+		check('the sheet has no fixed height that could cut the content', !JSON.stringify(sheet.tree).includes('maxHeight'))
 		check('the sheet shows the name, id and a critical badge', text.includes('Totally Legit') && text.includes('bad.stealer') && text.includes('CRITICAL'), text.slice(0, 300))
 		check('the sheet explains the combo and the findings with code samples', text.includes('Can read your token and reach the internet') && text.includes('Reads your account token') && text.includes('getToken('), text.slice(0, 900))
 		check('the sheet lists the link and calls it unknown', text.includes('https://collector.example.net/t?x=') && text.includes('UNKNOWN'))
@@ -578,6 +586,45 @@ async function pluginTests(real) {
 		}
 	}
 
+	// --- The sheets still scroll when the sheet library is missing
+	{
+		const s = await setup({ gorhom: false })
+		const view = await s.mountSettings()
+		await press(view, 'Scan now')
+		await sleep(50)
+		await view.settle()
+		row(view, 'Totally Legit').props.onPress()
+		await sleep(5)
+		const call = s.runtime.log.actions.filter(a => a.label === 'actionSheet' && a.name === 'openLazy').at(-1)
+		const Sheet = (await call.args[0]).default
+		const sheet = s.runtime.mount(s.runtime.React.createElement(Sheet, {}))
+		await sheet.settle()
+		check('without the sheet library the plain scroll view is used and the sheet still draws', !!findNode(sheet.tree, n => n.type === 'ScrollView') && textOf(sheet.tree).includes('Reads your account token'))
+		findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === 'Copy logs').props.onPress()
+		check('the logs say which scroll view the sheets use', /scroll view: plain ScrollView/.test(s.copied.at(-1)), s.copied.at(-1)?.slice(-600))
+		await s.running.stop()
+	}
+
+	// --- The place sheet scrolls the same way
+	{
+		const s = await setup()
+		const view = await s.mountSettings()
+		await press(view, 'Scan now')
+		await sleep(50)
+		await view.settle()
+		await openTab(view, 'Links')
+		row(view, 'collector.example.net').props.onPress()
+		await sleep(5)
+		const call = s.runtime.log.actions.filter(a => a.label === 'actionSheet' && a.name === 'openLazy').at(-1)
+		const Sheet = (await call.args[0]).default
+		const sheet = s.runtime.mount(s.runtime.React.createElement(Sheet, {}))
+		await sheet.settle()
+		const frame = findNode(sheet.tree, n => n.type === 'Design.ActionSheet')
+		check('the place sheet is expanded, scrollable and uses the library scroll view', frame?.props.scrollable === true && frame?.props.startExpanded === true && !!findNode(sheet.tree, n => n.type === 'Gorhom.ScrollView') && findNode(sheet.tree, n => n.type === 'Design.BottomSheetTitleHeader')?.props.title === 'collector.example.net')
+		check('and still has its buttons', !!button(sheet, 'Copy links') && !!button(sheet, 'Close'))
+		await s.running.stop()
+	}
+
 	// --- When listing fails
 	{
 		const s = await setup({ listFails: true })
@@ -616,7 +663,7 @@ async function pluginTests(real) {
 		await view.settle()
 		findNode(view.tree, n => n.type === 'Design.Button' && n.props.text === 'Copy logs').props.onPress()
 		const report = s.copied.at(-1)
-		check('the debug report names the plugin, the phone and Discord', report.startsWith('Plugin Auditor debug report') && report.includes('marklong.plugin-auditor 1.0.1') && report.includes('Discord: 354.5'), report.slice(0, 400))
+		check('the debug report names the plugin, the phone and Discord', report.startsWith('Plugin Auditor debug report') && report.includes('marklong.plugin-auditor 1.0.2') && report.includes('Discord: 354.5'), report.slice(0, 400))
 		check('it shows how the scan went', report.includes('Plugin list: native list') && report.includes('Scanned: 6 plugins, 1 duplicate group(s)') && /Rules: \d+/.test(report) && report.includes('Slowest:'), report)
 		check('it lists every plugin with risk, counts, size and a short hash but no code', /bad\.stealer 1\.0\.0 critical \d+f \d+l \d+ch [0-9a-f]{10}/.test(report) && !report.includes('collector.example.net/t?x'), report)
 		check('it says which plugin Valenced gave no code for', report.includes('No code from Valenced for: empty.nocode'))

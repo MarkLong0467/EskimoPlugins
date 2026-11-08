@@ -2,7 +2,7 @@
 
 import { Design } from '@valenced/discord/design'
 import { useEffect, useState } from 'react'
-import { ScrollView, View } from 'react-native'
+import { View } from 'react-native'
 import {
 	ButtonRow,
 	Chip,
@@ -18,6 +18,7 @@ import { diag } from './diag'
 import { copy, sheets, toast } from './discord'
 import { plural, sizeText } from './format'
 import { CATEGORY_LABEL } from './rules'
+import { SheetFrame } from './SheetFrame'
 import { auditor } from './store'
 import { PluginVt } from './VtBlock'
 
@@ -74,11 +75,8 @@ function PluginSheet({ id }: { id: string }) {
 	const acceptHelp = `"I checked it" stops this plugin from counting as a problem. It is asked again if the plugin's code changes. ${plural(scan.findings.length, 'finding')} stay listed.`
 
 	return (
-		<Design.ActionSheet>
-			<ScrollView
-				style={{ maxHeight: 640 }}
-				contentContainerStyle={{ padding: 16, gap: 14 }}
-			>
+		<SheetFrame title={p.name} onClose={close}>
+			<>
 				<View style={{ gap: 6 }}>
 					<View
 						style={{
@@ -197,7 +195,7 @@ function PluginSheet({ id }: { id: string }) {
 					) : null}
 					<Design.Button text="Close" variant="tertiary" onPress={close} />
 				</View>
-			</ScrollView>
-		</Design.ActionSheet>
+			</>
+		</SheetFrame>
 	)
 }
