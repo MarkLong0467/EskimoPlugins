@@ -95,14 +95,16 @@ export async function findImageUrl(link: string): Promise<string> {
 }
 
 /**
- * Asks Discord to host an image link for use in a presence.
+ * Asks Discord to host an image link for use in a presence, under the given application.
  *
  * Discord's own connection is used when it can be found, and otherwise a plain request with the account token.
  *
+ * @param app The application the presence is sent for, or `0`.
+ * @param url The image link.
  * @returns An `mp:` asset id.
  */
-async function externalAsset(url: string): Promise<string> {
-	const path = '/applications/0/external-assets'
+async function externalAssetFor(app: string, url: string): Promise<string> {
+	const path = `/applications/${app}/external-assets`
 	const body = { urls: [url] }
 	let list: Array<{ external_asset_path?: string }> | undefined
 	const http =
@@ -137,6 +139,29 @@ async function externalAsset(url: string): Promise<string> {
 	if (/^https:\/\/media\.discordapp\.net/.test(link))
 		link = link.split('/').slice(3).join('/')
 	return `mp:${link}`
+}
+
+/**
+ * Asks Discord to host an image link, under the application the presence is sent for when there is one (this is what
+ * Discord's own asset code does), and under application `0` when that is not possible.
+ *
+ * @param url The image link.
+ * @param appId The Application id of the profile, or nothing.
+ * @returns An `mp:` asset id.
+ */
+async function externalAsset(url: string, appId?: string): Promise<string> {
+	const own = appId && /^\d{5,}$/.test(appId.trim()) ? appId.trim() : undefined
+	if (own) {
+		try {
+			return await externalAssetFor(own, url)
+		} catch (error) {
+			console.warn(
+				`${TAG} could not host the image under application ${own}:`,
+				errorText(error),
+			)
+		}
+	}
+	return externalAssetFor('0', url)
 }
 
 /** The text of an error from Discord's connection (its message, or the whole thing). */
@@ -187,7 +212,7 @@ export async function resolveImage(
 			return cached
 		}
 		try {
-			const id = await externalAsset(wanted)
+			const id = await externalAsset(wanted, appId)
 			assetCache.set(key, id)
 			setImageStatus(slot, 'ok')
 			return id
@@ -254,7 +279,9 @@ export async function resolveImage(
 			} catch {
 				// Asked below instead.
 			}
-			if (!ids || !ids.length) ids = await utils.fetchAssetIds?.(app, [wanted])
+			// `getAssetIds` answers `[null]`, not `[]`, for an image it has not seen once the application's art assets are loaded
+			// (they are as soon as any profile uses an asset key). That is no answer, so Discord is asked, under this application.
+			if (!ids?.[0]) ids = await utils.fetchAssetIds?.(app, [wanted])
 			const id = ids?.[0]
 			if (id) {
 				assetCache.set(key, id)

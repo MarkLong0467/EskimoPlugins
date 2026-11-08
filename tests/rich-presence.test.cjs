@@ -96,7 +96,7 @@ const clockIn = minutes => {
 }
 
 /** A fake Discord with the plugin running and the given profiles saved. */
-async function setup({ profiles = [prof('a')], settings = {}, user = { username: 'chase', globalName: 'Chase' }, vars = null, timestamps = null } = {}) {
+async function setup({ profiles = [prof('a')], settings = {}, user = { username: 'chase', globalName: 'Chase' }, vars = null, timestamps = null, before = null } = {}) {
 	const saved = { enabled: true, applyOnStart: true, refreshSeconds: '0', maxActive: '3', profiles, ...settings }
 	const copied = []
 	const runtime = createRuntime({
@@ -106,6 +106,7 @@ async function setup({ profiles = [prof('a')], settings = {}, user = { username:
 			discord: { native: { ClientInfoModule: { getConstants: () => ({ Version: '352.6', Build: '352206', ReleaseChannel: 'canary' }) } } },
 		},
 	}).install()
+	if (before) before(runtime)
 	delete globalThis.eskimoVars
 	delete globalThis.eskimoTimestamps
 	if (vars) globalThis.eskimoVars = vars
@@ -913,6 +914,106 @@ async function type(view, label, value, wait = 1000) {
 		check('a group size that cannot be read shows under Fix this', /group size is left out/i.test(textOf(sectionOf(view, 'Fix this') ?? { children: [] })), textOf(view.tree).slice(0, 300))
 		view.unmount()
 		await s.restore()
+	}
+
+	// --- A linked image is used instead of the application's own picture
+	{
+		const OWN = '1535583597195427920'
+		const LINK = 'https://avatar.example.org/api/pfp/1368350549203746847/image.png'
+		const HOSTED = 'mp:external/abc123/https/avatar.example.org/api/pfp/1368350549203746847/image.png'
+		/** Discord's own asset functions. `loaded` says whether the application's art assets are loaded: then `getAssetIds` answers [null] for a link it has not seen. */
+		const assetUtils = ({ loaded, failFor = [] }) => {
+			const asked = []
+			return {
+				asked,
+				exports: {
+					getAssetIds: (app, keys) => (loaded ? keys.map(() => null) : []),
+					fetchAssetIds: async (app, keys) => {
+						asked.push(app)
+						if (failFor.includes(app)) throw new Error('Missing Access')
+						return keys.map(key => (/^https?:/.test(key) ? HOSTED : `asset-of-${key}`))
+					},
+				},
+			}
+		}
+		const sentImage = s => s.lastOf('a')?.activity?.assets?.large_image
+
+		for (const loaded of [true, false]) {
+			const utils = assetUtils({ loaded })
+			const s = await setup({
+				profiles: [prof('a', { applicationId: OWN, largeImage: LINK })],
+				before: runtime => runtime.valenced.modules.finders.loadModule(utils.exports),
+			})
+			check(`a linked image is sent as the hosted link (application assets ${loaded ? 'loaded' : 'not loaded'})`, sentImage(s) === HOSTED, s.lastOf('a')?.activity)
+			check(`and it was hosted under the profile's own application, not the fallback one (assets ${loaded ? 'loaded' : 'not loaded'})`, utils.asked[0] === OWN && utils.asked.length === 1, utils.asked)
+			check('the activity is sent for that same application', s.lastOf('a').activity.application_id === OWN)
+			await s.restore()
+		}
+
+		// The application's own picture is only used when no image is given.
+		{
+			const utils = assetUtils({ loaded: true })
+			const s = await setup({
+				profiles: [prof('a', { applicationId: OWN, largeImage: '' })],
+				before: runtime => runtime.valenced.modules.finders.loadModule(utils.exports),
+			})
+			check('with no image given no image is sent (the application\'s own picture shows)', sentImage(s) === undefined && utils.asked.length === 0, s.lastOf('a')?.activity)
+			await s.restore()
+		}
+
+		// Another profile uses an asset key of the same application, which is what loads the application's assets.
+		{
+			const utils = assetUtils({ loaded: true })
+			const s = await setup({
+				profiles: [prof('a', { applicationId: OWN, largeImage: LINK }), prof('b', { applicationId: OWN, largeImage: 'gta-vi' })],
+				settings: { maxActive: '3' },
+				before: runtime => runtime.valenced.modules.finders.loadModule(utils.exports),
+			})
+			check('a profile with a link and one with an asset key of the same application both get their own image', s.lastOf('a').activity.assets.large_image === HOSTED && s.lastOf('b').activity.assets.large_image === 'asset-of-gta-vi', [s.lastOf('a').activity.assets, s.lastOf('b').activity.assets])
+			await s.restore()
+		}
+
+		// The application cannot host it (not the user's): the fallback application does, and the image is still used.
+		{
+			const utils = assetUtils({ loaded: true, failFor: [OWN] })
+			const s = await setup({
+				profiles: [prof('a', { applicationId: OWN, largeImage: LINK })],
+				before: runtime => runtime.valenced.modules.finders.loadModule(utils.exports),
+			})
+			check('when the profile\'s application cannot host it the fallback application is tried and the image is still sent', sentImage(s) === HOSTED && utils.asked.length === 2 && utils.asked[0] === OWN, [utils.asked, sentImage(s)])
+			await s.restore()
+		}
+
+		// Without Discord's asset functions: the web API, under the profile's application first, then application 0.
+		{
+			const calls = []
+			const http = {
+				HTTPResponseError: class {},
+				get() {},
+				post: async ({ url }) => {
+					calls.push(url)
+					if (url.includes(OWN)) throw Object.assign(new Error('Forbidden'), { status: 403, body: { message: 'Missing Access' } })
+					return { body: [{ external_asset_path: 'external/zzz/https/avatar.example.org/a.png' }] }
+				},
+			}
+			const s = await setup({
+				profiles: [prof('a', { applicationId: OWN, largeImage: LINK })],
+				before: runtime => runtime.valenced.modules.finders.loadModule(http),
+			})
+			check('through the web API the image is asked for under the profile\'s application first, then application 0', calls[0] === `/applications/${OWN}/external-assets` && calls[1] === '/applications/0/external-assets', calls)
+			check('and the hosted link is used', sentImage(s) === 'mp:external/zzz/https/avatar.example.org/a.png', s.lastOf('a')?.activity)
+			await s.restore()
+		}
+		{
+			const calls = []
+			const http = { HTTPResponseError: class {}, get() {}, post: async ({ url }) => { calls.push(url); return { body: [{ external_asset_path: 'external/yyy/https/avatar.example.org/b.png' }] } } }
+			const s = await setup({
+				profiles: [prof('a', { applicationId: '', largeImage: LINK })],
+				before: runtime => runtime.valenced.modules.finders.loadModule(http),
+			})
+			check('with no application id the image is hosted under application 0 only', calls.length === 1 && calls[0] === '/applications/0/external-assets' && sentImage(s) === 'mp:external/yyy/https/avatar.example.org/b.png', [calls, sentImage(s)])
+			await s.restore()
+		}
 	}
 
 
