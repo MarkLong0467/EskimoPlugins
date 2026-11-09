@@ -147,7 +147,7 @@
     {
       "id": "marklong.liquid-glass",
       "name": "Liquid Glass",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "short": "Library for other plugins: LiquidGlassView, LiquidGlassContainerView and isLiquidGlassSupported,…",
       "suffix": ""
     },
