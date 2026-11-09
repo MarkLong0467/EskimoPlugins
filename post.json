@@ -147,8 +147,8 @@
     {
       "id": "marklong.liquid-glass",
       "name": "Liquid Glass",
-      "version": "1.1.0",
-      "short": "Library for other plugins: LiquidGlassView, LiquidGlassContainerView and isLiquidGlassSupported,…",
+      "version": "1.2.0",
+      "short": "Gives Discord a frosted glass look: see-through buttons, cards, text fields and sheets, in a…",
       "suffix": ""
     },
     {
