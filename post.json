@@ -119,7 +119,7 @@
     {
       "id": "marklong.force-timestamp-locale",
       "name": "Force Timestamp Locale",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "short": "show every timestamp in one language, such as en-gb 24-hour times",
       "suffix": ""
     },
