@@ -3096,7 +3096,7 @@
       "description": "Forces timestamps to be in a specific language.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.0.2"
+        "latest": "1.0.3"
       },
       "versions": {
         "1.0.0": {
@@ -3129,6 +3129,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.force-timestamp-locale@1.0.2.zip",
           "sha256": "f424023039c9b38567897d4e8a5eb05d36c942ba4da1cb99304e3270fb2eeede",
           "size": 6162,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.0.3": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.force-timestamp-locale@1.0.3.zip",
+          "sha256": "67a7dbc302fd46250661517dd5c555b8708fdb5f4f4a2334b305371802fdb6c0",
+          "size": 6332,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
