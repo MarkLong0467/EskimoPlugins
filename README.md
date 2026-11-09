@@ -52,7 +52,7 @@ Updates arrive through the same link.
 | [Haptics](plugins/haptics) | 0.1.3 | turn Discord's buzzing on or off, with a log of what buzzed |
 | [Hide Slash Apps](plugins/hide-slash-apps) | 1.1.0 | long press an app or command in the / menu to hide it everywhere or in one server, switch off built-in commands (for bots like MEE6) |
 | [HypeSquad Switcher](plugins/hypesquad) | 1.1.2 | change your HypeSquad house, or leave it, in one tap |
-| [Liquid Glass](plugins/liquid-glass) | 1.0.0 | Library for other plugins: LiquidGlassView, LiquidGlassContainerView and isLiquidGlassSupported, the API of callstack/liquid-glass. |
+| [Liquid Glass](plugins/liquid-glass) | 1.1.0 | Library for other plugins: LiquidGlassView, LiquidGlassContainerView and isLiquidGlassSupported, the API of callstack/liquid-glass. |
 | [Markdown Toolbar](plugins/markdown-toolbar) | 1.2.4 | a floating formatting bar under the chat input that pops up with the keyboard |
 | [Message Preview](plugins/message-preview) | 1.0.3 | preview your message before sending it |
 | [Message Reminders](plugins/message-reminders) | 1.0.0 | hold a message, tap Remind Me, and get a Jump / Snooze / Done sheet when it's due |
