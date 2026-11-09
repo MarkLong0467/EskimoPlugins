@@ -145,6 +145,13 @@
       "suffix": ""
     },
     {
+      "id": "marklong.liquid-glass",
+      "name": "Liquid Glass",
+      "version": "1.0.0",
+      "short": "Library for other plugins: LiquidGlassView, LiquidGlassContainerView and isLiquidGlassSupported,…",
+      "suffix": ""
+    },
+    {
       "id": "marklong.markdown-toolbar",
       "name": "Markdown Toolbar",
       "version": "1.2.4",

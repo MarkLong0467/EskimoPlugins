@@ -4027,6 +4027,32 @@
           }
         }
       }
+    },
+    "marklong.liquid-glass": {
+      "name": "Liquid Glass",
+      "description": "Library for other plugins: LiquidGlassView, LiquidGlassContainerView and isLiquidGlassSupported, the API of callstack/liquid-glass. Real glass needs iOS 26; on Android it draws a frosted, see-through surface.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.liquid-glass@1.0.0.zip",
+          "sha256": "bd427dc75e8231a5f192e28389eb21763238f8ed2934b7e8272900db5776eee1",
+          "size": 5239,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "contributors": [
+        "Oskar Kwaśniewski and Callstack <https://github.com/callstack> (https://github.com/callstack/liquid-glass \"Original library\")"
+      ]
     }
   }
 }
