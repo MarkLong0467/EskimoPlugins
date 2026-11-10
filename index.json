@@ -4033,7 +4033,7 @@
       "description": "Gives Discord a frosted glass look: see-through buttons, cards, text fields and sheets, in a colour and strength you pick. Also a library with the API of callstack/liquid-glass for other plugins.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.4.1"
+        "latest": "1.5.0"
       },
       "versions": {
         "1.0.0": {
@@ -4131,6 +4131,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.liquid-glass@1.4.1.zip",
           "sha256": "37500969280fe968aa8f7a70f81df8743e7297993f39d2baae892ff7e2ec7844",
           "size": 7703,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.5.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.liquid-glass@1.5.0.zip",
+          "sha256": "6db49e4c68cc08da5193e9c5811181da85b50563813a504e8771927df624a3eb",
+          "size": 8257,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
