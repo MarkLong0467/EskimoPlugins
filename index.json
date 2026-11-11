@@ -4183,6 +4183,29 @@
       "contributors": [
         "Oskar Kwaśniewski and Callstack <https://github.com/callstack> (https://github.com/callstack/liquid-glass \"Original library\")"
       ]
+    },
+    "marklong.channel-tabs": {
+      "name": "Channel Tabs",
+      "description": "Keep channels, DMs and threads open as tabs, like a browser. Switch between them, close one or all of them, and split the screen to read two at once.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.channel-tabs@1.0.0.zip",
+          "sha256": "559025669655a731b2cf8f9e4050833ca0c77045539915fba9ca6909918ae107",
+          "size": 7994,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
     }
   }
 }
