@@ -77,7 +77,7 @@
     {
       "id": "marklong.channel-tabs",
       "name": "Channel Tabs",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "short": "Keep channels, DMs and threads open as tabs, like a browser",
       "suffix": ""
     },
