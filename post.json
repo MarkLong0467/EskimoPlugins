@@ -194,6 +194,13 @@
       "suffix": ""
     },
     {
+      "id": "marklong.pastelize",
+      "name": "Pastelize",
+      "version": "1.0.0",
+      "short": "Gives every name in chat its own pastel colour, worked out from the person's ID, so people without…",
+      "suffix": ""
+    },
+    {
       "id": "marklong.pin-dms",
       "name": "Pin DMs",
       "version": "1.15.4",
