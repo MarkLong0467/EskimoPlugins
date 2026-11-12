@@ -4189,7 +4189,7 @@
       "description": "Keep channels, DMs and threads open as tabs, like a browser. Switch between them, close one or all of them, and split the screen to read two at once.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.3.2"
+        "latest": "1.3.3"
       },
       "versions": {
         "1.0.0": {
@@ -4261,6 +4261,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.channel-tabs@1.3.2.zip",
           "sha256": "11c6ebd7467af460e820854ed8cecb6c661ff1f5380135fc603d52d9f84cd3ce",
           "size": 9048,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.3.3": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.channel-tabs@1.3.3.zip",
+          "sha256": "b290ceac6ba60ff70949f2cac7341eff46454400a70a9de36ccc8d2a67242c7b",
+          "size": 9346,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
