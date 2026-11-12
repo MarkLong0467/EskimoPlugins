@@ -42,7 +42,7 @@ Updates arrive through the same link.
 | [Better Devices](plugins/better-devices) | 1.0.4 | multi-select logout, new-device alerts and clearer device details |
 | [Better Folders](plugins/better-folders) | 1.2.1 | hide the server icons in collapsed folders and auto-collapse folders as you open different ones (port of fres's BetterFolders) |
 | [Bypass Status](plugins/bypass-status) | 3.0.1 | get notifications from chosen people (or everyone) while on Do Not Disturb |
-| [Channel Tabs](plugins/channel-tabs) | 1.3.1 | Keep channels, DMs and threads open as tabs, like a browser. |
+| [Channel Tabs](plugins/channel-tabs) | 1.3.2 | Keep channels, DMs and threads open as tabs, like a browser. |
 | [Chat Bubbles](plugins/chatbubbles) | 1.1.5 | customizable chat bubbles with rounded corners and your own color |
 | [Chatbox Avatar](plugins/chatbox-avatar) | 1.2.6 | a button in the chatbox to view your profile or open your account sheet |
 | [Colorful Channels](plugins/colorful-channels) | 1.1.5 | colored channel icons for locked and NSFW channels, plus a red NSFW tag |
