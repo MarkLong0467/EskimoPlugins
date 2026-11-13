@@ -8,7 +8,7 @@
  * Uses Valenced's documented runtime API; no desktop webpack patches.
  */
   'use strict';
-  var VERSION = '4.0.2';
+  var VERSION = '4.1.0';
   var defaults = { images: true, emojis: true, stickers: true, cosmetics: true, gifs: true, motion: true };
   var storage;
   var stats = {};
@@ -116,6 +116,30 @@
     });
     if (next !== props) stats.svgStills = (stats.svgStills || 0) + 1;
     return next;
+  }
+
+  // The native cutout for an avatar whose cutout is only described the old way, or null when it already has one, has a
+  // border or a tint (the native clip draws neither), or its size is unknown. `sizes` is Discord's CutoutableAvatarImage
+  // module: AVATAR_SIZE_MAP, CutoutDirection and CutoutType.
+  function nativeCutouts(props, sizes) {
+    var cutout = props.cutout;
+    if (!cutout || typeof cutout !== 'object' || cutout.nativeCutouts != null || cutout.border != null) return null;
+    var size = sizes.AVATAR_SIZE_MAP && sizes.AVATAR_SIZE_MAP[props.size];
+    if (typeof size !== 'number' || !(size > 0)) return null;
+    var RN = valenced.react && valenced.react.ReactNative;
+    var flatten = RN && RN.StyleSheet && RN.StyleSheet.flatten;
+    var style = flatten ? flatten(props.style) : null;
+    if (style && style.tintColor != null) return null;
+    var direction = sizes.CutoutDirection || {}, type = sizes.CutoutType || {};
+    var radius = cutout.radius != null ? cutout.radius : size / 2;
+    var inset = cutout.inset != null ? cutout.inset : 0;
+    var circular = (cutout.imageType != null ? cutout.imageType : type.CIRCULAR) === type.CIRCULAR;
+    if (typeof radius !== 'number' || typeof inset !== 'number') return null;
+    var x = size - inset, y = circular ? size / 2 : size;
+    if (cutout.direction === direction.BOTTOM_RIGHT) { x = size - radius - inset; y = x; }
+    else if (cutout.direction === direction.BOTTOM_LEFT) { x = radius + inset; y = size - radius - inset; }
+    // The native clip takes the top left corner of the circle and its width.
+    return [{ shape: 'circle', x: x - radius, y: y - radius, size: 2 * radius }];
   }
 
   function mediaProps(type, props) {
@@ -613,6 +637,24 @@
             return next;
           })) stats.direct++;
         }
+      }));
+      // An avatar with a cutout (a hole for a status dot, or the next face of a pile) that only has the old cutout
+      // description is drawn through react-native-svg, which crashes on an animated picture, so those stay still (see
+      // svgImageProps). Discord's other way to draw a cutout, a native clip around a FastImage, plays them: the old
+      // description is turned into that one, worked out the way Discord's SVG mask places its circle.
+      api.cleanup(finders.getModules(filters.withProps('AVATAR_SIZE_MAP', 'CutoutDirection', 'CutoutType'), function (mod) {
+        if (!active) return;
+        var image = mod.default;
+        if (!image || typeof image.type !== 'function') return;
+        if (hook(image, 'type', 'before', function (args) {
+          if (!active || !enabled('images') || !args[0]) return args;
+          var cutouts = nativeCutouts(args[0], mod);
+          if (!cutouts) return args;
+          var next = args.slice();
+          next[0] = Object.assign({}, args[0], { cutout: Object.assign({}, args[0].cutout, { nativeCutouts: cutouts }) });
+          stats.nativeCutouts = (stats.nativeCutouts || 0) + 1;
+          return next;
+        })) stats.direct++;
       }));
       api.cleanup(finders.getModules(filters.withName('GuildIcon'), function (GuildIcon) {
         if (!active || !GuildIcon.prototype) return;

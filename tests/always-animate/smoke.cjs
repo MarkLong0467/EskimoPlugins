@@ -54,12 +54,21 @@ class GuildIcon {
 }
 const originalIconRender = GuildIcon.prototype.render;
 const originalAvatarType = directAvatar.default.type;
+// Discord's CutoutableAvatarImage module: its memo's type returns the props it was given, to see what the plugin changed.
+const cutoutAvatar = {
+  AVATAR_SIZE_MAP: { normal: 40, small: 30 },
+  CutoutDirection: { RIGHT: 0, BOTTOM_RIGHT: 1, BOTTOM_LEFT: 2 },
+  CutoutType: { RECTANGULAR: 0, CIRCULAR: 1 },
+  default: { type: props => props }
+};
+const originalCutoutType = cutoutAvatar.default.type;
 class User { getAvatarURL() { return 'https://cdn.discordapp.com/avatars/5/a_user.webp?size=64'; } }
 addModule(User);
 const originalUserAvatar = User.prototype.getAvatarURL;
 const nativeChat = { updateRows(ref, data) { return { ref, data }; } };
 const originalNativeUpdate = nativeChat.updateRows;
 addModule(directAvatar);
+addModule(cutoutAvatar);
 addModule(GuildIcon);
 addModule(runtime);
 addModule(images);
@@ -202,7 +211,23 @@ assert.equal(runtime.jsx(SvgImage, Object.freeze({ href: svgGif.src })).props.hr
 assert.equal(runtime.jsx(SvgImage, { xlinkHref: [svgGif.src] }).props.xlinkHref[0].uri, 'https://cdn.discordapp.com/avatars/12/a_abc.png?size=128');
 const link = Object.freeze({ href: 'https://cdn.discordapp.com/avatars/12/a_abc.gif' });
 assert.equal(runtime.jsx(() => null, link).props, link);
+const plain = value => JSON.parse(JSON.stringify(value));
+// An avatar with only the old cutout description gets Discord's native cutout, which plays animated pictures.
+const piled = cutoutAvatar.default.type({ size: 'normal', cutout: { radius: 8, inset: 2 } });
+assert.deepEqual(plain(piled.cutout.nativeCutouts), [{ shape: 'circle', x: 30, y: 12, size: 16 }]);
+assert.equal(piled.cutout.radius, 8);
+assert.deepEqual(plain(cutoutAvatar.default.type({ size: 'normal', cutout: { radius: 6, direction: 1 } }).cutout.nativeCutouts), [{ shape: 'circle', x: 28, y: 28, size: 12 }]);
+assert.deepEqual(plain(cutoutAvatar.default.type({ size: 'small', cutout: { radius: 5, inset: 1, direction: 2 } }).cutout.nativeCutouts), [{ shape: 'circle', x: 1, y: 19, size: 10 }]);
+assert.deepEqual(plain(cutoutAvatar.default.type({ size: 'normal', cutout: { imageType: 0 } }).cutout.nativeCutouts), [{ shape: 'circle', x: 20, y: 20, size: 40 }]);
+// Left alone: a native cutout already, a border or an unknown size (those stay on the SVG path and still).
+for (const props of [
+  { size: 'normal', cutout: { nativeCutouts: [{ shape: 'circle', x: 1, y: 1, size: 2 }] } },
+  { size: 'normal', cutout: { radius: 8, border: { color: 'red', width: 2 } } },
+  { size: 'huge', cutout: { radius: 8 } },
+  { size: 'normal' },
+]) assert.equal(cutoutAvatar.default.type(Object.freeze(props)), props);
 cache.images = false;
+assert.equal(cutoutAvatar.default.type(Object.freeze({ size: 'normal', cutout: { radius: 8 } })).cutout.nativeCutouts, undefined);
 assert.equal(runtime.jsx(avatar, input).props, input);
 assert.equal(directAvatar.default.type({}), false);
 assert.equal(guildIcon.render(), false);
@@ -271,6 +296,7 @@ assert.equal(runtime.jsx, originalJSX);
 assert.equal(RowManager.prototype.generate, originalGenerate);
 assert.equal(GuildIcon.prototype.render, originalIconRender);
 assert.equal(directAvatar.default.type, originalAvatarType);
+assert.equal(cutoutAvatar.default.type, originalCutoutType);
 assert.equal(resolver.getAvatarDecorationURL(frozenOptions), false);
 assert.equal(commands.updateRows, originalCommandsUpdate);
 assert.equal(nativeChat.updateRows, originalNativeUpdate);
