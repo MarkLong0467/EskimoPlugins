@@ -8,7 +8,7 @@
  * Uses Valenced's documented runtime API; no desktop webpack patches.
  */
   'use strict';
-  var VERSION = '4.0.1';
+  var VERSION = '4.0.2';
   var defaults = { images: true, emojis: true, stickers: true, cosmetics: true, gifs: true, motion: true };
   var storage;
   var stats = {};
@@ -57,14 +57,24 @@
     return result;
   }
 
-  function mapSource(value) {
-    if (typeof value === 'string') return animatedURL(value);
+  // The opposite of animatedURL, for pictures that must stay still.
+  function stillURL(url) {
+    if (typeof url !== 'string' || !/^https:\/\/(?:cdn\.discordapp\.com|media\.discordapp\.net)\//i.test(url)) return url;
+    return url.replace(/(\/a_[a-z0-9_]+)\.gif(?=[?#]|$)/i, '$1.png')
+      .replace(/([?&]animated=)true(?=&|#|$)/gi, '$1false')
+      .replace(/([?&]passthrough=)true(?=&|#|$)/gi, '$1false')
+      .replace(/(\/media\/v1\/collectibles-shop\/\d+\/(?:[a-z0-9_-]+\/)*)animated(?=[?#]|$)/i, '$1static');
+  }
+
+  function mapSource(value, convert) {
+    convert = convert || animatedURL;
+    if (typeof value === 'string') return convert(value);
     if (Array.isArray(value)) {
-      var next = value.map(mapSource);
+      var next = value.map(function (x) { return mapSource(x, convert); });
       return next.some(function (x, i) { return x !== value[i]; }) ? next : value;
     }
     if (value && typeof value === 'object' && typeof value.uri === 'string') {
-      var uri = animatedURL(value.uri);
+      var uri = convert(value.uri);
       if (uri !== value.uri) return Object.assign({}, value, { uri: uri });
     }
     return value;
@@ -92,8 +102,25 @@
     return info;
   }
 
+  // react-native-svg's Android image crashes the app on an animated picture (Fresco hands it a null bitmap).
+  // Discord draws avatars with a cutout through it and keeps those still; so must this plugin.
+  function svgImageProps(type, props) {
+    var next = props;
+    (type === 'RNSVGImage' ? ['src'] : ['href', 'xlinkHref']).forEach(function (key) {
+      var value = props[key];
+      if (!value || typeof value !== 'object') return; // a string href can be a link, not a picture
+      var still = mapSource(value, stillURL);
+      if (still === value) return;
+      if (next === props) next = Object.assign({}, props);
+      next[key] = still;
+    });
+    if (next !== props) stats.svgStills = (stats.svgStills || 0) + 1;
+    return next;
+  }
+
   function mediaProps(type, props) {
     if (!props || typeof props !== 'object') return props;
+    if (type === 'RNSVGImage' || props.href !== undefined || props.xlinkHref !== undefined) return svgImageProps(type, props);
     if (props.hidden === true || props.visible === false || props.isHidden === true) return props;
     var info = mediaInfo(type);
     // Native Image/FastImage components can have anonymous or minified names.

@@ -187,6 +187,21 @@ assert.equal(images.getUserAvatarURL({ url: 'https://example.com/avatars/12/a_ab
 assert.equal(images.getUserAvatarURL({ url: 3 }), 3);
 assert.equal(avatarAnimationArgument, true);
 assert.equal(images.getUserAvatarURL({ url: 'https://cdn.discordapp.com/guilds/2/users/12/avatars/a_def.png' }), 'https://cdn.discordapp.com/guilds/2/users/12/avatars/a_def.gif');
+// react-native-svg's Android image crashes on an animated picture, so what it draws stays (or goes back to) still.
+const svgGif = Object.freeze({ mask: 'url(#m)', src: Object.freeze({ uri: 'https://cdn.discordapp.com/avatars/12/a_abc.gif?size=128' }) });
+assert.equal(runtime.jsx('RNSVGImage', svgGif).props.src.uri, 'https://cdn.discordapp.com/avatars/12/a_abc.png?size=128');
+assert.equal(runtime.jsx('RNSVGImage', svgGif).props.mask, 'url(#m)');
+const svgStill = Object.freeze({ src: Object.freeze({ uri: 'https://cdn.discordapp.com/avatars/12/a_abc.webp?size=128' }) });
+assert.equal(runtime.jsx('RNSVGImage', svgStill).props, svgStill);
+assert.equal(runtime.jsx('RNSVGImage', { src: { uri: 'https://cdn.discordapp.com/avatars/12/a_abc.webp?size=128&animated=true' } }).props.src.uri, 'https://cdn.discordapp.com/avatars/12/a_abc.webp?size=128&animated=false');
+assert.equal(runtime.jsx('RNSVGImage', { src: { uri: 'https://cdn.discordapp.com/avatar-decoration-presets/a_ears.png?size=96&passthrough=true' } }).props.src.uri, 'https://cdn.discordapp.com/avatar-decoration-presets/a_ears.png?size=96&passthrough=false');
+assert.equal(runtime.jsx('RNSVGImage', { src: { uri: 'https://example.com/a_abc.gif' } }).props.src.uri, 'https://example.com/a_abc.gif');
+assert.equal(runtime.jsx('RNSVGImage', { src: null }).props.src, null);
+const SvgImage = function SvgImage() {};
+assert.equal(runtime.jsx(SvgImage, Object.freeze({ href: svgGif.src })).props.href.uri, 'https://cdn.discordapp.com/avatars/12/a_abc.png?size=128');
+assert.equal(runtime.jsx(SvgImage, { xlinkHref: [svgGif.src] }).props.xlinkHref[0].uri, 'https://cdn.discordapp.com/avatars/12/a_abc.png?size=128');
+const link = Object.freeze({ href: 'https://cdn.discordapp.com/avatars/12/a_abc.gif' });
+assert.equal(runtime.jsx(() => null, link).props, link);
 cache.images = false;
 assert.equal(runtime.jsx(avatar, input).props, input);
 assert.equal(directAvatar.default.type({}), false);

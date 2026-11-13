@@ -10,7 +10,7 @@
 		"Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
 	],
 	"icon": "ActivityIcon",
-	"version": "4.0.1",
+	"version": "4.0.2",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"
