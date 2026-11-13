@@ -218,7 +218,10 @@ assert.equal(plate.animate, true);
 assert.equal(plate.style[0].height, 4);
 assert.equal(plate.style[1].pointerEvents, 'none');
 assert.equal(runtime.jsx(Nameplate, Object.freeze(plate)).props, plate);
-assert.equal(runtime.jsx(function NameplatePreview() {}, { animate: false }).props.style, undefined);
+assert.equal(runtime.jsx(function NameplatePreview() {}, { animate: false, nameplate: {} }).props.style, undefined);
+// The row the nameplate is behind passes its props to its card: it is not changed at all.
+const plateRow = Object.freeze({ nameplate: { asset: 'x' }, label: 'Mark', onPress() {} });
+assert.equal(runtime.jsx(function UserNameplateRow() {}, plateRow).props, plateRow);
 const plain = value => JSON.parse(JSON.stringify(value));
 // An avatar with only the old cutout description gets Discord's native cutout, which plays animated pictures.
 const piled = cutoutAvatar.default.type({ size: 'normal', cutout: { radius: 8, inset: 2 } });

@@ -8,7 +8,7 @@
  * Uses Valenced's documented runtime API; no desktop webpack patches.
  */
   'use strict';
-  var VERSION = '4.1.1';
+  var VERSION = '4.1.2';
   var defaults = { images: true, emojis: true, stickers: true, cosmetics: true, gifs: true, motion: true };
   var storage;
   var stats = {};
@@ -97,8 +97,11 @@
     var info = typeInfo && typeInfo.get(type);
     if (info) return info;
     var name = typeName(type);
-    var named = MEDIA_NAME.test(name);
-    info = { named: named, group: !named ? '' : /emoji/i.test(name) ? 'emojis' : /nameplate|gradient/i.test(name) ? 'cosmetics' : 'images' };
+    // A row with a nameplate behind it (UserNameplateRow in the member list) hands its other props to the card it is drawn
+    // on: an extra prop there changes the card, so rows are left alone. The nameplate inside is changed instead.
+    var named = MEDIA_NAME.test(name) && !/nameplate.*row/i.test(name);
+    info = { named: named, group: !named ? '' : /emoji/i.test(name) ? 'emojis' : /nameplate|gradient/i.test(name) ? 'cosmetics' : 'images',
+      plate: /^nameplate(inner)?$/i.test(name) };
     if (typeInfo && (typeof type === 'function' || typeof type === 'object')) { try { typeInfo.set(type, info); } catch (_) {} }
     return info;
   }
@@ -188,7 +191,7 @@
     if (group === 'cosmetics' && typeof props.loop === 'boolean') set('loop', true);
     // An animated nameplate is drawn by a native picture player that takes the touches of the row it is the background
     // of (the member list), which Discord's still one does not: it only shows, so touches go through it.
-    if (group === 'cosmetics' && props.nameplate && !(Array.isArray(props.style) && props.style[1] === NO_TOUCH)) {
+    if (info.plate && props.nameplate && !(Array.isArray(props.style) && props.style[1] === NO_TOUCH)) {
       set('style', [props.style, NO_TOUCH]);
     }
     if (group === 'images') {
