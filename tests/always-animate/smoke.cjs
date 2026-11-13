@@ -211,6 +211,14 @@ assert.equal(runtime.jsx(SvgImage, Object.freeze({ href: svgGif.src })).props.hr
 assert.equal(runtime.jsx(SvgImage, { xlinkHref: [svgGif.src] }).props.xlinkHref[0].uri, 'https://cdn.discordapp.com/avatars/12/a_abc.png?size=128');
 const link = Object.freeze({ href: 'https://cdn.discordapp.com/avatars/12/a_abc.gif' });
 assert.equal(runtime.jsx(() => null, link).props, link);
+// An animated nameplate lets touches through to the row it is the background of.
+const Nameplate = function Nameplate() {};
+const plate = runtime.jsx(Nameplate, Object.freeze({ nameplate: { asset: 'x' }, style: { height: 4 }, animate: false })).props;
+assert.equal(plate.animate, true);
+assert.equal(plate.style[0].height, 4);
+assert.equal(plate.style[1].pointerEvents, 'none');
+assert.equal(runtime.jsx(Nameplate, Object.freeze(plate)).props, plate);
+assert.equal(runtime.jsx(function NameplatePreview() {}, { animate: false }).props.style, undefined);
 const plain = value => JSON.parse(JSON.stringify(value));
 // An avatar with only the old cutout description gets Discord's native cutout, which plays animated pictures.
 const piled = cutoutAvatar.default.type({ size: 'normal', cutout: { radius: 8, inset: 2 } });

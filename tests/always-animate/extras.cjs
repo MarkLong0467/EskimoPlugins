@@ -161,7 +161,7 @@ check('settings: Refresh pictures redraws the screens and says so', () => {
 check('settings: the version is 4.0.0 and the status file is looked up under this plugin\'s id', () => {
 	const t = setup()
 	const text = flatten(t.plugin.SettingsComponent())
-	assert.ok(text.some((s) => /4.1.0/.test(s)))
+	assert.ok(text.some((s) => /4.1.1/.test(s)))
 	const src = fs.readFileSync(__dirname + '/../../plugins/always-animate/index.js', 'utf8')
 	assert.ok(src.includes("pluginStorageDirFor('marklong.always-animate')") && !src.includes('fluttershy2008.always-animate'))
 })

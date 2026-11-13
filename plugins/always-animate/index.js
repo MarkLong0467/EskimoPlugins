@@ -8,7 +8,7 @@
  * Uses Valenced's documented runtime API; no desktop webpack patches.
  */
   'use strict';
-  var VERSION = '4.1.0';
+  var VERSION = '4.1.1';
   var defaults = { images: true, emojis: true, stickers: true, cosmetics: true, gifs: true, motion: true };
   var storage;
   var stats = {};
@@ -90,6 +90,7 @@
   // this function runs for every React element the whole app creates.
   var SOURCE_KEYS = ['source', 'src', 'uri', 'avatarURL', 'iconURL', 'bannerURL', 'bannerSource'];
   var NOT_MEDIA = { named: false, group: '' };
+  var NO_TOUCH = { pointerEvents: 'none' };
   var typeInfo = typeof WeakMap === 'function' ? new WeakMap() : null;
   function mediaInfo(type) {
     if (!type || typeof type === 'string') return NOT_MEDIA;
@@ -185,6 +186,11 @@
       if (typeof props[key] === 'boolean') set(key, false);
     });
     if (group === 'cosmetics' && typeof props.loop === 'boolean') set('loop', true);
+    // An animated nameplate is drawn by a native picture player that takes the touches of the row it is the background
+    // of (the member list), which Discord's still one does not: it only shows, so touches go through it.
+    if (group === 'cosmetics' && props.nameplate && !(Array.isArray(props.style) && props.style[1] === NO_TOUCH)) {
+      set('style', [props.style, NO_TOUCH]);
+    }
     if (group === 'images') {
       sourceKeys.forEach(function (key) {
         if (props[key] !== undefined) set(key, mapSource(props[key]));
