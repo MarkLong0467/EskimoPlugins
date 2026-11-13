@@ -29,12 +29,12 @@ Updates arrive through the same link.
 ## Plugins
 
 <!-- plugins:start -->
-44 plugins. Tap a name for what it does and how it works.
+41 plugins. Tap a name for what it does and how it works.
 
 | Plugin | Version | What it does |
 | ------ | ------- | ------------ |
 | [AltMaster](plugins/altmaster) | 1.0.4 | check linked alt accounts, report a new alt, and appeal false positives from a profile menu |
-| [Always Animate](plugins/always-animate) | 3.1.0 | animates profile pictures, banners, server icons, decorations, emoji, stickers and GIFs |
+| [Always Animate](plugins/always-animate) | 4.0.2 | animates profile pictures, banners, server icons, decorations, emoji, stickers and GIFs |
 | [Always Trust](plugins/alwaystrust) | 1.0.2 | removes the untrusted link confirmation |
 | [Auto Show All Channels](plugins/auto-show-all-channels) | 1.0.2 | turns on Show All Channels by itself in every server you join |
 | [Better Calls](plugins/better-calls) | 1.1.2 | silent calls with a bell button in DMs, and remembers your audio output device |
@@ -42,7 +42,6 @@ Updates arrive through the same link.
 | [Better Devices](plugins/better-devices) | 1.0.4 | multi-select logout, new-device alerts and clearer device details |
 | [Better Folders](plugins/better-folders) | 1.2.1 | hide the server icons in collapsed folders and auto-collapse folders as you open different ones (port of fres's BetterFolders) |
 | [Bypass Status](plugins/bypass-status) | 3.0.1 | get notifications from chosen people (or everyone) while on Do Not Disturb |
-| [Channel Tabs](plugins/channel-tabs) | 1.4.0 | Keep channels, DMs and threads open as tabs, like a browser. |
 | [Chat Bubbles](plugins/chatbubbles) | 1.1.5 | customizable chat bubbles with rounded corners and your own color |
 | [Chatbox Avatar](plugins/chatbox-avatar) | 1.2.6 | a button in the chatbox to view your profile or open your account sheet |
 | [Colorful Channels](plugins/colorful-channels) | 1.1.5 | colored channel icons for locked and NSFW channels, plus a red NSFW tag |
@@ -53,13 +52,11 @@ Updates arrive through the same link.
 | [Haptics](plugins/haptics) | 0.1.3 | turn Discord's buzzing on or off, with a log of what buzzed |
 | [Hide Slash Apps](plugins/hide-slash-apps) | 1.1.0 | long press an app or command in the / menu to hide it everywhere or in one server, switch off built-in commands (for bots like MEE6) |
 | [HypeSquad Switcher](plugins/hypesquad) | 1.1.2 | change your HypeSquad house, or leave it, in one tap |
-| [Liquid Glass](plugins/liquid-glass) | 1.5.1 | Gives Discord a frosted glass look: see-through buttons, cards, text fields and sheets, in a colour and strength you pick. |
 | [Markdown Toolbar](plugins/markdown-toolbar) | 1.2.4 | a floating formatting bar under the chat input that pops up with the keyboard |
 | [Message Preview](plugins/message-preview) | 1.0.3 | preview your message before sending it |
 | [Message Reminders](plugins/message-reminders) | 1.0.0 | hold a message, tap Remind Me, and get a Jump / Snooze / Done sheet when it's due |
 | [Minecraft Servers](plugins/minecraft-servers) | 1.5.1 | see if your servers are online, who is playing, and the ping |
 | [No Suggestions](plugins/no-suggestions) | 1.3.2 | removes the Suggested channels section that keeps coming back |
-| [Pastelize](plugins/pastelize) | 1.0.0 | Gives every name in chat its own pastel colour, worked out from the person's ID, so people without a role colour are easy to tell apart. |
 | [Pin DMs](plugins/pin-dms) | 1.15.4 | pin DMs and group chats to the top, in sections you can fold |
 | [Plugin Auditor](plugins/plugin-auditor) | 1.1.0 | scan your plugins for token access, account changes, downloaded code and suspicious links, find duplicates, and check them on VirusTotal |
 | [Quiet Hours](plugins/quiet-hours) | 1.0.0 | switches your status to Do Not Disturb on a schedule and puts it back, with one-tap skip tonight |
