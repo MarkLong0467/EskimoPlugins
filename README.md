@@ -34,7 +34,7 @@ Updates arrive through the same link.
 | Plugin | Version | What it does |
 | ------ | ------- | ------------ |
 | [AltMaster](plugins/altmaster) | 1.0.4 | check linked alt accounts, report a new alt, and appeal false positives from a profile menu |
-| [Always Animate](plugins/always-animate) | 4.1.0 | animates profile pictures, banners, server icons, decorations, emoji, stickers and GIFs |
+| [Always Animate](plugins/always-animate) | 4.1.1 | animates profile pictures, banners, server icons, decorations, emoji, stickers and GIFs |
 | [Always Trust](plugins/alwaystrust) | 1.0.2 | removes the untrusted link confirmation |
 | [Auto Show All Channels](plugins/auto-show-all-channels) | 1.0.2 | turns on Show All Channels by itself in every server you join |
 | [Better Calls](plugins/better-calls) | 1.1.2 | silent calls with a bell button in DMs, and remembers your audio output device |
