@@ -1,0 +1,23 @@
+{
+	"format": 1,
+	"id": "marklong.liquid-glass",
+	"name": "Liquid Glass",
+	"description": "Gives Discord a frosted glass look: see-through buttons, cards, text fields and sheets, in a colour and strength you pick. Also a library with the API of callstack/liquid-glass for other plugins.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [
+		"Oskar Kwaśniewski and Callstack <https://github.com/callstack> (https://github.com/callstack/liquid-glass \"Original library\")"
+	],
+	"icon": "SparklesIcon",
+	"version": "1.5.1",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}

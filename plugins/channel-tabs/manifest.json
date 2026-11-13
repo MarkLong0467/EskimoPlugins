@@ -1,0 +1,20 @@
+{
+	"format": 1,
+	"id": "marklong.channel-tabs",
+	"name": "Channel Tabs",
+	"description": "Keep channels, DMs and threads open as tabs, like a browser. Switch between them, close one or all of them, and split the screen to read two at once.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"icon": "ChatIcon",
+	"version": "1.4.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}

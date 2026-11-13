@@ -1,0 +1,23 @@
+{
+	"format": 1,
+	"id": "marklong.pastelize",
+	"name": "Pastelize",
+	"description": "Gives every name in chat its own pastel colour, worked out from the person's ID, so people without a role colour are easy to tell apart.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [
+		"Cynosphere (https://github.com/Cynosphere \"Original Pastelize for Vendetta\")"
+	],
+	"icon": "PaintPaletteIcon",
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
