@@ -3,7 +3,7 @@ import { Design } from '@valenced/discord/design'
 import { useEffect, useState } from 'react'
 import { Image, View } from 'react-native'
 import { loopLength } from './activity'
-import { ORANGE, TYPES } from './constants'
+import { ORANGE, showsTimer, TYPES } from './constants'
 import { checkedAgo, fmt } from './format'
 import { buttonOf, coverOf, effective } from './present'
 import { listenToSoundCloud, sc } from './scstate'
@@ -101,7 +101,8 @@ export function describe(p: Profile): PreviewInfo {
 	if (state && cur !== undefined && max !== undefined)
 		state += ` (${Math.min(cur, max)} of ${max})`
 
-	const timer = timerLine(p)
+	// Discord leaves the timer off Streaming and Competing cards, so the preview does too.
+	const timer = showsTimer(p.type) ? timerLine(p) : undefined
 
 	const buttons: string[] = []
 	for (const [labelField, urlField] of [

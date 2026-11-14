@@ -12,6 +12,7 @@ import {
 import { applySome, standingOf } from './apply'
 import {
 	REPEATS,
+	showsTimer,
 	STANDING_TEXT,
 	TIME_MODES,
 	TYPES,
@@ -306,7 +307,9 @@ export default function EditProfile({
 
 		block(
 			'Timer',
-			'The timer shows under the lines on the card.',
+			showsTimer(live.type)
+				? 'The timer shows under the lines on the card.'
+				: `Discord shows no timer on a ${Number(live.type) === 1 ? 'Streaming' : 'Competing in'} card. Change the type to Playing, Listening to or Watching (Basics) for the timer to show.`,
 			radio('What the timer does', mode, TIME_MODES, timestampMode =>
 				update({ timestampMode }, true),
 			),

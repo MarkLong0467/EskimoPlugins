@@ -820,6 +820,19 @@ async function type(view, label, value, wait = 1000) {
 		view.unmount()
 		await s.restore()
 	}
+	{
+		// Discord shows no timer on a Streaming or Competing in card.
+		const s = await setup({ profiles: [prof('s', { type: 1, streamUrl: 'https://twitch.tv/x', timestampMode: 'app' }), prof('p', { type: 0, timestampMode: 'app' })] })
+		const view = await s.settingsView()
+		const texts = textOf(sectionOf(view, 'Fix this') ?? { children: [] })
+		check('a timer on a Streaming presence is explained', /no timer on a Streaming card/.test(texts), texts)
+		check('a timer on a Playing presence is not', (texts.match(/no timer on a/g) || []).length === 1, texts)
+		await openEditor(view, 'S')
+		const page = textOf(view.tree)
+		check('the editor says so above the timer and its preview shows no timer', /no timer on a Streaming card/.test(page) && !/since Discord opened/.test(page), page.slice(0, 400))
+		view.unmount()
+		await s.restore()
+	}
 
 	// --- The report
 	{

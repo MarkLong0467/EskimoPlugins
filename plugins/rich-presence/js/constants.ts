@@ -42,9 +42,20 @@ export const TYPES: Choice<number>[] = [
 	{ v: 0, l: 'Playing', s: 'Only one Playing can show at a time' },
 	{ v: 2, l: 'Listening to' },
 	{ v: 3, l: 'Watching' },
-	{ v: 5, l: 'Competing in' },
-	{ v: 1, l: 'Streaming', s: 'Needs a Twitch or YouTube link' },
+	{ v: 5, l: 'Competing in', s: 'Discord shows no timer on it' },
+	{
+		v: 1,
+		l: 'Streaming',
+		s: 'Needs a Twitch or YouTube link. Discord shows no timer on it',
+	},
 ]
+
+/** The activity types Discord shows a timer on: Playing, Listening to and Watching. Streaming and Competing in have none. */
+export const TIMER_TYPES = [0, 2, 3]
+
+/** Whether Discord shows the timer of a presence of this type. */
+export const showsTimer = (type: unknown): boolean =>
+	TIMER_TYPES.includes(Number(type))
 
 /** The kinds of timer, each with a line that says what it does. */
 export const TIME_MODES: Choice<TimestampMode>[] = [

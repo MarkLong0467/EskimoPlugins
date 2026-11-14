@@ -1,4 +1,5 @@
 import { planNow } from './apply'
+import { showsTimer } from './constants'
 import { nextOccurrence, parseClock, parseDate } from './timers'
 import { num, partyProblem } from './variables'
 import type { Profile, RichPresenceSettings } from './types'
@@ -105,6 +106,11 @@ export function warnings(settings: RichPresenceSettings): Warning[] {
 		if (partyNote && filled(p.partyCurrent) === filled(p.partyMax))
 			add(p, `The group size is left out: ${partyNote}`)
 		const mode = p.timestampMode
+		if (mode && mode !== 'none' && !showsTimer(p.type))
+			add(
+				p,
+				`Discord shows no timer on a ${Number(p.type) === 1 ? 'Streaming' : 'Competing in'} card, so the timer is not seen. Change the type to Playing, Listening to or Watching (Basics page).`,
+			)
 		const date = parseDate(p.timerDate)
 		if ((mode === 'since' || mode === 'until') && date === undefined)
 			add(
