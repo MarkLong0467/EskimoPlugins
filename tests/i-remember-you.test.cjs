@@ -127,6 +127,13 @@ const GUILDS = {
 	check('tapping the server id copies it', s2.copied.includes('g2') && s2.toasts().includes('Server ID copied to clipboard'))
 	check('the dm group has no id to tap', findNodes(row('g:dm'), n => typeof n.props?.onPress === 'function').length === 0)
 
+	// When Valenced's list of stores has no RelationshipStore, it is found by what it has.
+	const { RelationshipStore, ...noRelationships } = stores
+	const s3 = await startPort('i-remember-you', { stores: noRelationships, overrides, before: runtime => { runtime.finders.loadModule(messages); runtime.finders.loadModule({ getFriendIDs: () => ['700000000000000007'], getRelationshipType: () => 1 }) } })
+	const v3 = await s3.mountSettings()
+	check('friends are found even when the store is not in the list by name', rowsOf(v3).some(r => r.key === 'friends:700000000000000007'))
+	s3.stop()
+
 	// A store that throws never stops a message.
 	const before = sent.length
 	stores.ChannelStore.getChannel = () => { throw new Error('boom') }

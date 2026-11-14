@@ -53,8 +53,38 @@ interface DiscordStores {
 	}
 }
 
+/** Stores that are also looked for by what they have, in case Valenced's list of stores does not have them by name. */
+const BY_PROPS: Partial<Record<keyof DiscordStores, string[]>> = {
+	RelationshipStore: ['getFriendIDs', 'getRelationshipType'],
+	ChannelStore: ['getDMUserIds', 'getChannel'],
+}
+
 /** Discord's stores. A store Discord does not have is undefined. */
-export const stores = () => Stores as unknown as DiscordStores
+export function stores(): DiscordStores {
+	const named = Stores as unknown as DiscordStores
+	const out: DiscordStores = {
+		ChannelStore: named.ChannelStore,
+		GuildStore: named.GuildStore,
+		GuildMemberStore: named.GuildMemberStore,
+		MessageStore: named.MessageStore,
+		RelationshipStore: named.RelationshipStore,
+		UserStore: named.UserStore,
+	}
+	for (const [name, props] of Object.entries(BY_PROPS) as [
+		keyof DiscordStores,
+		string[],
+	][]) {
+		const store = out[name] as Record<string, unknown> | undefined
+		if (store && typeof store[props[0] as string] === 'function') continue
+		try {
+			const found = findByProps<DiscordStores[typeof name]>(...props)
+			if (found) (out as Record<string, unknown>)[name] = found
+		} catch {
+			// The named one (or nothing) is kept.
+		}
+	}
+	return out
+}
 
 /** The first Discord module that has all the given properties. */
 export function findByProps<T>(...props: string[]): T | undefined {

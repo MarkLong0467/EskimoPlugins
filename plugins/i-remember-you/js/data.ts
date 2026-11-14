@@ -213,9 +213,11 @@ export class Data {
 	writeFriendsToCollection() {
 		const { RelationshipStore, UserStore } = stores()
 		const now = Date.now()
-		const users = (RelationshipStore?.getFriendIDs() ?? [])
+		const ids = RelationshipStore?.getFriendIDs() ?? []
+		const users = ids
 			.map(id => UserStore?.getUser(id))
 			.filter((user): user is User => Boolean(user))
+		found.friends = `${users.length} of ${ids.length} friend ids are known users${RelationshipStore ? '' : ' (no RelationshipStore)'}`
 		this.processUsersToCollection(
 			users.map(user => ({ user, source: FRIENDS, extra: { updatedAt: now } })),
 		)
@@ -229,11 +231,14 @@ export class Data {
 		const { ChannelStore, UserStore } = stores()
 		const now = Date.now()
 		const target: Entry[] = []
-		for (const id of ChannelStore?.getDMUserIds?.() ?? []) {
+		const dmIds = ChannelStore?.getDMUserIds?.() ?? []
+		const channels = ChannelStore?.getSortedPrivateChannels?.() ?? []
+		found.dms = `${dmIds.length} DM user ids, ${channels.filter(c => c.type === GROUP_DM).length} group DMs of ${channels.length} private channels${ChannelStore?.getDMUserIds ? '' : ' (no getDMUserIds)'}`
+		for (const id of dmIds) {
 			const user = UserStore?.getUser(id)
 			if (user) target.push({ user, extra: { updatedAt: now } })
 		}
-		for (const channel of ChannelStore?.getSortedPrivateChannels?.() ?? []) {
+		for (const channel of channels) {
 			if (channel.type !== GROUP_DM) continue
 			const users = (channel.recipients ?? [])
 				.map(id => UserStore?.getUser(id))
@@ -255,6 +260,9 @@ export class Data {
 		)
 	}
 }
+
+/** What the last passes found, for the report (counts only). */
+export const found: Record<string, string> = {}
 
 /** The address of a user's profile picture. */
 function avatarOf(user: User): string | undefined {
