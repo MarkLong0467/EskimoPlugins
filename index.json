@@ -4421,7 +4421,7 @@
       "description": "Locally saves everyone you've been communicating with (including servers), in case of loss: your friends, DMs and group DMs, people you mention or reply to, the owners of your servers and the members of servers you own.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.1.1"
+        "latest": "1.2.0"
       },
       "versions": {
         "1.0.0": {
@@ -4454,6 +4454,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.i-remember-you@1.1.1.zip",
           "sha256": "b30aa671aedba0de60b5eae9092b41c66053423628aa194d3b38d3d7d3331e0c",
           "size": 9202,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.2.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.i-remember-you@1.2.0.zip",
+          "sha256": "13a4ffabcae639b8638cb86834e7593cb1350a47488f2c4ea39225bc2f244f08",
+          "size": 9765,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
