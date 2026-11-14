@@ -1,0 +1,23 @@
+{
+	"format": 1,
+	"id": "marklong.reverse-image-search",
+	"name": "Reverse Image Search",
+	"description": "Adds ImageSearch to image context menus: hold a picture, or open its menu in the viewer, then Search Image with Google, Yandex, SauceNAO, IQDB, Bing, TinEye, ImgOps or all of them.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [
+		"Ven and Nuckyz (ReverseImageSearch for Equicord, https://equicord.org/plugins/ReverseImageSearch)"
+	],
+	"icon": "MagnifyingGlassIcon",
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
