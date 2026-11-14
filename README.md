@@ -29,7 +29,7 @@ Updates arrive through the same link.
 ## Plugins
 
 <!-- plugins:start -->
-45 plugins. Tap a name for what it does and how it works.
+46 plugins. Tap a name for what it does and how it works.
 
 | Plugin | Version | What it does |
 | ------ | ------- | ------------ |
@@ -66,6 +66,7 @@ Updates arrive through the same link.
 | [Quiet Hours](plugins/quiet-hours) | 1.0.0 | switches your status to Do Not Disturb on a schedule and puts it back, with one-tap skip tonight |
 | [Raw Viewer](plugins/nef-viewer) | 1.1.2 | shows RAW photos (Nikon, Canon, Sony, Fujifilm and more) in chat, with a photo info sheet |
 | [Repo Post](plugins/repo-post) | 1.0.1 | keeps your repository thread post up to date with the plugin list and versions |
+| [Reverse Image Search](plugins/reverse-image-search) | 1.0.0 | Adds ImageSearch to image context menus: hold a picture, or open its menu in the viewer, then Search Image with Google, Yandex, SauceNAO, IQDB, Bing, TinEye, ImgOps or all of them. |
 | [Rich Presence](plugins/rich-presence) | 2.1.3 | up to 3 presences at once, many timers and schedules, SoundCloud built in |
 | [Role Options](plugins/role-options) | 1.0.2 | copy a role's name, color or icon from the role menu |
 | [Server Drawer](plugins/server-drawer) | 1.1.8 | manage your servers from a drawer above the YouBar |
