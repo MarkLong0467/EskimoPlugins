@@ -152,6 +152,13 @@
       "suffix": ""
     },
     {
+      "id": "marklong.i-remember-you",
+      "name": "I Remember You",
+      "version": "1.0.0",
+      "short": "Locally saves everyone you've been communicating with (including servers), in case of loss: people…",
+      "suffix": ""
+    },
+    {
       "id": "marklong.liquid-glass",
       "name": "Liquid Glass",
       "version": "1.5.1",

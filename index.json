@@ -4415,6 +4415,32 @@
       "contributors": [
         "Cynosphere (https://github.com/Cynosphere \"Original Pastelize for Vendetta\")"
       ]
+    },
+    "marklong.i-remember-you": {
+      "name": "I Remember You",
+      "description": "Locally saves everyone you've been communicating with (including servers), in case of loss: people you mention or reply to, the owners of your servers and the members of servers you own.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.i-remember-you@1.0.0.zip",
+          "sha256": "271fdbf362bc282d0fb7ae32cd0cfbc0a7d33391762c667af9c7b7ac10bf7905",
+          "size": 8511,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "contributors": [
+        "zoodogood, keircn and tt (IRememberYou for Equicord, https://equicord.org/plugins/IRememberYou)"
+      ]
     }
   }
 }
