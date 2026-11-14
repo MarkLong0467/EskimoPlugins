@@ -12,7 +12,7 @@ import { Alert, FlatList, Image, Pressable, View } from 'react-native'
 import { DebugSection } from '../../../shared/kmmiio/Debug'
 import { IntroCard } from '../../../shared/kmmiio/Intro'
 import { store } from './config'
-import { current } from './data'
+import { current, isGuildKey } from './data'
 import { diag } from './diag'
 import { copyWithToast, openUserProfile, stores, toast } from './discord'
 import type { PluginSettingsComponent } from '@valenced/plugins/types'
@@ -26,7 +26,7 @@ type Props = ComponentProps<
 
 /** Texts as constants because React Native text must be passed as an expression. */
 const INTRO =
-	'Provides a list of users you have mentioned or replied to, or those who own the servers you belong to (owner*), or are members of your guild'
+	'Provides a list of users you have mentioned or replied to, or those who own the servers you belong to (owner*), or are members of your guild, plus your friends and the people you have DMs and group DMs with'
 const EMPTY = "It's empty right now"
 const SERVER_COPIED = 'Server ID copied to clipboard'
 const USER_COPIED = 'User ID copied to clipboard'
@@ -167,7 +167,7 @@ function rowsOf(usersCollection: UsersCollection): Item[] {
 			users: Object.values(users),
 		}))
 		.sort((a, b) => b.users.length - a.users.length)) {
-		const isGuild = key !== 'dm' && id !== 'dm'
+		const isGuild = isGuildKey(key, id)
 		items.push({ kind: 'header', key: `g:${key}`, name, id, isGuild })
 		for (const user of users)
 			items.push({ kind: 'user', key: `${key}:${user.id}`, user, allowOwner: true })

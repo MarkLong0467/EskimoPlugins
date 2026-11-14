@@ -27,6 +27,9 @@ const USERS = {
 	'400000000000000004': user('400000000000000004', 'robot', { bot: true }),
 	'500000000000000005': user('500000000000000005', 'replied5'),
 	'600000000000000006': user('600000000000000006', 'mentioned6', { discriminator: '1234', tag: 'mentioned6#1234' }),
+	'700000000000000007': user('700000000000000007', 'friend7'),
+	'800000000000000008': user('800000000000000008', 'dmpal8'),
+	'900000000000000009': user('900000000000000009', 'groupie9'),
 }
 const GUILDS = {
 	g1: { id: 'g1', name: 'My Server', ownerId: ME },
@@ -37,7 +40,16 @@ const GUILDS = {
 	const sent = []
 	const messages = { sendMessage: (...args) => { sent.push(args); return 'sent' }, receiveMessage() {} }
 	const stores = {
-		ChannelStore: { getChannel: id => ({ c1: { guild_id: 'g1' }, dm1: { guild_id: null } })[id] },
+		ChannelStore: {
+			getChannel: id => ({ c1: { guild_id: 'g1' }, dm1: { guild_id: null } })[id],
+			getDMUserIds: () => ['800000000000000008', 'unknown'],
+			getSortedPrivateChannels: () => [
+				{ id: 'dm8', type: 1, recipients: ['800000000000000008'] },
+				{ id: 'gd1', type: 3, name: 'Movie night', recipients: ['900000000000000009', '700000000000000007'] },
+				{ id: 'gd2', type: 3, name: '', recipients: ['900000000000000009'] },
+			],
+		},
+		RelationshipStore: { getFriendIDs: () => ['700000000000000007', 'unknown'] },
 		GuildStore: { getGuild: id => GUILDS[id], getGuilds: () => GUILDS },
 		GuildMemberStore: { getMembers: id => (id === 'g1' ? [{ userId: ME }, { userId: '300000000000000003' }, { userId: '400000000000000004' }, { userId: 'gone' }] : [{ userId: '200000000000000002' }]) },
 		MessageStore: { getMessage: (channelId, messageId) => (messageId === 'm1' ? { author: USERS['500000000000000005'] } : undefined) },
@@ -58,6 +70,15 @@ const GUILDS = {
 	check('the members of a server you own are remembered (bots and unknown users left out)', inMine.includes('member3') && inMine.includes('me') && !inMine.includes('robot'), inMine)
 	check('of a server you do not own, only the owner is taken', rowsOf(view).filter(r => r.key.startsWith('g2:')).length === 1)
 	check('servers are sorted by how many people they have', rowsOf(view)[0].kind === 'header' && rowsOf(view)[0].name === 'My Server' && rowsOf(view)[0].isGuild === true, rowsOf(view)[0])
+
+	// Friends and DMs (not in Equicord).
+	const groupOf = (v, name) => rowsOf(v).find(r => r.kind === 'header' && r.name === name)
+	const friends = rowsOf(view).filter(r => r.key.startsWith('friends:')).map(r => r.user.username)
+	check('your friends are remembered under "Friends" (unknown ids left out)', friends.length === 1 && friends[0] === 'friend7' && groupOf(view, 'Friends')?.isGuild === false, friends)
+	check('the people you have DMs with are remembered under "dm"', rowsOf(view).some(r => r.key === 'dm:800000000000000008'))
+	const movie = rowsOf(view).filter(r => r.key.startsWith('gdm:gd1:')).map(r => r.user.username).sort()
+	check('a group DM is its own group, under its name, with its members', groupOf(view, 'Movie night')?.isGuild === false && movie.join() === 'friend7,groupie9', movie)
+	check('a group DM with no name is named after its members', !!groupOf(view, 'groupie9'))
 
 	// Sending a message.
 	const result = messages.sendMessage('c1', { content: 'hi <@600000000000000006> and <@!300000000000000003>' }, true, { messageReference: { channel_id: 'c1', message_id: 'm1' } })

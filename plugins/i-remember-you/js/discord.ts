@@ -28,7 +28,17 @@ export interface Guild {
 
 /** The stores this plugin reads. */
 interface DiscordStores {
-	ChannelStore?: { getChannel(id: string): { guild_id?: string | null } | undefined }
+	ChannelStore?: {
+		getChannel(id: string): { guild_id?: string | null } | undefined
+		getDMUserIds?(): string[]
+		getSortedPrivateChannels?(): {
+			id: string
+			type: number
+			name?: string
+			recipients?: string[]
+		}[]
+	}
+	RelationshipStore?: { getFriendIDs(): string[] }
 	GuildStore?: {
 		getGuild(id: string | null | undefined): Guild | undefined
 		getGuilds(): Record<string, Guild>

@@ -12,6 +12,8 @@ A port of [IRememberYou for Equicord](https://equicord.org/plugins/IRememberYou)
   under the server of the channel (or under **dm** outside a server).
 - **The owner of every server you are in**, marked **(owner)**.
 - **The members of servers you own**, up to 1,000 per server.
+- **Your friends**, under **Friends**, and **the people you have DMs with**, under **dm**. Each group DM is its own group,
+  under its name. Equicord does not do this: there a friend is kept only once you mention or reply to them.
 
 Bots are left out. Everything stays on your phone; nothing is sent anywhere.
 
@@ -37,6 +39,8 @@ few minutes could be lost there).
 - Right-click menus are long presses, and the tooltip on a name is a long press, because a phone has neither.
 - On a phone the plugin can start before Discord has your servers, so owners and members are gone through again once Discord
   connects.
+
+- Friends, DMs and group DMs are added (see above).
 
 ## Files
 

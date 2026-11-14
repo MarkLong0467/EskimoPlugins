@@ -49,6 +49,20 @@ const AUTOSAVE_MS = 60_000 * 3
 /** The most members of one of your own servers that are remembered at the start. */
 const LIMIT = 1_000
 
+/** The group your friends are kept in. */
+export const FRIENDS: Guild = { id: 'friends', name: 'Friends' }
+
+/** A group DM's channel type, and what its group's key starts with (so it is not taken for a server). */
+const GROUP_DM = 3
+export const GROUP_PREFIX = 'gdm:'
+
+/** Whether a group of the collection is a server (and so has a server ID to copy). */
+export const isGuildKey = (key: string, id: string) =>
+	key !== 'dm' &&
+	id !== 'dm' &&
+	key !== FRIENDS.id &&
+	!key.startsWith(GROUP_PREFIX)
+
 export class Data {
 	usersCollection: UsersCollection = {}
 	_storageAutoSaveProtocol_interval: ReturnType<typeof setInterval> | undefined
@@ -191,6 +205,47 @@ export class Data {
 		}
 
 		this.processUsersToCollection([...target])
+	}
+
+	/**
+	 * Remembers your friends, under "Friends". Not in Equicord, which keeps a friend only once you mention or reply to them.
+	 */
+	writeFriendsToCollection() {
+		const { RelationshipStore, UserStore } = stores()
+		const now = Date.now()
+		const users = (RelationshipStore?.getFriendIDs() ?? [])
+			.map(id => UserStore?.getUser(id))
+			.filter((user): user is User => Boolean(user))
+		this.processUsersToCollection(
+			users.map(user => ({ user, source: FRIENDS, extra: { updatedAt: now } })),
+		)
+	}
+
+	/**
+	 * Remembers the people you have DMs with, under "dm", and the members of your group DMs, under each group. Not in
+	 * Equicord either.
+	 */
+	writePrivateChannelsToCollection() {
+		const { ChannelStore, UserStore } = stores()
+		const now = Date.now()
+		const target: Entry[] = []
+		for (const id of ChannelStore?.getDMUserIds?.() ?? []) {
+			const user = UserStore?.getUser(id)
+			if (user) target.push({ user, extra: { updatedAt: now } })
+		}
+		for (const channel of ChannelStore?.getSortedPrivateChannels?.() ?? []) {
+			if (channel.type !== GROUP_DM) continue
+			const users = (channel.recipients ?? [])
+				.map(id => UserStore?.getUser(id))
+				.filter((user): user is User => Boolean(user))
+			const source = {
+				id: `${GROUP_PREFIX}${channel.id}`,
+				name: channel.name || users.map(user => user.username).join(', ') || 'Group DM',
+			}
+			for (const user of users)
+				target.push({ user, source, extra: { updatedAt: now } })
+		}
+		this.processUsersToCollection(target)
 	}
 
 	storageAutoSaveProtocol() {

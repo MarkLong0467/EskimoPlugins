@@ -55,15 +55,19 @@ export default plugin<{ jsonStorage: RememberSettings }>({
 			diag.guard('members of servers you own', () =>
 				data.writeMembersFromUserGuildsToCollection(),
 			)
+			diag.guard('friends', () => data.writeFriendsToCollection())
+			diag.guard('DMs', () => data.writePrivateChannelsToCollection())
 		}
 		writeServers()
-		// On a phone the plugin can start before Discord has your servers: they are gone through again once it connects.
-		cleanup(
-			onFluxEventDispatched('CONNECTION_OPEN', payload => {
-				setTimeout(writeServers, 3000)
-				return payload
-			}),
-		)
+		// On a phone the plugin can start before Discord has your servers: they are gone through again once it connects,
+		// and again when you make a friend or open a DM.
+		for (const event of ['CONNECTION_OPEN', 'RELATIONSHIP_ADD', 'CHANNEL_CREATE'])
+			cleanup(
+				onFluxEventDispatched(event, payload => {
+					setTimeout(writeServers, 3000)
+					return payload
+				}),
+			)
 
 		// Equicord's `addMessagePreSendListener`: who a message replies to and mentions is remembered before it is sent.
 		cleanup(
