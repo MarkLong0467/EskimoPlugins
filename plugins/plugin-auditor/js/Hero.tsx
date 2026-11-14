@@ -1,19 +1,11 @@
 /** The card at the top of the settings: what the last scan found, a risk bar, three counts and the scan button. */
 
 import { Design } from '@valenced/discord/design'
-import { Text as NativeText, View } from 'react-native'
-import {
-	ButtonRow,
-	Panel,
-	Progress,
-	RiskBar,
-	RiskLegend,
-	RowButton,
-	StatTile,
-} from './components'
+import { ButtonRow, Panel, RowButton } from './components'
 import { RISK_COLOR } from './constants'
 import { copy, toast } from './discord'
 import { ago, plural } from './format'
+import { RISK_LABEL } from './scan'
 import { auditor } from './store'
 import type { Risk } from './types'
 
@@ -63,52 +55,37 @@ export function Hero() {
 		help = `${plural(sum.total, 'plugin')} scanned ${ago(state.finishedAt)}${state.via ? ` · ${state.via}` : ''}`
 	}
 
+	const legend = (['critical', 'high', 'medium', 'low', 'clean'] as const)
+		.filter(r => sum.counts[r] > 0)
+		.map(r => `${sum.counts[r]} ${RISK_LABEL[r].toLowerCase()}`)
+		.join(' · ')
+
+	const counts = `${plural(sum.total, 'plugin')} · ${plural(linkCount, 'place')} linked · ${plural(state.groups.length, 'copy')}`
+
 	return (
-		<View style={{ marginHorizontal: 16 }}>
-			<Panel
-				style={{ gap: 14, padding: 16 }}
-				tint={hasResults ? tone.soft : undefined}
-			>
-				<View style={{ gap: 4 }}>
-					<NativeText
-						style={{
-							fontSize: 22,
-							fontWeight: '800',
-							color: hasResults && !scanning ? tone.solid : '#8A8F98',
-						}}
+		<Design.Stack spacing={16}>
+			<Design.Stack style={{ paddingHorizontal: 16 }}>
+				<Panel style={{ gap: 6, padding: 16 }}>
+					<Design.Text
+						variant="heading-md/bold"
+						style={hasResults && !scanning ? { color: tone.solid } : undefined}
 					>
 						{title}
-					</NativeText>
+					</Design.Text>
 					<Design.Text variant="text-sm/medium" color="text-muted">
 						{help}
 					</Design.Text>
-				</View>
-				{scanning ? <Progress done={state.done} total={state.total} /> : null}
-				{hasResults && !scanning ? (
-					<View style={{ gap: 10 }}>
-						<RiskBar counts={sum.counts} />
-						<RiskLegend counts={sum.counts} />
-					</View>
-				) : null}
-				{hasResults && !scanning ? (
-					<View style={{ flexDirection: 'row', gap: 10 }}>
-						<StatTile value={String(sum.total)} label="plugins" />
-						<StatTile
-							value={String(linkCount)}
-							label="places linked"
-							color={RISK_COLOR.low.solid}
-						/>
-						<StatTile
-							value={String(state.groups.length)}
-							label="copies"
-							color={
-								state.groups.length
-									? RISK_COLOR.medium.solid
-									: RISK_COLOR.clean.solid
-							}
-						/>
-					</View>
-				) : null}
+					{hasResults && !scanning ? (
+						<Design.Text variant="text-sm/semibold">{legend}</Design.Text>
+					) : null}
+					{hasResults && !scanning ? (
+						<Design.Text variant="text-sm/medium" color="text-muted">
+							{counts}
+						</Design.Text>
+					) : null}
+				</Panel>
+			</Design.Stack>
+			<Design.Stack style={{ paddingHorizontal: 16 }}>
 				<ButtonRow>
 					<RowButton
 						text={
@@ -132,7 +109,7 @@ export function Hero() {
 						/>
 					) : null}
 				</ButtonRow>
-			</Panel>
-		</View>
+			</Design.Stack>
+		</Design.Stack>
 	)
 }

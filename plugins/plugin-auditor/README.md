@@ -12,6 +12,7 @@ Valenced has no permissions. A plugin runs with the same access as Discord itsel
 - **Plugins tab.** Every plugin, worst first, with a risk badge. Filter by risk (Attention, Worth a look, Clean, All) and by **what the plugin can do**: *Account & token*, *Changes things*, *Network*, *Runs code*, *Phone & files*, *Other plugins*, *Hidden code*, *Suspicious places*. Tap a plugin to see each finding, why it matters and the code it matched.
 - **Links tab.** Every link written in the plugins' code, grouped by place, with who uses it and a trust label (**known**, **unknown**, **risky**, or **library** noise, hidden by default). Copy all links, or tap a place for its links and the plugins that use it.
 - **Copies tab.** Plugins with identical code, nearly identical code (a fork or an old version), the same name, or the same plugin id from a different author, with advice on what to remove.
+  It also finds a plugin that does what an option of another plugin does: Favorite Anything is not needed when Media Utils' "Favorite anything" option is on. A plugin's name in another plugin's option labels is a likely match; a description that matches an option's explanation is a maybe.
 - **VirusTotal.** Without a key, buttons open the plugin's page on VirusTotal and Hybrid Analysis by hash. With a free key, the plugin asks for you: **Check** (sends only the SHA-256), **Upload code** (asks first, every time) and **Check unknown places** (sends only the names).
 - **Whitelist.** Open a plugin and tap **Whitelist**: it stops counting as needing attention and is left out of the start-up alert. It keeps its real risk badge and its findings stay listed. The **Whitelisted** chip on the Plugins tab lists them all, and Options lists them too (tap one to remove it).
 - **Updates of whitelisted plugins.** The version you whitelisted is remembered. If the plugin updates to a different version and that version is **Critical**, it is shown again (in the start-up alert and on the Attention list, marked as updated) until you tap **Whitelist this version**. **Ignore new update checks** turns that off for one plugin; **Check new updates again** turns it back on.
@@ -62,7 +63,7 @@ The code is in `js/`:
 | `rules.ts` | The rules, the combinations that are worse together, and the words shown for them. |
 | `links.ts` | Finds links in code and judges them. |
 | `scan.ts` | Scans one plugin: rules, links, combinations, risk and score. |
-| `duplicates.ts` | Finds plugins that are copies of each other. |
+| `duplicates.ts` | Finds plugins that are copies of each other, or that do what an option of another plugin does. |
 | `hash.ts` | SHA-256 and base64 without anything from the phone. |
 | `virustotal.ts` | The VirusTotal API v3 client: file and domain look-ups, upload, rate pacing. |
 | `store.ts` | Runs scans and VirusTotal checks, keeps the results, builds the reports and self-checks. |

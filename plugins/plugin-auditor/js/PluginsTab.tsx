@@ -3,7 +3,7 @@
 import { Design } from '@valenced/discord/design'
 import { useState } from 'react'
 import { View } from 'react-native'
-import { FilterRow, Heading, RiskBadge } from './components'
+import { RiskBadge } from './components'
 import { plural } from './format'
 import { openPluginSheet } from './PluginSheet'
 import { CATEGORY_LABEL } from './rules'
@@ -23,7 +23,7 @@ const NOTHING_CAPABILITY = 'No plugin matches'
 const NOTHING_CAPABILITY_HELP = 'Try another risk filter above.'
 const NO_SCAN = 'No scan yet'
 const NO_SCAN_HELP = 'Tap Scan now at the top.'
-const CAPABILITY_HELP = 'Plugins that can:'
+const CAPABILITY_HELP = 'Plugins that can'
 
 /** The categories offered as "what can it do" choices, in this order. */
 const CAPABILITIES: readonly Category[] = [
@@ -108,31 +108,29 @@ export function PluginsTab() {
 
 	return (
 		<View style={{ gap: 16 }}>
-			<View style={{ marginHorizontal: 16, gap: 12 }}>
-				<FilterRow<Filter>
-					value={filter}
-					onChange={setFilter}
-					choices={[
-						{ id: 'attention', label: `Attention ${count('attention')}` },
-						{ id: 'review', label: `Worth a look ${count('review')}` },
-						{ id: 'clean', label: `Clean ${count('clean')}` },
-						{ id: 'whitelisted', label: `Whitelisted ${count('whitelisted')}` },
-						{ id: 'all', label: `All ${count('all')}` },
-					]}
-				/>
-				{offered.length > 0 ? (
-					<View style={{ gap: 6 }}>
-						<Heading text={CAPABILITY_HELP} />
-						<FilterRow<Capability>
-							value={capability}
-							onChange={next =>
-								setCapability(next === capability ? 'any' : next)
-							}
-							choices={offered.map(c => ({ id: c.id, label: c.label }))}
-						/>
-					</View>
-				) : null}
-			</View>
+			<Design.TableRadioGroup<Filter>
+				title="Show"
+				value={filter}
+				onChange={setFilter}
+			>
+				<Design.TableRadioRow<Filter> label={`Attention ${count('attention')}`} value="attention" />
+				<Design.TableRadioRow<Filter> label={`Worth a look ${count('review')}`} value="review" />
+				<Design.TableRadioRow<Filter> label={`Clean ${count('clean')}`} value="clean" />
+				<Design.TableRadioRow<Filter> label={`Whitelisted ${count('whitelisted')}`} value="whitelisted" />
+				<Design.TableRadioRow<Filter> label={`All ${count('all')}`} value="all" />
+			</Design.TableRadioGroup>
+			{offered.length > 0 ? (
+				<Design.TableRadioGroup<Capability>
+					title={CAPABILITY_HELP}
+					value={capability}
+					onChange={next => setCapability(next === capability ? 'any' : next)}
+				>
+					<Design.TableRadioRow<Capability> label="Anything" value="any" />
+					{offered.map(c => (
+						<Design.TableRadioRow<Capability> key={c.id} label={c.label} value={c.id} />
+					))}
+				</Design.TableRadioGroup>
+			) : null}
 			{shown.length === 0 ? (
 				<Design.TableRowGroup>
 					<Design.TableRow
@@ -168,14 +166,11 @@ export function PluginsTab() {
 				</Design.TableRowGroup>
 			)}
 			{state.notes.length > 0 ? (
-				<View style={{ marginHorizontal: 16 }}>
-					<Heading text="Notes" />
+				<Design.TableRowGroup title="Notes">
 					{state.notes.map(n => (
-						<Design.Text key={n} variant="text-xs/medium" color="text-muted">
-							{n}
-						</Design.Text>
+						<Design.TableRow key={n} label={n} labelLineClamp={4} />
 					))}
-				</View>
+				</Design.TableRowGroup>
 			) : null}
 		</View>
 	)

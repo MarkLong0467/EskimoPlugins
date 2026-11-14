@@ -13,7 +13,7 @@ import { BottomSheet } from '@valenced/externals/gorhom'
 import { lookupModule } from '@valenced/modules/finders'
 import { withProps } from '@valenced/modules/finders/filters'
 import { Component, createElement } from 'react'
-import { Text as NativeText, Pressable, ScrollView, View } from 'react-native'
+import { ScrollView, View } from 'react-native'
 import { diag } from './diag'
 import type { ComponentType, ReactNode } from 'react'
 
@@ -116,22 +116,17 @@ function scrollView(props: ScrollProps, children: ReactNode): ReactNode {
 
 /** The word on the close button for screen readers. */
 const CLOSE_LABEL = 'Close'
-const CLOSE_GLYPH = '✕'
 
 /** The names Discord's X icon has had. */
 const CLOSE_ICONS = ['XSmallIcon', 'CloseIcon', 'XIcon'] as const
 
-/** Discord's own X icon, found by name; a plain character when Discord has none by the names tried. */
-function CloseIcon() {
+/** The asset id of Discord's own X icon, or undefined when Discord has none by the names tried. */
+function closeIcon(): number | undefined {
 	for (const name of CLOSE_ICONS) {
 		const id = getAssetIdByName(name)
-		if (id != null) return <Design.TableRow.Icon source={id} />
+		if (id != null) return id
 	}
-	return (
-		<NativeText style={{ fontSize: 18, color: '#8A8F98' }}>
-			{CLOSE_GLYPH}
-		</NativeText>
-	)
+	return undefined
 }
 
 /**
@@ -164,15 +159,22 @@ export function SheetFrame({
 			<Design.BottomSheetTitleHeader
 				title={title}
 				trailing={
-					<Pressable
-						accessibilityRole="button"
-						accessibilityLabel={CLOSE_LABEL}
-						hitSlop={12}
-						onPress={onClose}
-						style={{ padding: 6 }}
-					>
-						<CloseIcon />
-					</Pressable>
+					closeIcon() != null ? (
+						<Design.IconButton
+							icon={closeIcon() as number}
+							variant="tertiary"
+							size="sm"
+							accessibilityLabel={CLOSE_LABEL}
+							onPress={onClose}
+						/>
+					) : (
+						<Design.Button
+							text={CLOSE_LABEL}
+							variant="tertiary"
+							size="sm"
+							onPress={onClose}
+						/>
+					)
 				}
 			/>
 			{scrollView(

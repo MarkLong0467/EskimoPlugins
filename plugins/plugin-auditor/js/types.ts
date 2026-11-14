@@ -107,6 +107,8 @@ export interface DuplicateGroup {
 	confidence: 'high' | 'medium' | 'low'
 	/** Highest similarity of the code between members, 0 to 1, if it was compared. */
 	similarity: number | null
+	/** Plugins that do what an option of another member does: `plugin` may be unneeded when `option` of `by` is on. */
+	overlaps?: { plugin: string; by: string; option: string }[]
 }
 
 /** What VirusTotal said about a file or a domain. */

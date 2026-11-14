@@ -3,9 +3,8 @@
 import { Design } from '@valenced/discord/design'
 import { useState } from 'react'
 import { View } from 'react-native'
-import { ButtonRow, KindBadge, RowButton, StatTile } from './components'
+import { ButtonRow, KindBadge, Panel, RowButton } from './components'
 import { saveSettings, setting } from './config'
-import { RISK_COLOR } from './constants'
 import { copy, toast } from './discord'
 import { plural, verdictLine } from './format'
 import { openHostSheet } from './HostSheet'
@@ -43,24 +42,14 @@ export function LinksTab() {
 	const unknown = hosts.filter(h => h.kind === 'unknown').length
 	const total = hosts.reduce((sum, h) => sum + h.urls.length, 0)
 
+	const summary = `${plural(hosts.length, 'place')} · ${unknown} unknown · ${risky} risky`
+
 	return (
 		<View style={{ gap: 16 }}>
-			<View style={{ marginHorizontal: 16, flexDirection: 'row', gap: 10 }}>
-				<StatTile
-					value={String(hosts.length)}
-					label="places"
-					color={RISK_COLOR.low.solid}
-				/>
-				<StatTile
-					value={String(unknown)}
-					label="unknown"
-					color={unknown ? RISK_COLOR.medium.solid : RISK_COLOR.clean.solid}
-				/>
-				<StatTile
-					value={String(risky)}
-					label="risky"
-					color={risky ? RISK_COLOR.critical.solid : RISK_COLOR.clean.solid}
-				/>
+			<View style={{ marginHorizontal: 16 }}>
+				<Panel>
+					<Design.Text variant="text-sm/semibold">{summary}</Design.Text>
+				</Panel>
 			</View>
 			<View style={{ marginHorizontal: 16 }}>
 				<ButtonRow>

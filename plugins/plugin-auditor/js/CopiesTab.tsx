@@ -13,12 +13,19 @@ const NO_SCAN = 'No scan yet'
 const NO_SCAN_HELP = 'Tap Scan now at the top.'
 const NONE_TITLE = 'No duplicates found'
 const NONE_HELP =
-	'No two plugins have the same code, the same name or the same id under different authors.'
+	'No two plugins have the same code, the same name or the same id under different authors, and none does what an option of another one does.'
 const WHY_IT_MATTERS =
-	'Two copies of one plugin both change the same parts of Discord, so they can fight each other, double what the plugin does, or break one another after an update.'
+	'Two copies of one plugin, or a plugin and another plugin\'s option that does the same job, both change the same parts of Discord, so they can fight each other, double what the plugin does, or break one another after an update.'
 
 /** What to do about a group, from why it was found. */
 function advice(group: DuplicateGroup): string {
+	const nameOf = (id: string) => auditor.scanOf(id)?.plugin.name ?? id
+	const overlap = group.overlaps?.[0]
+	const copied = group.reasons.some(
+		r => r.startsWith('Identical') || r.startsWith('Nearly'),
+	)
+	if (overlap && !copied)
+		return `${nameOf(overlap.plugin)} may not be needed: ${nameOf(overlap.by)} has an option that does the same ("${overlap.option}"). Turn that option on and switch ${nameOf(overlap.plugin)} off. With both on, the job can be done twice.`
 	if (group.reasons.some(r => r.startsWith('Identical')))
 		return 'These are exactly the same file. Keep one and remove the others.'
 	if (group.reasons.some(r => r.startsWith('Nearly')))

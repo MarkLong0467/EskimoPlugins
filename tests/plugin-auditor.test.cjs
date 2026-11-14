@@ -197,6 +197,24 @@ const has = (s, rule) => s.findings.some(f => f.rule === rule)
 	const sib = kit.findDuplicates(inputs(siblings))
 	check('sibling plugins with similar names and descriptions stay a weak (low) group', sib.length === 1 && sib[0].confidence === 'low', sib)
 	check('one plugin is never a group', kit.findDuplicates(inputs([a])).length === 0)
+
+	// A plugin that does what an option of another plugin does.
+	const withPhrases = list => list.map(p => ({ scan: kit.scanPlugin(p), strings: kit.stringsOf(p.script ?? ''), phrases: kit.phrasesOf(p.script ?? '') }))
+	const fav = plugin('zaka.favorite-anything', big('fav') + 'x="Favorite any image or video";', { name: 'Favorite Anything', description: 'Favorite any image or video, not just GIFs, and keep saved favorites loading.' })
+	const media = plugin('someone.media-utils', big('media') + 'a={label:"Favorite anything",subLabel:"Lets you star any picture"};b="Save to gallery";', { name: 'Media Utils', description: 'Tools for pictures and videos: save, copy and more.' })
+	const favGroups = kit.findDuplicates(withPhrases([fav, media, d, e]))
+	const favGroup = favGroups.find(g => g.members.includes('zaka.favorite-anything'))
+	check('a plugin whose name is an option of another plugin is found (Favorite Anything and Media Utils)', !!favGroup && favGroup.members.includes('someone.media-utils') && favGroup.confidence === 'medium' && favGroup.reasons.some(r => r === 'Media Utils has an option for this: "Favorite anything"'), favGroups)
+	check('the group says which plugin may not be needed and which option does its job', favGroup?.overlaps?.[0]?.plugin === 'zaka.favorite-anything' && favGroup.overlaps[0].by === 'someone.media-utils' && favGroup.overlaps[0].option === 'Favorite anything', favGroup)
+	const hider = plugin('a.typing-hider', big('hide'), { name: 'Typing Hider', description: 'Hides the typing indicator in every channel and DM.' })
+	const tweaks = plugin('b.chat-tweaks', big('tweak') + 'o={label:"Hide typing indicator",subLabel:"Hide the typing indicator in every channel"};', { name: 'Chat Tweaks', description: 'Small changes to the chat.' })
+	const job = kit.findDuplicates(withPhrases([hider, tweaks]))
+	check('an option that describes what a plugin does is found as a weak (low) match', job.length === 1 && job[0].confidence === 'low' && job[0].overlaps?.[0]?.plugin === 'a.typing-hider', job)
+	const mention = plugin('c.timestamps', big('ts') + 'n="Works with Media Utils and Favorite Anything";i="[favorite anything] not found";l="Loading favorite anything...";', { name: 'Timestamps', description: 'Adds times.' })
+	check('a plugin named as it is written, a log line or a loading message is not an option', kit.findDuplicates(withPhrases([fav, mention])).length === 0, kit.findDuplicates(withPhrases([fav, mention])))
+	const chain = [fav, media, plugin('x.gallery', big('gal') + 'g="Save to gallery and more";', { name: 'Media Saver', description: 'Save to gallery from anywhere quickly please' })]
+	check('option matches do not chain plugins into one big group', kit.findDuplicates(withPhrases(chain)).every(g => g.members.length === 2), kit.findDuplicates(withPhrases(chain)))
+	check('copies are still one group, not reported as options of each other', (() => { const g = kit.findDuplicates(withPhrases([a, b])); return g.length === 1 && !g[0].overlaps })())
 }
 
 // --- VirusTotal client (fake fetch)
@@ -332,7 +350,7 @@ const nativeEntry = p => ({
 	// Two copies of a real plugin under different ids are one group
 	const sample = real.find(p => p.id === 'marklong.server-info') ?? real[0]
 	const copy = { ...sample, id: 'other.server-info', author: 'someone else' }
-	const withCopy = [...real, copy].map(p => ({ scan: kit.scanPlugin(p), strings: kit.stringsOf(p.script ?? '') }))
+	const withCopy = [...real, copy].map(p => ({ scan: kit.scanPlugin(p), strings: kit.stringsOf(p.script ?? ''), phrases: kit.phrasesOf(p.script ?? '') }))
 	const groups = kit.findDuplicates(withCopy)
 	const g = groups.find(x => x.members.includes('other.server-info'))
 	check('a copy of a real plugin is found as identical code', !!g && g.members.includes(sample.id) && g.reasons.includes('Identical code') && g.confidence === 'high', groups)
@@ -413,11 +431,17 @@ async function pluginTests(real) {
 		await sleep(20)
 		await view.settle()
 	}
-	/** The tab labels are drawn by `Pressable`s with a text child. */
-	const tab = (view, label) => findNode(view.tree, n => n.type === 'Pressable' && textOf(n).startsWith(label))
+	/** The tabs are Discord's segmented control: its state picks the tab. */
 	const openTab = async (view, label) => {
-		tab(view, label).props.onPress()
+		const state = findNode(view.tree, n => n.type === 'Design.SegmentedControl').props.state
+		state.setActiveIndex(state.items.findIndex(item => item.label.startsWith(label)))
 		await view.settle()
+	}
+	/** The filter choices are radio rows: pressing one calls the group's onChange with the row's value. */
+	const choose = (view, test) => {
+		const rowNode = findNode(view.tree, n => n.type === 'Design.TableRadioRow' && test(n.props.label))
+		const group = findNode(view.tree, n => n.type === 'Design.TableRadioGroup' && !!findNode(n, m => m === rowNode))
+		group.props.onChange(rowNode.props.value)
 	}
 
 	// --- Start, and the automatic scan
@@ -450,21 +474,20 @@ async function pluginTests(real) {
 		check('the stealer row names the problem in its second line', /Can read your token and reach the internet/.test(row(view, 'Totally Legit').props.subLabel), row(view, 'Totally Legit').props.subLabel)
 
 		// filter All
-		const all = findNode(view.tree, n => n.type === 'Pressable' && textOf(n).startsWith('All'))
-		all.props.onPress()
+		choose(view, l => l.startsWith('All'))
 		await view.settle()
 		const labels = findNodes(view.tree, n => n.type === 'Design.TableRow').map(n => n.props.label)
 		check('All lists every scanned plugin', ['Good Reminders', 'Totally Legit', 'Hook Sender', 'Twin', 'No Code'].every(l => labels.includes(l)) && !labels.includes('Core') && !labels.includes('Plugin Auditor'), labels)
 
 		// "Plugins that can": the capability filter
-		const capabilityChips = findNodes(view.tree, n => n.type === 'Pressable' && /^(Account & token|Changes things|Network|Runs code|Phone & files|Suspicious places) \d+$/.test(textOf(n))).map(n => textOf(n))
+		const capabilityChips = findNodes(view.tree, n => n.type === 'Design.TableRadioRow' && /^(Account & token|Changes things|Network|Runs code|Phone & files|Suspicious places) \d+$/.test(n.props.label)).map(n => n.props.label)
 		check('the capability filter offers only what some plugin can do, with counts', capabilityChips.includes('Account & token 1') && capabilityChips.includes('Network 2') && capabilityChips.includes('Changes things 1') && capabilityChips.includes('Suspicious places 1') && !capabilityChips.some(c => c.startsWith('Runs code')), capabilityChips)
-		findNode(view.tree, n => n.type === 'Pressable' && textOf(n) === 'Account & token 1').props.onPress()
+		choose(view, l => l === 'Account & token 1')
 		await view.settle()
 		const tokenRows = findNodes(view.tree, n => n.type === 'Design.TableRow' && n.props.trailing).map(n => n.props.label)
 		check('choosing "Account & token" lists only the plugins that touch it', tokenRows.length === 1 && tokenRows[0] === 'Totally Legit', tokenRows)
 		check('and its second line names the token finding', /Reads your account token/.test(row(view, 'Totally Legit').props.subLabel), row(view, 'Totally Legit').props.subLabel)
-		findNode(view.tree, n => n.type === 'Pressable' && textOf(n) === 'Account & token 1').props.onPress()
+		choose(view, l => l === 'Account & token 1')
 		await view.settle()
 		check('choosing it again clears the filter', findNodes(view.tree, n => n.type === 'Design.TableRow' && n.props.trailing).length === 6)
 
@@ -571,14 +594,14 @@ async function pluginTests(real) {
 		await sleep(50)
 		await view.settle()
 		check('with one whitelisted and the webhook ignored nothing needs attention', /No serious problems found/.test(textOf(view.tree)), textOf(view.tree).slice(0, 250))
-		findNode(view.tree, n => n.type === 'Pressable' && textOf(n) === 'Whitelisted 1').props.onPress()
+		choose(view, l => l === 'Whitelisted 1')
 		await view.settle()
 		const wlRows = findNodes(view.tree, n => n.type === 'Design.TableRow' && n.props.trailing).map(n => n.props.label)
 		check('the Whitelisted chip lists only the whitelisted plugins, with its count', wlRows.length === 1 && wlRows[0] === 'Totally Legit', wlRows)
-		findNode(view.tree, n => n.type === 'Pressable' && textOf(n).startsWith('Attention')).props.onPress()
+		choose(view, l => l.startsWith('Attention'))
 		await view.settle()
 		check('Attention is empty when the only serious plugin is whitelisted and the other one ignored', !!row(view, 'Nothing needs attention') && !row(view, 'Totally Legit'))
-		findNode(view.tree, n => n.type === 'Pressable' && textOf(n).startsWith('All')).props.onPress()
+		choose(view, l => l.startsWith('All'))
 		await view.settle()
 		check('a whitelisted plugin keeps its real risk badge and its row says Whitelisted', /Whitelisted · /.test(row(view, 'Totally Legit').props.subLabel) && findNode(row(view, 'Totally Legit').props.trailing, n => true) !== undefined, row(view, 'Totally Legit').props)
 		await openTab(view, 'Options')

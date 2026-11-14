@@ -14,7 +14,7 @@ import {
 	VT_DOMAINS_PER_RUN,
 } from './constants'
 import { diag } from './diag'
-import { findDuplicates, stringsOf } from './duplicates'
+import { findDuplicates, phrasesOf, stringsOf } from './duplicates'
 import { sha256 } from './hash'
 import { RULES } from './rules'
 import { judge, needsAttention, RISK_LABEL, scanPlugin } from './scan'
@@ -391,6 +391,7 @@ function createAuditor() {
 							inputs.push({
 								scan,
 								strings: plugin.script ? stringsOf(plugin.script) : new Set(),
+								phrases: plugin.script ? phrasesOf(plugin.script) : new Set(),
 							})
 							timings.push({
 								id: plugin.id,
