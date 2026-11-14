@@ -121,6 +121,24 @@ assert.equal(JSON.parse(wrapped.data.rows)[0].message.avatarURL, 'https://cdn.di
 const unchanged = { rows: [{ message: { avatarURL: 'https://cdn.discordapp.com/avatars/7/static.webp' } }] };
 assert.equal(commands.updateRows(1, unchanged).data, unchanged);
 assert.equal(nativeChat.updateRows(1, '{bad-json').data, '{bad-json');
+// A picture in a message's components without proxyUrl and loadingState (a Roblox link preview) would stop the native
+// chat from drawing the message: it gets its own address and the "loaded" state, and nothing else changes.
+const robloxPicture = Object.freeze({ url: 'https://tr.rbxcdn.com/abc/768/432/Image/Webp/noFilter', width: 768, height: 432, contentType: 'image/webp', srcIsAnimated: false });
+const goodPicture = Object.freeze({ url: 'https://cdn.discordapp.com/x.png', proxyUrl: 'https://media.discordapp.net/x.png', loadingState: 2, width: 1, height: 1, contentType: 'image/png' });
+const componentRows = { rows: [{ message: { content: [], components: Object.freeze([{ type: 'mediaGallery', items: [{ media: robloxPicture, spoiler: false }, { media: goodPicture }], label: 'keep' }]) } }] };
+const repairedRows = commands.updateRows('components', componentRows).data.rows[0].message.components[0];
+assert.equal(repairedRows.items[0].media.proxyUrl, robloxPicture.url);
+assert.equal(repairedRows.items[0].media.loadingState, 2);
+assert.equal(repairedRows.items[0].media.contentType, 'image/webp');
+assert.equal(repairedRows.items[0].spoiler, false);
+assert.equal(repairedRows.items[1].media, goodPicture);
+assert.equal(repairedRows.label, 'keep');
+assert.equal(robloxPicture.proxyUrl, undefined);
+const repairedJSON = JSON.parse(nativeChat.updateRows('json', JSON.stringify(componentRows.rows)).data)[0].message.components[0].items[0].media;
+assert.equal(repairedJSON.proxyUrl, robloxPicture.url);
+assert.equal(repairedJSON.loadingState, 2);
+const fineComponents = { rows: [{ message: { components: [{ items: [{ media: goodPicture }], content: 'a link https://x.y' }] } }] };
+assert.equal(commands.updateRows('fine', fineComponents).data, fineComponents);
 // Chat may deliberately omit decoration URLs even though cached users have
 // decoration assets (the beta12 phone report: 209 binds, zero frame loads).
 const decoratedUsers = {

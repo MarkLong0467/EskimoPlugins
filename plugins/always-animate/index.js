@@ -8,7 +8,7 @@
  * Uses Valenced's documented runtime API; no desktop webpack patches.
  */
   'use strict';
-  var VERSION = '4.1.2';
+  var VERSION = '4.1.3';
   var defaults = { images: true, emojis: true, stickers: true, cosmetics: true, gifs: true, motion: true };
   var storage;
   var stats = {};
@@ -530,6 +530,38 @@
         if (!f) { f = { skip: SKIP_KEY.test(key), avatar: /avatar/i.test(key) }; if (keyFlags.size < 4000) keyFlags.set(key, f); }
         return f;
       }
+      // A picture in a message's components (a link preview such as Roblox's, a media gallery) that reaches the native chat
+      // without proxyUrl or loadingState stops the whole message from being drawn ("Fields [proxyUrl, loadingState] are
+      // required for type ... UnfurledMediaItem"). Such a picture is given its own address and Discord's "loaded" state;
+      // nothing else in the components is changed.
+      var MEDIA_LOADED = 2;
+      function repairMedia(value, depth) {
+        if (depth > 12) return value;
+        var copy = value, i, item, next;
+        if (Array.isArray(value)) {
+          for (i = 0; i < value.length; i++) {
+            item = value[i];
+            if (!item || typeof item !== 'object') continue;
+            next = repairMedia(item, depth + 1);
+            if (next !== item) { if (copy === value) copy = value.slice(); copy[i] = next; }
+          }
+          return copy;
+        }
+        if (typeof value.url === 'string' && value.url && (value.proxyUrl == null || value.loadingState == null) &&
+            ('contentType' in value || 'srcIsAnimated' in value || 'placeholderVersion' in value || 'originalContentType' in value)) {
+          copy = Object.assign({}, value);
+          if (copy.proxyUrl == null) copy.proxyUrl = value.url;
+          if (copy.loadingState == null) copy.loadingState = MEDIA_LOADED;
+          stats.mediaRepairs = (stats.mediaRepairs || 0) + 1;
+        }
+        for (var key in value) {
+          item = value[key];
+          if (!item || typeof item !== 'object' || !Object.prototype.hasOwnProperty.call(value, key)) continue;
+          next = repairMedia(item, depth + 1);
+          if (next !== item) { if (copy === value) copy = Object.assign({}, value); copy[key] = next; }
+        }
+        return copy;
+      }
       function rewriteChatPayload(payload) {
         var asJSON = typeof payload === 'string';
         var root = payload;
@@ -584,7 +616,13 @@
             Object.keys(value).forEach(function (key) {
               // Chat text, attachments, embeds and other parts that never hold an avatar keep their exact contents.
               var flags = flagsOf(key);
-              if (flags.skip) return;
+              if (flags.skip) {
+                if (key === 'components') {
+                  var repaired = value[key] && typeof value[key] === 'object' ? repairMedia(value[key], 0) : value[key];
+                  if (repaired !== value[key]) { if (copy === value) copy = Object.assign({}, value); copy[key] = repaired; }
+                }
+                return;
+              }
               var next = walk(value[key], avatarNode || flags.avatar, depth + 1, key);
               if (next !== value[key]) { if (copy === value) copy = Object.assign({}, value); copy[key] = next; }
             });
