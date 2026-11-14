@@ -24,6 +24,12 @@ Open the plugin's settings. Servers are listed with the most people first, each 
 - Tap a **picture** to open the profile.
 - Tap an **ID** to copy it. Long press a user ID for Copy User ID and View Profile, or a server ID for Copy Server ID.
 - Long press a **name** to see when that person was last seen.
+- **Remove** one person: long press their ID, then Remove from this group (in the search, Remove from every group).
+- **Remove a group** (a server, Friends, DMs or a group DM): long press its name, then Remove this group.
+- **Clear all data**: the button at the bottom. Both ask first.
+
+Friends, DMs, server owners and members of servers you own are collected again the next time Discord connects, so
+someone removed from those comes back if they are still there.
 - **Filter by tag, username** finds people by part of their name. It is case-sensitive, as in Equicord.
 
 ## Saving
@@ -39,8 +45,7 @@ few minutes could be lost there).
 - Right-click menus are long presses, and the tooltip on a name is a long press, because a phone has neither.
 - On a phone the plugin can start before Discord has your servers, so owners and members are gone through again once Discord
   connects.
-
-- Friends, DMs and group DMs are added (see above).
+- Friends, DMs and group DMs are added, and people, groups or everything can be removed (see above).
 
 ## Files
 

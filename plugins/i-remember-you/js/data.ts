@@ -261,6 +261,50 @@ export class Data {
 	}
 }
 
+/**
+ * Changes the list and saves it at once: the running plugin's list and the saved one, so nothing removed comes back from
+ * the other. Not in Equicord, which has no way to remove anything.
+ */
+function edit(change: (collection: UsersCollection) => void): void {
+	if (current) {
+		change(current.usersCollection)
+		current.updateStorage()
+		return
+	}
+	const saved: UsersCollection = JSON.parse(JSON.stringify(store.get('data')))
+	change(saved)
+	store.replace('data', saved)
+}
+
+/** Forgets one person: in one group, or in every group when no group is given. An emptied group goes too. */
+export function removeUser(userId: string, groupKey?: string): void {
+	edit(collection => {
+		for (const key of groupKey ? [groupKey] : Object.keys(collection)) {
+			const group = collection[key]
+			if (!group) continue
+			delete group.users[userId]
+			if (Object.keys(group.users).length === 0) delete collection[key]
+		}
+	})
+	diag.log('edit', 'a person was removed')
+}
+
+/** Forgets a whole group: a server, Friends, DMs or a group DM. */
+export function removeGroup(groupKey: string): void {
+	edit(collection => {
+		delete collection[groupKey]
+	})
+	diag.log('edit', 'a group was removed')
+}
+
+/** Forgets everyone. */
+export function clearAll(): void {
+	edit(collection => {
+		for (const key of Object.keys(collection)) delete collection[key]
+	})
+	diag.log('edit', 'everything was cleared')
+}
+
 /** What the last passes found, for the report (counts only). */
 export const found: Record<string, string> = {}
 

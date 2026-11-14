@@ -16,7 +16,11 @@ function FlatList(props) {
 	const rows = (props.data ?? []).map(item => React.createElement('Row', { key: props.keyExtractor(item), rowKey: props.keyExtractor(item) }, props.renderItem({ item })))
 	return React.createElement('FlatList', props, props.ListHeaderComponent, ...rows, props.ListFooterComponent)
 }
-const overrides = { react: { ReactNative: { FlatList } } }
+/** Alerts the plugin opens, newest last; a test presses their buttons by text. */
+const alerts = []
+const Alert = { alert: (title, message, buttons) => alerts.push({ title, message, buttons }) }
+const press = text => alerts.at(-1).buttons.find(b => b.text === text).onPress()
+const overrides = { react: { ReactNative: { FlatList, Alert } } }
 
 const ME = '100000000000000001'
 const user = (id, username, more = {}) => ({ id, username, discriminator: '0', tag: `${username}#0`, getAvatarURL: () => `https://cdn.discordapp.com/avatars/${id}/a.png`, ...more })
@@ -126,6 +130,32 @@ const GUILDS = {
 	findNodes(heading, n => typeof n.props?.onPress === 'function')[0].props.onPress()
 	check('tapping the server id copies it', s2.copied.includes('g2') && s2.toasts().includes('Server ID copied to clipboard'))
 	check('the dm group has no id to tap', findNodes(row('g:dm'), n => typeof n.props?.onPress === 'function').length === 0)
+
+	// Removing.
+	const rowKeys = () => rowsOf(v2).map(r => r.key)
+	findNodes(row('g1:300000000000000003'), n => typeof n.props?.onLongPress === 'function').find(n => textOf(n) === '300000000000000003').props.onLongPress()
+	check('a long press on an id offers Remove from this group', alerts.at(-1).buttons.some(b => b.text === 'Remove from this group'), alerts.at(-1))
+	press('Remove from this group')
+	await v2.settle()
+	check('the person is gone from that group, and the list is saved at once', !rowKeys().includes('g1:300000000000000003') && !s2.storage.cache.data.g1.users['300000000000000003'], rowKeys())
+	check('and still in the other groups they are in', rowKeys().some(r => r === 'gdm:gd1:900000000000000009'))
+	findNodes(row('g:g2'), n => typeof n.props?.onLongPress === 'function')[0].props.onLongPress()
+	check('a long press on a server name offers Copy Server ID and Remove this group', ['Copy Server ID', 'Remove this group'].every(t => alerts.at(-1).buttons.some(b => b.text === t)), alerts.at(-1).buttons.map(b => b.text))
+	press('Remove this group')
+	check('removing a group asks first', /Remove "Their Server"/.test(alerts.at(-1).title), alerts.at(-1).title)
+	press('Remove')
+	await v2.settle()
+	check('the group is gone and saved', !rowKeys().includes('g:g2') && !s2.storage.cache.data.g2, rowKeys())
+	findNodes(row('g:friends'), n => typeof n.props?.onLongPress === 'function')[0].props.onLongPress()
+	check('Friends can be removed too, without a server id to copy', alerts.at(-1).buttons.map(b => b.text).join() === 'Remove this group,Cancel', alerts.at(-1).buttons.map(b => b.text))
+	const clear = findNode(v2.tree, n => n.type === 'Design.Button' && n.props.text === 'Clear all data')
+	check('there is a Clear all data button', !!clear)
+	clear.props.onPress()
+	check('it asks first', alerts.at(-1).title === 'Clear all data?')
+	press('Clear all')
+	await v2.settle()
+	check('everything is cleared and saved', rowsOf(v2).length === 0 && Object.keys(s2.storage.cache.data).length === 0 && textOf(v2.tree).includes("It's empty right now"), rowKeys())
+	check('with nothing left, the button is gone', !findNode(v2.tree, n => n.type === 'Design.Button' && n.props.text === 'Clear all data'))
 
 	// When Valenced's list of stores has no RelationshipStore, it is found by what it has.
 	const { RelationshipStore, ...noRelationships } = stores

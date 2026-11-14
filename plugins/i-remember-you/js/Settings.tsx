@@ -12,7 +12,7 @@ import { Alert, FlatList, Image, Pressable, View } from 'react-native'
 import { DebugSection } from '../../../shared/kmmiio/Debug'
 import { IntroCard } from '../../../shared/kmmiio/Intro'
 import { store } from './config'
-import { current, isGuildKey } from './data'
+import { clearAll, current, isGuildKey, removeGroup, removeUser } from './data'
 import { diag } from './diag'
 import { copyWithToast, openUserProfile, stores, toast } from './discord'
 import type { PluginSettingsComponent } from '@valenced/plugins/types'
@@ -30,6 +30,8 @@ const INTRO =
 const EMPTY = "It's empty right now"
 const SERVER_COPIED = 'Server ID copied to clipboard'
 const USER_COPIED = 'User ID copied to clipboard'
+const REMOVE_HELP =
+	'To remove one person, long press their ID. To remove a server, Friends, DMs or a group DM, long press its name.'
 
 /** The date a person was last seen, as Equicord's tooltip says it. */
 function tooltipText(user: IStorageUser) {
@@ -45,27 +47,85 @@ function tooltipText(user: IStorageUser) {
 	return `${user.username ?? user.tag}, updated at ${updatedAtContent}`
 }
 
-/** Equicord's server context menu: Copy Server ID. */
-function serverMenu(id: string) {
-	Alert.alert('Server Options', id, [
+/** Comes back after a removal: who is collected by itself is found again the next time Discord connects. */
+const COMES_BACK =
+	'Friends, DMs, server owners and members of servers you own are collected again the next time Discord connects.'
+
+/** Draws the list again after something was removed. Set by the screen. */
+let redraw = () => {}
+
+/** Equicord's server context menu (Copy Server ID), with Remove this group. Also for Friends, DMs and group DMs. */
+function groupMenu(item: { groupKey: string; id: string; name: string; isGuild: boolean }) {
+	Alert.alert(item.isGuild ? 'Server Options' : item.name, item.isGuild ? item.id : undefined, [
+		...(item.isGuild
+			? [
+					{
+						text: 'Copy Server ID',
+						onPress: () => copyWithToast(item.id, SERVER_COPIED),
+					},
+				]
+			: []),
 		{
-			text: 'Copy Server ID',
-			onPress: () => copyWithToast(id, SERVER_COPIED),
+			text: 'Remove this group',
+			style: 'destructive' as const,
+			onPress: () =>
+				Alert.alert(`Remove "${item.name}"?`, `Everyone in it is forgotten. ${COMES_BACK}`, [
+					{ text: 'Keep it', style: 'cancel' },
+					{
+						text: 'Remove',
+						style: 'destructive',
+						onPress: () => {
+							removeGroup(item.groupKey)
+							toast(`Removed ${item.name}`)
+							redraw()
+						},
+					},
+				]),
 		},
 		{ text: 'Cancel', style: 'cancel' },
 	])
 }
 
-/** Equicord's user context menu: Copy User ID and View Profile, offered when Discord still knows the user. */
-function userMenu(user: IStorageUser) {
-	if (!stores().UserStore?.getUser(user.id)) return
+/**
+ * Equicord's user context menu: Copy User ID, and View Profile when Discord still knows the user. With Remove: from this
+ * group, or from every group in the search results.
+ */
+function userMenu(user: IStorageUser, groupKey?: string) {
+	const known = !!stores().UserStore?.getUser(user.id)
 	Alert.alert('User Options', user.tag, [
 		{
 			text: 'Copy User ID',
 			onPress: () => copyWithToast(user.id, USER_COPIED),
 		},
-		{ text: 'View Profile', onPress: () => openUserProfile(user.id) },
+		...(known
+			? [{ text: 'View Profile', onPress: () => openUserProfile(user.id) }]
+			: []),
+		{
+			text: groupKey ? 'Remove from this group' : 'Remove from every group',
+			style: 'destructive' as const,
+			onPress: () => {
+				removeUser(user.id, groupKey)
+				toast(`Removed ${user.tag}`)
+				redraw()
+			},
+		},
 		{ text: 'Cancel', style: 'cancel' },
+	])
+}
+
+/** Clear all data, after asking. */
+function confirmClear() {
+	Alert.alert('Clear all data?', `Everyone is forgotten. This cannot be undone. ${COMES_BACK}`, [
+		{ text: 'Keep it', style: 'cancel' },
+		{
+			text: 'Clear all',
+			style: 'destructive',
+			onPress: () => {
+				clearAll()
+				toast('All data cleared')
+				redraw()
+			},
+		},
 	])
 }
 
@@ -73,9 +133,12 @@ function userMenu(user: IStorageUser) {
 function UserRow({
 	user,
 	allowOwner = true,
+	groupKey,
 }: {
 	user: IStorageUser
 	allowOwner?: boolean
+	/** The group the row is in; none for a search result. */
+	groupKey?: string
 }) {
 	return (
 		<View
@@ -109,7 +172,7 @@ function UserRow({
 				</Pressable>
 				<Pressable
 					onPress={() => copyWithToast(user.id, USER_COPIED)}
-					onLongPress={() => userMenu(user)}
+					onLongPress={() => userMenu(user, groupKey)}
 				>
 					<Design.Text variant="text-xs/medium" color="text-muted">
 						{user.id}
@@ -120,8 +183,14 @@ function UserRow({
 	)
 }
 
-/** The heading of a server (or of DMs): its name and, for a server, its id. */
-function GroupHeader({ name, id, isGuild }: { name: string; id: string; isGuild: boolean }) {
+/** The heading of a group: its name and, for a server, its id. A long press on either offers the group's menu. */
+function GroupHeader(item: {
+	groupKey: string
+	name: string
+	id: string
+	isGuild: boolean
+}) {
+	const { name, id, isGuild } = item
 	return (
 		<View
 			style={{
@@ -134,13 +203,15 @@ function GroupHeader({ name, id, isGuild }: { name: string; id: string; isGuild:
 				paddingBottom: 4,
 			}}
 		>
-			<Design.Text variant="heading-md/bold" color="text-strong">
-				{name}
-			</Design.Text>
+			<Pressable onLongPress={() => groupMenu(item)}>
+				<Design.Text variant="heading-md/bold" color="text-strong">
+					{name}
+				</Design.Text>
+			</Pressable>
 			{isGuild ? (
 				<Pressable
 					onPress={() => copyWithToast(id, SERVER_COPIED)}
-					onLongPress={() => serverMenu(id)}
+					onLongPress={() => groupMenu(item)}
 				>
 					<Design.Text variant="text-sm/medium" color="text-muted">
 						{`(${id})`}
@@ -153,8 +224,21 @@ function GroupHeader({ name, id, isGuild }: { name: string; id: string; isGuild:
 
 /** A line of the list: a heading or a person. */
 type Item =
-	| { kind: 'header'; key: string; name: string; id: string; isGuild: boolean }
-	| { kind: 'user'; key: string; user: IStorageUser; allowOwner: boolean }
+	| {
+			kind: 'header'
+			key: string
+			groupKey: string
+			name: string
+			id: string
+			isGuild: boolean
+	  }
+	| {
+			kind: 'user'
+			key: string
+			user: IStorageUser
+			allowOwner: boolean
+			groupKey?: string
+	  }
 
 /** The servers, the most people first, each with its people. */
 function rowsOf(usersCollection: UsersCollection): Item[] {
@@ -168,9 +252,15 @@ function rowsOf(usersCollection: UsersCollection): Item[] {
 		}))
 		.sort((a, b) => b.users.length - a.users.length)) {
 		const isGuild = isGuildKey(key, id)
-		items.push({ kind: 'header', key: `g:${key}`, name, id, isGuild })
+		items.push({ kind: 'header', key: `g:${key}`, groupKey: key, name, id, isGuild })
 		for (const user of users)
-			items.push({ kind: 'user', key: `${key}:${user.id}`, user, allowOwner: true })
+			items.push({
+				kind: 'user',
+				key: `${key}:${user.id}`,
+				user,
+				allowOwner: true,
+				groupKey: key,
+			})
 	}
 	return items
 }
@@ -195,6 +285,8 @@ export default function Settings({ api }: Props) {
 	store.attach(api.jsonStorage)
 	api.jsonStorage.use()
 	const [search, setSearch] = useState('')
+	const [, setTick] = useState(0)
+	redraw = () => setTick(tick => tick + 1)
 	// The running plugin's list has the people met in the last three minutes too; the saved one is used when it is off.
 	const usersCollection = current?.usersCollection ?? store.get('data')
 	const empty = Object.keys(usersCollection).length === 0
@@ -236,13 +328,34 @@ export default function Settings({ api }: Props) {
 			}
 			renderItem={({ item }) =>
 				item.kind === 'header' ? (
-					<GroupHeader name={item.name} id={item.id} isGuild={item.isGuild} />
+					<GroupHeader
+						groupKey={item.groupKey}
+						name={item.name}
+						id={item.id}
+						isGuild={item.isGuild}
+					/>
 				) : (
-					<UserRow user={item.user} allowOwner={item.allowOwner} />
+					<UserRow
+						user={item.user}
+						allowOwner={item.allowOwner}
+						groupKey={item.groupKey}
+					/>
 				)
 			}
 			ListFooterComponent={
-				<View style={{ paddingTop: 22 }}>
+				<View style={{ paddingTop: 22, gap: 22 }}>
+					{empty ? null : (
+						<View style={{ marginHorizontal: 16, gap: 6 }}>
+							<Design.Button
+								text="Clear all data"
+								variant="destructive"
+								onPress={confirmClear}
+							/>
+							<Design.Text variant="text-xs/medium" color="text-muted">
+								{REMOVE_HELP}
+							</Design.Text>
+						</View>
+					)}
 					<DebugSection diag={diag} />
 				</View>
 			}
