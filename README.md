@@ -53,7 +53,7 @@ Updates arrive through the same link.
 | [Haptics](plugins/haptics) | 0.1.3 | turn Discord's buzzing on or off, with a log of what buzzed |
 | [Hide Slash Apps](plugins/hide-slash-apps) | 1.1.0 | long press an app or command in the / menu to hide it everywhere or in one server, switch off built-in commands (for bots like MEE6) |
 | [HypeSquad Switcher](plugins/hypesquad) | 1.1.2 | change your HypeSquad house, or leave it, in one tap |
-| [I Remember You](plugins/i-remember-you) | 1.1.1 | Locally saves everyone you've been communicating with (including servers), in case of loss: your friends, DMs and group DMs, people you mention or reply to, the owners of your servers and the members of servers you own. |
+| [I Remember You](plugins/i-remember-you) | 1.2.0 | Locally saves everyone you've been communicating with (including servers), in case of loss: your friends, DMs and group DMs, people you mention or reply to, the owners of your servers and the members of servers you own. |
 | [Liquid Glass](plugins/liquid-glass) | 1.5.1 | Gives Discord a frosted glass look: see-through buttons, cards, text fields and sheets, in a colour and strength you pick. |
 | [Markdown Toolbar](plugins/markdown-toolbar) | 1.2.4 | a floating formatting bar under the chat input that pops up with the keyboard |
 | [Message Preview](plugins/message-preview) | 1.0.3 | preview your message before sending it |
