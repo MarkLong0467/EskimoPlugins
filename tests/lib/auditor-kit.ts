@@ -1,6 +1,7 @@
 /** The pure parts of Plugin Auditor, bundled by `tests/plugin-auditor.test.cjs` so they can be tested without a phone. */
 export {
 	findDuplicates,
+	phrasesOf,
 	stringsOf,
 } from '../../plugins/plugin-auditor/js/duplicates'
 export { base64Url, sha256, utf8 } from '../../plugins/plugin-auditor/js/hash'
