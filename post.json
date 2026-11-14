@@ -243,6 +243,13 @@
       "suffix": ""
     },
     {
+      "id": "marklong.reverse-image-search",
+      "name": "Reverse Image Search",
+      "version": "1.0.0",
+      "short": "Adds ImageSearch to image context menus: hold a picture, or open its menu in the viewer, then…",
+      "suffix": ""
+    },
+    {
       "id": "marklong.rich-presence",
       "name": "Rich Presence",
       "version": "2.1.3",

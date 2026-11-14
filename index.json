@@ -4506,6 +4506,32 @@
       "contributors": [
         "zoodogood, keircn and tt (IRememberYou for Equicord, https://equicord.org/plugins/IRememberYou)"
       ]
+    },
+    "marklong.reverse-image-search": {
+      "name": "Reverse Image Search",
+      "description": "Adds ImageSearch to image context menus: hold a picture, or open its menu in the viewer, then Search Image with Google, Yandex, SauceNAO, IQDB, Bing, TinEye, ImgOps or all of them.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.reverse-image-search@1.0.0.zip",
+          "sha256": "a7ec706d17b52018f6abe4f800ec1fa16dc9e029583faec473a78e1a8c7c379e",
+          "size": 6351,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "contributors": [
+        "Ven and Nuckyz (ReverseImageSearch for Equicord, https://equicord.org/plugins/ReverseImageSearch)"
+      ]
     }
   }
 }
