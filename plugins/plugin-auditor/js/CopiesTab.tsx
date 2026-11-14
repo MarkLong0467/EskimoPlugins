@@ -25,7 +25,7 @@ function advice(group: DuplicateGroup): string {
 		r => r.startsWith('Identical') || r.startsWith('Nearly'),
 	)
 	if (overlap && !copied)
-		return `${nameOf(overlap.plugin)} may not be needed: ${nameOf(overlap.by)} has an option that does the same ("${overlap.option}"). Turn that option on and switch ${nameOf(overlap.plugin)} off. With both on, the job can be done twice.`
+		return `It is suspected that ${nameOf(overlap.plugin)} is the same as the "${overlap.option}" option in ${nameOf(overlap.by)}. Worth checking, as you might only need one of the plugins.`
 	if (group.reasons.some(r => r.startsWith('Identical')))
 		return 'These are exactly the same file. Keep one and remove the others.'
 	if (group.reasons.some(r => r.startsWith('Nearly')))
