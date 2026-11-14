@@ -1,0 +1,23 @@
+{
+	"format": 1,
+	"id": "marklong.i-remember-you",
+	"name": "I Remember You",
+	"description": "Locally saves everyone you've been communicating with (including servers), in case of loss: people you mention or reply to, the owners of your servers and the members of servers you own.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [
+		"zoodogood, keircn and tt (IRememberYou for Equicord, https://equicord.org/plugins/IRememberYou)"
+	],
+	"icon": "EyeIcon",
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
