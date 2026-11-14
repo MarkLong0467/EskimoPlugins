@@ -62,7 +62,7 @@ Updates arrive through the same link.
 | [No Suggestions](plugins/no-suggestions) | 1.3.2 | removes the Suggested channels section that keeps coming back |
 | [Pastelize](plugins/pastelize) | 1.0.0 | Gives every name in chat its own pastel colour, worked out from the person's ID, so people without a role colour are easy to tell apart. |
 | [Pin DMs](plugins/pin-dms) | 1.15.4 | pin DMs and group chats to the top, in sections you can fold |
-| [Plugin Auditor](plugins/plugin-auditor) | 1.2.0 | scan your plugins for token access, account changes, downloaded code and suspicious links, find duplicates, and check them on VirusTotal |
+| [Plugin Auditor](plugins/plugin-auditor) | 1.2.1 | scan your plugins for token access, account changes, downloaded code and suspicious links, find duplicates, and check them on VirusTotal |
 | [Quiet Hours](plugins/quiet-hours) | 1.0.0 | switches your status to Do Not Disturb on a schedule and puts it back, with one-tap skip tonight |
 | [Raw Viewer](plugins/nef-viewer) | 1.1.2 | shows RAW photos (Nikon, Canon, Sony, Fujifilm and more) in chat, with a photo info sheet |
 | [Repo Post](plugins/repo-post) | 1.0.1 | keeps your repository thread post up to date with the plugin list and versions |
