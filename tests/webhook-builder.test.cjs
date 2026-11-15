@@ -222,6 +222,12 @@ const COMMIT = 420
 	press(view, 'Send')
 	check('a name with "discord" in it is stopped before sending', lastAlert()?.title === 'Discord would refuse this message' && lastAlert().body.includes('discord'), lastAlert())
 	await type(view, 'Name', 'News Bot')
+	findNode(view.tree, n => n.type === 'Design.TableSwitchRow' && n.props.label === 'Hide embeds and link previews').props.onValueChange(true)
+	await view.settle()
+	press(view, 'Send')
+	check('hiding embeds while the message has some is stopped, since Discord would hide them', lastAlert()?.title === 'Discord would refuse this message' && lastAlert().body.includes('hide your embeds'), lastAlert())
+	findNode(view.tree, n => n.type === 'Design.TableSwitchRow' && n.props.label === 'Hide embeds and link previews').props.onValueChange(false)
+	await view.settle()
 
 	// Save, paste, copy.
 	await openTab(0)

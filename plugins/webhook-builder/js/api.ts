@@ -73,7 +73,7 @@ export class ApiError extends Error {
 /** A short text for an error, for the screen. */
 export function describeError(error: unknown): string {
 	if (error instanceof ApiError) {
-		if (error.status === 404 || error.code === 10015)
+		if (error.code === 10015)
 			return 'Discord says that webhook does not exist any more'
 		if (error.status === 401 || error.code === 50027)
 			return 'The webhook key is wrong'

@@ -565,7 +565,8 @@ export function ComposeTab({
 					/>
 				)}
 				<Toggle
-					label="Hide link previews"
+					label="Hide embeds and link previews"
+					sub="Discord hides every embed of the message, yours too"
 					value={draft.suppressEmbeds}
 					onChange={v => editDraft(d => void (d.suppressEmbeds = v))}
 				/>

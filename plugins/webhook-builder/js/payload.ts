@@ -200,6 +200,10 @@ export function problems(
 		if (poll.hours < 1 || poll.hours > LIMITS.pollHours)
 			out.push(`A poll lasts 1 to ${LIMITS.pollHours} hours`)
 	}
+	if (draft.suppressEmbeds && draft.embeds.length > 0)
+		out.push(
+			'"Hide embeds and link previews" is on, so Discord would hide your embeds: turn it off under Options in Compose',
+		)
 	tooLong('The post title', draft.threadName, LIMITS.threadName)
 	if (draft.threadId.trim() && !/^\d{15,22}$/.test(draft.threadId.trim()))
 		out.push('The thread must be its id (a long number)')
