@@ -4532,6 +4532,32 @@
       "contributors": [
         "Ven and Nuckyz (ReverseImageSearch for Equicord, https://equicord.org/plugins/ReverseImageSearch)"
       ]
+    },
+    "marklong.webhook-builder": {
+      "name": "Webhook Builder",
+      "description": "Discohook inside Discord: make messages with embeds, link buttons and polls and send them with your webhooks. Save, schedule, edit and delete them, find or make webhooks, and hold any message to copy, resend or change it.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.webhook-builder@1.0.0.zip",
+          "sha256": "991c0f5742655fdf2ee2d5a2a1d02a057b73ca75958f84aadf0d5b32790fa3c1",
+          "size": 26780,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "contributors": [
+        "Discohook (https://discohook.app), whose message editor this follows"
+      ]
     }
   }
 }

@@ -332,6 +332,13 @@
       "version": "1.0.1",
       "short": "resolves @unknown-user mentions automatically",
       "suffix": ""
+    },
+    {
+      "id": "marklong.webhook-builder",
+      "name": "Webhook Builder",
+      "version": "1.0.0",
+      "short": "Discohook inside Discord: make messages with embeds, link buttons and polls and send them with…",
+      "suffix": ""
     }
   ]
 }
