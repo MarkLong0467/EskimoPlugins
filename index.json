@@ -4538,7 +4538,7 @@
       "description": "Discohook inside Discord: make messages with embeds, link buttons and polls and send them with your webhooks. Save, schedule, edit and delete them, find or make webhooks, and hold any message to copy, resend or change it.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "1.0.1"
+        "latest": "1.0.2"
       },
       "versions": {
         "1.0.0": {
@@ -4558,6 +4558,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.webhook-builder@1.0.1.zip",
           "sha256": "178f1a4d06dbc37a13f559764c1efa40238a9b61e2d920911d9e6214a4e33ea4",
           "size": 26936,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.0.2": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.webhook-builder@1.0.2.zip",
+          "sha256": "1b0c43d7405bed453fc1ef75922d9a3af40707e472c039b914df5fd76bd76962",
+          "size": 27023,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
