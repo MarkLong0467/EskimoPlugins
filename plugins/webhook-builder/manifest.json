@@ -1,0 +1,23 @@
+{
+	"format": 1,
+	"id": "marklong.webhook-builder",
+	"name": "Webhook Builder",
+	"description": "Discohook inside Discord: make messages with embeds, link buttons and polls and send them with your webhooks. Save, schedule, edit and delete them, find or make webhooks, and hold any message to copy, resend or change it.",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [
+		"Discohook (https://discohook.app), whose message editor this follows"
+	],
+	"icon": "WebhookIcon",
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
