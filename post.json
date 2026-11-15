@@ -336,7 +336,7 @@
     {
       "id": "marklong.webhook-builder",
       "name": "Webhook Builder",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "short": "Discohook inside Discord: make messages with embeds, link buttons and polls and send them with…",
       "suffix": ""
     }
