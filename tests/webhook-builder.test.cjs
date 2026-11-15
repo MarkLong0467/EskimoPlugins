@@ -161,9 +161,9 @@ const COMMIT = 420
 
 	// Compose a message.
 	await openTab(0)
-	await type(view, 'Text', 'Hello {random:there} on {date}')
+	await type(view, 'Text', 'Hello')
 	await type(view, 'Name', 'News Bot')
-	check('what is typed is saved a moment later', saved().draft.content === 'Hello {random:there} on {date}' && saved().draft.username === 'News Bot')
+	check('what is typed is saved a moment later', saved().draft.content === 'Hello' && saved().draft.username === 'News Bot')
 	row(view, 'Add an embed').props.onPress()
 	await view.settle()
 	check('adding an embed opens its editor', !!input(view, 'Title') && !!input(view, 'Description'))
@@ -181,8 +181,11 @@ const COMMIT = 420
 	const embed = saved().draft.embeds[0]
 	check('the embed keeps its title, link, colour, field and gallery', embed.title === 'Big news' && embed.color === '#5865f2' && embed.fields[0].name === 'Where' && embed.gallery[0] === 'https://example.com/2.png', embed)
 	check('the editor shows a preview of the embed', textOf(view.tree).includes('Big news') || JSON.stringify(view.tree).includes('Big news'))
+	// Typing and going back at once keeps what was typed.
+	input(view, 'Description').props.onChange('Typed just before going back')
 	press(view, '← Back to the message')
 	await view.settle()
+	check('what was typed just before going back is kept', saved().draft.embeds[0].description === 'Typed just before going back', saved().draft.embeds[0].description)
 
 	// A link button.
 	press(view, 'Add a row of buttons')
@@ -197,6 +200,8 @@ const COMMIT = 420
 	}
 	await view.settle()
 
+	// Typing and sending at once sends what was typed.
+	input(view, 'Text').props.onChange('Hello {random:there} on {date}')
 	press(view, 'Send')
 	check('it asks before sending', lastAlert()?.title === 'Send this message?')
 	requests.length = 0

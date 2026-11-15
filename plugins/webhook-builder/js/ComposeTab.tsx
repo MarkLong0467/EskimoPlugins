@@ -39,6 +39,7 @@ import {
 	Buttons,
 	Choice,
 	Field,
+	flushFields,
 	Group,
 	Heading,
 	Note,
@@ -248,7 +249,7 @@ function ButtonsEditor({ rows }: { rows: LinkButton[][] }) {
 										x =>
 											void x[r]?.push({
 												label: '',
-												url: 'https://',
+												url: '',
 												emoji: '',
 											}),
 									)
@@ -263,7 +264,7 @@ function ButtonsEditor({ rows }: { rows: LinkButton[][] }) {
 					<Button
 						text="Add a row of buttons"
 						onPress={() =>
-							set(x => void x.push([{ label: '', url: 'https://', emoji: '' }]))
+							set(x => void x.push([{ label: '', url: '', emoji: '' }]))
 						}
 					/>
 				</Buttons>
@@ -371,6 +372,12 @@ export function ComposeTab({
 	const [busy, run] = useBusy()
 	const list = problems(draft, editing ? 'edit' : 'send')
 
+	/** The message with what was just typed in it. */
+	const fresh = () => {
+		flushFields()
+		return state().draft
+	}
+
 	const setTarget = (id: string, on: boolean) =>
 		update(x => {
 			const ids = x.target.webhookIds.filter(w => w !== id)
@@ -378,6 +385,7 @@ export function ComposeTab({
 		})
 
 	const doSend = () => {
+		const draft = fresh()
 		if (editing) {
 			if (stopped(draft, 'edit')) return
 			run(async () => {
@@ -504,7 +512,10 @@ export function ComposeTab({
 								.join(' · ') || 'Empty'
 						}
 						arrow
-						onPress={() => onEditEmbed(e.key)}
+						onPress={() => {
+							flushFields()
+							onEditEmbed(e.key)
+						}}
 					/>
 				))}
 				<Row
@@ -512,6 +523,7 @@ export function ComposeTab({
 					onPress={
 						embedCount(draft) < LIMITS.embeds
 							? () => {
+									flushFields()
 									const embed = emptyEmbed()
 									editDraft(d => void d.embeds.push(embed))
 									onEditEmbed(embed.key)
@@ -594,14 +606,15 @@ export function ComposeTab({
 				{editing ? null : (
 					<Button
 						text="Send later"
-						onPress={() => askSchedule(draft, chosen)}
+						onPress={() => askSchedule(fresh(), chosen)}
 					/>
 				)}
 			</Buttons>
 			<Buttons>
 				<Button
 					text="Save"
-					onPress={() =>
+					onPress={() => {
+						const draft = fresh()
 						ask({
 							title: 'Save this message',
 							note: 'A saved message with the same name is replaced.',
@@ -618,12 +631,15 @@ export function ComposeTab({
 								toast('Saved')
 							},
 						})
-					}
+					}}
 				/>
 				<Button
 					text="Copy JSON"
 					onPress={() =>
-						copy(exportDraft(draft), 'Copied the JSON (Discohook takes it too)')
+						copy(
+							exportDraft(fresh()),
+							'Copied the JSON (Discohook takes it too)',
+						)
 					}
 				/>
 				<Button text="Paste JSON" onPress={() => void pasteJson()} />

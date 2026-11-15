@@ -20,9 +20,21 @@ interface FieldProps {
 	secret?: boolean
 }
 
+/** The text boxes on screen that have typing not saved yet, each with what saves it. */
+const pending = new Set<() => void>()
+
 /**
- * A text box that saves a moment after you stop typing, not on every key. It follows the saved value when that changes
- * from somewhere else (a message loaded into the editor).
+ * Saves what was typed into every text box and not saved yet. Called before anything reads the message (sending,
+ * saving, copying), so the last few keys are never left out.
+ */
+export function flushFields(): void {
+	for (const save of [...pending]) save()
+}
+
+/**
+ * A text box that saves a moment after you stop typing, not on every key. Typing not saved yet is saved when the box
+ * goes away (going back, changing tabs) or when {@link flushFields} is called. It follows the saved value when that
+ * changes from somewhere else (a message loaded into the editor).
  */
 export function Field({
 	label,
@@ -36,20 +48,30 @@ export function Field({
 }: FieldProps) {
 	const [typed, setTyped] = useState(value)
 	const committed = useRef(value)
+	const latest = useRef(value)
+	const save = useRef<() => void>(() => {})
+	save.current = () => {
+		pending.delete(saveNow.current)
+		if (latest.current === committed.current) return
+		committed.current = latest.current
+		onChange(latest.current)
+	}
+	// One function per box, so it can be taken off the pending list.
+	const saveNow = useRef(() => save.current())
 	useEffect(() => {
 		if (value !== committed.current) {
 			committed.current = value
+			latest.current = value
 			setTyped(value)
 		}
 	}, [value])
 	useEffect(() => {
 		if (typed === committed.current) return
-		const timer = setTimeout(() => {
-			committed.current = typed
-			onChange(typed)
-		}, COMMIT_MS)
+		const timer = setTimeout(() => save.current(), COMMIT_MS)
 		return () => clearTimeout(timer)
 	}, [typed])
+	// Saves what is left when the box goes away.
+	useEffect(() => () => save.current(), [])
 	const count = max ? `${typed.length}/${max}` : ''
 	const over = !!max && typed.length > max
 	const help = [description, count].filter(Boolean).join(' · ') || undefined
@@ -66,7 +88,11 @@ export function Field({
 				status={over ? 'error' : 'default'}
 				secureTextEntry={secret}
 				size="md"
-				onChange={(next: string) => setTyped(next)}
+				onChange={(next: string) => {
+					latest.current = next
+					pending.add(saveNow.current)
+					setTyped(next)
+				}}
 			/>
 		</View>
 	)

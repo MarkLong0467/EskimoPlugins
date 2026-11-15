@@ -13,7 +13,7 @@ import { diag } from './diag'
 import { EmbedEditor } from './EmbedEditor'
 import { LibraryTab } from './LibraryTab'
 import { setStorage, state, subscribe, update } from './state'
-import { Group, Heading, Note, Toggle } from './ui'
+import { flushFields, Group, Heading, Note, Toggle } from './ui'
 import { WebhookScreen, WebhooksTab } from './WebhooksTab'
 import type { PluginSettingsComponent } from '@valenced/plugins/types'
 import type { ComponentProps, ReactNode } from 'react'
@@ -87,7 +87,10 @@ export default function Settings({ api }: Props) {
 		],
 		pageWidth,
 		defaultIndex: TAB_IDS.indexOf(tab),
-		onSetActiveIndex: (index: number) => setTab(TAB_IDS[index] ?? 'compose'),
+		onSetActiveIndex: (index: number) => {
+			flushFields()
+			setTab(TAB_IDS[index] ?? 'compose')
+		},
 	})
 
 	const goCompose = () => {

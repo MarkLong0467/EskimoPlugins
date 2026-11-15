@@ -12,6 +12,7 @@ import {
 	Buttons,
 	Choice,
 	Field,
+	flushFields,
 	Group,
 	Heading,
 	Note,
@@ -168,7 +169,13 @@ export function EmbedEditor({
 	return (
 		<Design.Stack spacing={18} style={{ paddingVertical: 16 }}>
 			<Buttons>
-				<Button text="← Back to the message" onPress={onBack} />
+				<Button
+					text="← Back to the message"
+					onPress={() => {
+						flushFields()
+						onBack()
+					}}
+				/>
 			</Buttons>
 			<Note
 				tone={total > LIMITS.embedTotal ? 'danger' : 'muted'}
@@ -316,7 +323,7 @@ export function EmbedEditor({
 				<Buttons>
 					<Button
 						text="Add a gallery picture"
-						onPress={() => set(e => void e.gallery.push('https://'))}
+						onPress={() => set(e => void e.gallery.push(''))}
 					/>
 				</Buttons>
 			) : null}
