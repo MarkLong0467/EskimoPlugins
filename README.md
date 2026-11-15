@@ -29,7 +29,7 @@ Updates arrive through the same link.
 ## Plugins
 
 <!-- plugins:start -->
-46 plugins. Tap a name for what it does and how it works.
+47 plugins. Tap a name for what it does and how it works.
 
 | Plugin | Version | What it does |
 | ------ | ------- | ------------ |
@@ -79,6 +79,7 @@ Updates arrive through the same link.
 | [Text React](plugins/text-react) | 1.3.3 | hold a message and add text as reactions, like letters, numbers and words such as "ok" |
 | [Timestamp Maker](plugins/timestamp-maker) | 1.3.3 | a /timestamp command with a popup to build a Discord timestamp (all 7 styles, quick picks, time zones), plus @time in messages |
 | [Valid User](plugins/valid-user) | 1.0.1 | resolves @unknown-user mentions automatically |
+| [Webhook Builder](plugins/webhook-builder) | 1.0.0 | Discohook inside Discord: make messages with embeds, link buttons and polls and send them with your webhooks. |
 <!-- plugins:end -->
 
 Several of these are ports of plugins by other people. Each plugin's README and manifest credit the original author and link
