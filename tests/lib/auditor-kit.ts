@@ -13,6 +13,7 @@ export {
 export { RULES } from '../../plugins/plugin-auditor/js/rules'
 export {
 	findingKey,
+	isOwnPlugin,
 	judge,
 	needsAttention,
 	scanPlugin,
