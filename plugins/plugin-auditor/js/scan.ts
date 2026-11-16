@@ -255,15 +255,29 @@ export function findingKey(finding: Finding): string {
 		: finding.rule
 }
 
+/**
+ * The repository the plugins of this plugin's author are installed from. Only the repository counts, never the id or
+ * the author name, because any plugin can call itself `marklong.something` or say MarkLong0467 wrote it.
+ */
+const OWN_REPO =
+	/^(?:https?:\/\/)?marklong0467\.github\.io\/eskimoplugins(?:[/?#]|$)/i
+
+/** Whether a plugin was installed from this plugin's author's own repository. */
+export function isOwnPlugin(plugin: { repo: string | null }): boolean {
+	return !!plugin.repo && OWN_REPO.test(plugin.repo.trim())
+}
+
 /** A plugin as the user chose to see it: what is left after the findings they ignore. */
 export interface Judged {
 	/** The findings that still count. */
 	findings: Finding[]
 	/** The combos that still count. A combo goes when a finding it is made of is ignored. */
 	combos: Combo[]
-	/** The findings the user ignores, shown apart. */
+	/** The findings the user ignores, shown apart. For a trusted plugin, every finding. */
 	ignored: Finding[]
 	risk: Risk
+	/** It is one of the author's own plugins and the user trusts them, so none of its findings count. */
+	trusted: boolean
 }
 
 /**
@@ -271,17 +285,29 @@ export interface Judged {
  *
  * @param scan What the scan found, which is never changed.
  * @param ignoredKeys The {@link findingKey}s the user ignores for this plugin.
+ * @param trusted Nothing it found counts: it is one of the author's own plugins (see {@link isOwnPlugin}).
  */
 export function judge(
 	scan: PluginScan,
 	ignoredKeys: readonly string[],
+	trusted = false,
 ): Judged {
+	if (trusted) {
+		return {
+			findings: [],
+			combos: [],
+			ignored: scan.findings,
+			risk: 'clean',
+			trusted: true,
+		}
+	}
 	if (ignoredKeys.length === 0) {
 		return {
 			findings: scan.findings,
 			combos: scan.combos,
 			ignored: [],
 			risk: scan.risk,
+			trusted: false,
 		}
 	}
 	const gone = new Set(ignoredKeys)
@@ -292,7 +318,13 @@ export function judge(
 	const combos = scan.combos.filter(
 		c => !(parts.get(c.id) ?? []).some(rule => goneRules.has(rule)),
 	)
-	return { findings, combos, ignored, risk: riskOf(findings, combos) }
+	return {
+		findings,
+		combos,
+		ignored,
+		risk: riskOf(findings, combos),
+		trusted: false,
+	}
 }
 
 /** Whether a plugin needs the user's eyes: high or critical, and not on the whitelist. */

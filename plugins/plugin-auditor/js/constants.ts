@@ -16,6 +16,7 @@ export const SELF_ID = 'marklong.plugin-auditor'
 export const DEFAULT_SETTINGS: AuditorSettings = {
 	includeBuiltIn: false,
 	includeSelf: false,
+	trustOwn: true,
 	autoScan: true,
 	notify: true,
 	hideNoise: true,

@@ -15,7 +15,7 @@ const NONE_TITLE = 'No duplicates found'
 const NONE_HELP =
 	'No two plugins have the same code, the same name or the same id under different authors, and none does what an option of another one does.'
 const WHY_IT_MATTERS =
-	'Two copies of one plugin, or a plugin and another plugin\'s option that does the same job, both change the same parts of Discord, so they can fight each other, double what the plugin does, or break one another after an update.'
+	"Two copies of one plugin, or a plugin and another plugin's option that does the same job, both change the same parts of Discord, so they can fight each other, double what the plugin does, or break one another after an update."
 
 /** What to do about a group, from why it was found. */
 function advice(group: DuplicateGroup): string {

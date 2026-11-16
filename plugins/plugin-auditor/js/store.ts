@@ -17,7 +17,13 @@ import { diag } from './diag'
 import { findDuplicates, phrasesOf, stringsOf } from './duplicates'
 import { sha256 } from './hash'
 import { RULES } from './rules'
-import { judge, needsAttention, RISK_LABEL, scanPlugin } from './scan'
+import {
+	isOwnPlugin,
+	judge,
+	needsAttention,
+	RISK_LABEL,
+	scanPlugin,
+} from './scan'
 import { listInstalled } from './source'
 import {
 	domainLink,
@@ -278,9 +284,13 @@ function createAuditor() {
 			changed()
 		},
 
+		/** Whether a plugin is one of the author's own, from their repository, and the user trusts those. */
+		isTrusted: (scan: PluginScan): boolean =>
+			!!setting('trustOwn') && isOwnPlugin(scan.plugin),
+
 		/** What is left of a plugin's scan after the findings the user ignores. */
 		view: (scan: PluginScan): Judged =>
-			judge(scan, api.ignoredKeys(scan.plugin.id)),
+			judge(scan, api.ignoredKeys(scan.plugin.id), api.isTrusted(scan)),
 
 		/**
 		 * Whether a plugin needs attention: high or critical after the ignored findings and not whitelisted, or whitelisted
@@ -649,7 +659,7 @@ function createAuditor() {
 			const view = api.view(scan)
 			const lines = [
 				`${p.name} ${p.version} (${p.id}) by ${p.author}`,
-				`Risk: ${RISK_LABEL[view.risk]}${api.isWhitelisted(p.id) ? ` (whitelisted by the user at ${api.whitelistEntry(p.id)?.version || 'an unknown version'}${api.updateAlert(scan) ? '; UPDATED since and critical' : ''})` : ''}${view.ignored.length ? ` (${view.ignored.length} finding(s) ignored by the user)` : ''}`,
+				`Risk: ${RISK_LABEL[view.risk]}${view.trusted ? ` (MarkLong0467's own plugin, from ${p.repo}: its ${view.ignored.length} finding(s) are not counted)` : ''}${api.isWhitelisted(p.id) ? ` (whitelisted by the user at ${api.whitelistEntry(p.id)?.version || 'an unknown version'}${api.updateAlert(scan) ? '; UPDATED since and critical' : ''})` : ''}${view.ignored.length && !view.trusted ? ` (${view.ignored.length} finding(s) ignored by the user)` : ''}`,
 				`Code: ${scan.sha256 ? `${scan.size} characters, sha256 ${scan.sha256}` : 'none'}`,
 			]
 			for (const c of view.combos) lines.push(`!! ${c.title}: ${c.why}`)
@@ -657,7 +667,8 @@ function createAuditor() {
 				lines.push(`[${f.severity.toUpperCase()}] ${f.title} (${f.count}x)`)
 				for (const s of f.samples.slice(0, 2)) lines.push(`    ${s}`)
 			}
-			for (const f of view.ignored) lines.push(`(ignored) ${f.title}`)
+			for (const f of view.ignored)
+				lines.push(`(${view.trusted ? 'not counted' : 'ignored'}) ${f.title}`)
 			const links = scan.links.filter(l => l.kind !== 'noise')
 			if (links.length) {
 				lines.push('Links:')
@@ -747,7 +758,7 @@ function createAuditor() {
 			for (const scan of state.scans) {
 				const p = scan.plugin
 				lines.push(
-					`  ${p.id} ${p.version} ${scan.risk} ${scan.findings.length}f ${scan.links.length}l ${scan.size}ch ${scan.sha256 ? scan.sha256.slice(0, 10) : 'no-code'}${p.internal ? ' built-in' : ''}${p.native ? ' native' : ''}${api.isWhitelisted(p.id) ? ` whitelisted@${api.whitelistEntry(p.id)?.version || '?'}${api.whitelistEntry(p.id)?.ignoreUpdates ? ' no-update-alerts' : ''}${api.updateAlert(scan) ? ' UPDATE-ALERT' : ''}` : ''}${api.ignoredKeys(p.id).length ? ` ignores=${api.ignoredKeys(p.id).join('+')}` : ''}`,
+					`  ${p.id} ${p.version} ${scan.risk} ${scan.findings.length}f ${scan.links.length}l ${scan.size}ch ${scan.sha256 ? scan.sha256.slice(0, 10) : 'no-code'}${p.internal ? ' built-in' : ''}${p.native ? ' native' : ''}${p.repo ? ` repo=${p.repo}` : ' sideloaded'}${api.isTrusted(scan) ? ' trusted-own' : ''}${api.isWhitelisted(p.id) ? ` whitelisted@${api.whitelistEntry(p.id)?.version || '?'}${api.whitelistEntry(p.id)?.ignoreUpdates ? ' no-update-alerts' : ''}${api.updateAlert(scan) ? ' UPDATE-ALERT' : ''}` : ''}${api.ignoredKeys(p.id).length ? ` ignores=${api.ignoredKeys(p.id).join('+')}` : ''}`,
 				)
 			}
 			lines.push(`VirusTotal key: ${vtOptions().key ? 'set' : 'not set'}`)

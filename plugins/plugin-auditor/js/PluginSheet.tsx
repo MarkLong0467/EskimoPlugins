@@ -29,6 +29,8 @@ const UPDATED_TITLE = 'Updated since you whitelisted it'
 const CLEAN = 'Nothing sensitive was found in its code.'
 const NOTHING_LEFT =
 	'Nothing is left once the findings you ignore are set aside.'
+const TRUSTED =
+	"This is one of MarkLong0467's own plugins, installed from the EskimoPlugins repository, so what was found in it is not counted. It is listed below. You can turn this off in Options."
 const NO_CODE =
 	'Valenced gave no code for this plugin, so only its manifest was read.'
 
@@ -127,7 +129,8 @@ function PluginSheet({ id }: { id: string }) {
 						{whitelisted && entry?.ignoreUpdates ? (
 							<Chip text="UPDATE CHECKS OFF" />
 						) : null}
-						{view.ignored.length > 0 ? (
+						{view.trusted ? <Chip text="MARKLONG0467'S PLUGIN" /> : null}
+						{view.ignored.length > 0 && !view.trusted ? (
 							<Chip text={`${view.ignored.length} IGNORED`} />
 						) : null}
 						<Chip text={scan.sha256 ? sizeText(scan.size) : 'NO CODE'} />
@@ -168,7 +171,11 @@ function PluginSheet({ id }: { id: string }) {
 				{view.findings.length === 0 && !scan.problem ? (
 					<Panel tint={color.soft}>
 						<Design.Text variant="text-md/medium">
-							{view.ignored.length > 0 ? NOTHING_LEFT : CLEAN}
+							{view.trusted
+								? TRUSTED
+								: view.ignored.length > 0
+									? NOTHING_LEFT
+									: CLEAN}
 						</Design.Text>
 					</Panel>
 				) : null}
@@ -196,13 +203,15 @@ function PluginSheet({ id }: { id: string }) {
 
 				{view.ignored.length > 0 ? (
 					<View style={{ gap: 10 }}>
-						<Heading text={`Ignored · ${view.ignored.length}`} />
+						<Heading
+							text={`${view.trusted ? 'Not counted' : 'Ignored'} · ${view.ignored.length}`}
+						/>
 						{view.ignored.map(f => (
 							<FindingCard
 								key={findingKey(f)}
 								finding={f}
 								dimmed
-								actionText="Notice again"
+								actionText={view.trusted ? undefined : 'Notice again'}
 								onAction={() => auditor.setIgnored(p.id, findingKey(f), false)}
 							/>
 						))}

@@ -139,6 +139,8 @@ export interface WhitelistEntry {
 export interface AuditorSettings {
 	includeBuiltIn: boolean
 	includeSelf: boolean
+	/** Plugins installed from MarkLong0467's EskimoPlugins repository do not count as risky. */
+	trustOwn: boolean
 	autoScan: boolean
 	notify: boolean
 	hideNoise: boolean

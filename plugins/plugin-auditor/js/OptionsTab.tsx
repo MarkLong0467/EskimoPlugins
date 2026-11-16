@@ -83,6 +83,14 @@ export function OptionsTab() {
 					}
 				/>
 				<Design.TableSwitchRow
+					label="Trust MarkLong0467's plugins"
+					subLabel="Plugins installed from the EskimoPlugins repository are not counted as risky. Their findings stay listed. A copy from anywhere else is still checked."
+					value={!!setting('trustOwn')}
+					onValueChange={(value: boolean) =>
+						saveSettings({ trustOwn: !!value })
+					}
+				/>
+				<Design.TableSwitchRow
 					label="Include this plugin"
 					subLabel="Its own rules look like what they search for, so it is left out unless you ask."
 					value={!!setting('includeSelf')}

@@ -56,6 +56,7 @@ function subtitle(scan: PluginScan, capability: Capability): string {
 		: auditor.isWhitelisted(p.id)
 			? 'Whitelisted · '
 			: ''
+	if (view.trusted) return `${facts}\n${tag}MarkLong0467's plugin`
 	if (!top)
 		return `${facts}\n${tag}${scan.problem ? 'no code' : 'nothing found'}`
 	const more = view.findings.length > 1 ? ` +${view.findings.length - 1}` : ''
@@ -113,11 +114,26 @@ export function PluginsTab() {
 				value={filter}
 				onChange={setFilter}
 			>
-				<Design.TableRadioRow<Filter> label={`Attention ${count('attention')}`} value="attention" />
-				<Design.TableRadioRow<Filter> label={`Worth a look ${count('review')}`} value="review" />
-				<Design.TableRadioRow<Filter> label={`Clean ${count('clean')}`} value="clean" />
-				<Design.TableRadioRow<Filter> label={`Whitelisted ${count('whitelisted')}`} value="whitelisted" />
-				<Design.TableRadioRow<Filter> label={`All ${count('all')}`} value="all" />
+				<Design.TableRadioRow<Filter>
+					label={`Attention ${count('attention')}`}
+					value="attention"
+				/>
+				<Design.TableRadioRow<Filter>
+					label={`Worth a look ${count('review')}`}
+					value="review"
+				/>
+				<Design.TableRadioRow<Filter>
+					label={`Clean ${count('clean')}`}
+					value="clean"
+				/>
+				<Design.TableRadioRow<Filter>
+					label={`Whitelisted ${count('whitelisted')}`}
+					value="whitelisted"
+				/>
+				<Design.TableRadioRow<Filter>
+					label={`All ${count('all')}`}
+					value="all"
+				/>
 			</Design.TableRadioGroup>
 			{offered.length > 0 ? (
 				<Design.TableRadioGroup<Capability>
@@ -127,7 +143,11 @@ export function PluginsTab() {
 				>
 					<Design.TableRadioRow<Capability> label="Anything" value="any" />
 					{offered.map(c => (
-						<Design.TableRadioRow<Capability> key={c.id} label={c.label} value={c.id} />
+						<Design.TableRadioRow<Capability>
+							key={c.id}
+							label={c.label}
+							value={c.id}
+						/>
 					))}
 				</Design.TableRadioGroup>
 			) : null}

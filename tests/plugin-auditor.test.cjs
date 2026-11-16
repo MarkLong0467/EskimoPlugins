@@ -138,6 +138,17 @@ const has = (s, rule) => s.findings.some(f => f.rule === rule)
 	const keys = two.findings.filter(f => f.rule === 'exfil.link').map(f => kit.findingKey(f))
 	check('each kind of suspicious link has its own key, so a webhook can be ignored without ignoring an IP logger', keys.length === 2 && new Set(keys).size === 2 && kit.judge(two, [keys[0]]).risk === 'critical' && kit.judge(two, keys).risk === 'clean', keys)
 	check('needsAttention is high or critical and not whitelisted', kit.needsAttention('high', false) && kit.needsAttention('critical', false) && !kit.needsAttention('medium', false) && !kit.needsAttention('critical', true) && !kit.needsAttention('clean', false))
+	const trusted = kit.judge(base, [], true)
+	check('a trusted plugin is clean, with every finding set apart and no combo', trusted.trusted && trusted.risk === 'clean' && trusted.findings.length === 0 && trusted.combos.length === 0 && trusted.ignored.length === base.findings.length, trusted)
+	check('judging without trust says so', kit.judge(base, []).trusted === false && kit.judge(base, ['token.read']).trusted === false)
+}
+
+// --- MarkLong0467's own plugins (by the repository only)
+{
+	const own = repo => kit.isOwnPlugin({ repo })
+	check('the EskimoPlugins page counts as own, in any case, with or without a path or scheme', own('https://marklong0467.github.io/EskimoPlugins/') && own('https://MarkLong0467.github.io/EskimoPlugins') && own('https://marklong0467.github.io/eskimoplugins/index.json') && own('marklong0467.github.io/EskimoPlugins/'))
+	check('a sideloaded plugin is never own', !own(null) && !own(''))
+	check('look-alike places are not own', !own('https://evil.example/marklong0467.github.io/EskimoPlugins/') && !own('https://marklong0467.github.io.evil.example/EskimoPlugins/') && !own('https://marklong0467.github.io/EskimoPluginsFake/') && !own('https://someone.github.io/EskimoPlugins/') && !own('https://github.com/MarkLong0467/EskimoPlugins'))
 }
 
 // --- Links
@@ -343,8 +354,11 @@ const nativeEntry = p => ({
 	const others = scans.filter(s => s.plugin.id !== 'marklong.plugin-auditor')
 	check('no real plugin (other than this one, whose rules look like what they search for) has a critical combo', others.every(s => !s.combos.some(c => c.severity === 'critical')), others.filter(s => s.combos.length).map(s => [s.plugin.id, s.combos.map(c => c.id + ':' + c.severity)]))
 	check('Custom Sounds reads the token to call Discord and is a milder combo', byId['marklong.custom-sounds']?.combos.some(c => c.id === 'combo.token-out' && c.severity === 'high'), byId['marklong.custom-sounds']?.combos)
-	check('no real plugin has a webhook, tunnel or ip logger', scans.every(s => !s.links.some(l => l.kind === 'risky')), scans.flatMap(s => s.links.filter(l => l.kind === 'risky').map(l => [s.plugin.id, l.url])))
-	check('only this plugin itself (its rules look like what they search for) is critical; routine behaviour such as posting to Discord is not', scans.filter(s => s.risk === 'critical').every(s => s.plugin.id === 'marklong.plugin-auditor'), scans.filter(s => s.risk === 'critical').map(s => s.plugin.id))
+	// Webhook Builder has webhook links because making webhook messages is its job: it is trusted as one of the author's own.
+	const ownJob = new Set(['marklong.plugin-auditor', 'marklong.webhook-builder'])
+	check('no real plugin (other than Webhook Builder) has a webhook, tunnel or ip logger', scans.every(s => s.plugin.id === 'marklong.webhook-builder' || !s.links.some(l => l.kind === 'risky')), scans.flatMap(s => s.links.filter(l => l.kind === 'risky').map(l => [s.plugin.id, l.url])))
+	check('only this plugin itself (its rules look like what they search for) and Webhook Builder are critical; routine behaviour such as posting to Discord is not', scans.filter(s => s.risk === 'critical').every(s => ownJob.has(s.plugin.id)), scans.filter(s => s.risk === 'critical').map(s => s.plugin.id))
+	check('installed from the EskimoPlugins repository, every real plugin is trusted and clean', real.every(p => { const s = kit.scanPlugin({ ...p, repo: 'https://marklong0467.github.io/EskimoPlugins/' }); return kit.isOwnPlugin(s.plugin) && kit.judge(s, [], true).risk === 'clean' }))
 	check('Message Reminders (a plain plugin) is not critical', byId['marklong.message-reminders']?.risk !== 'critical', byId['marklong.message-reminders']?.findings.map(f => f.rule))
 
 	// Two copies of a real plugin under different ids are one group
@@ -614,6 +628,51 @@ async function pluginTests(real) {
 		findNode(view.tree, n => n.type === 'Design.TableRow' && n.props.label === 'Totally Legit').props.onPress()
 		await sleep(10)
 		check('tapping a whitelisted plugin there removes it', Object.keys(s.storage.cache.whitelist).length === 0, s.storage.cache.whitelist)
+		await s.running.stop()
+	}
+
+	// --- MarkLong0467's own plugins are trusted, by the repository they came from
+	{
+		const OWN = 'https://marklong0467.github.io/EskimoPlugins/'
+		const hook = 'fetch("https://discord.com/api/webhooks/1/abc")'
+		const list = [
+			plugin('marklong.webhook-builder', hook, { name: 'Webhook Builder', repo: OWN }),
+			plugin('marklong.fake-builder', hook, { name: 'Fake Builder', repo: 'https://evil.example/repo/' }),
+			plugin('marklong.side-builder', hook, { name: 'Side Builder' }),
+		].map(nativeEntry)
+		const s = await setup({ list })
+		const view = await s.mountSettings()
+		await press(view, 'Scan now')
+		await sleep(50)
+		await view.settle()
+		choose(view, l => l.startsWith('Attention'))
+		await view.settle()
+		check('a plugin from the EskimoPlugins repository does not need attention', !row(view, 'Webhook Builder'))
+		check('the same code from another repository or sideloaded still does', !!row(view, 'Fake Builder') && !!row(view, 'Side Builder'))
+		choose(view, l => l.startsWith('All'))
+		await view.settle()
+		check('its row says it is MarkLong0467\'s', /MarkLong0467's plugin/.test(row(view, 'Webhook Builder').props.subLabel), row(view, 'Webhook Builder').props.subLabel)
+		row(view, 'Webhook Builder').props.onPress()
+		await sleep(5)
+		const call = s.runtime.log.actions.filter(a => a.label === 'actionSheet' && a.name === 'openLazy').at(-1)
+		const sheet = s.runtime.mount(s.runtime.React.createElement((await call.args[0]).default, {}))
+		await sheet.settle()
+		const text = textOf(sheet.tree)
+		check('its sheet is clean, says why, and still lists what was found as not counted', text.includes('CLEAN') && text.includes("MARKLONG0467'S PLUGIN") && /Not counted · 2/i.test(text) && text.includes('Has a Discord webhook') && !button(sheet, 'Notice again') && !button(sheet, 'Ignore this'), text.slice(0, 700))
+		button(sheet, 'Copy report').props.onPress()
+		check('its report says Clean and why', /Risk: Clean \(MarkLong0467's own plugin, from https:\/\/marklong0467\.github\.io\/EskimoPlugins\/: its 2 finding\(s\) are not counted\)/.test(s.copied.at(-1)) && s.copied.at(-1).includes('(not counted) Has a Discord webhook'), s.copied.at(-1))
+		// The harness shows one screen at a time, so the settings are opened again after the sheet.
+		const again = await s.mountSettings()
+		await openTab(again, 'Options')
+		const toggle = findNode(again.tree, n => n.type === 'Design.TableSwitchRow' && n.props.label === "Trust MarkLong0467's plugins")
+		check('Options has the switch, on by default', !!toggle && toggle.props.value === true)
+		toggle.props.onValueChange(false)
+		check('turning it off saves it', s.storage.cache.trustOwn === false)
+		const after = await s.mountSettings()
+		await openTab(after, 'Plugins')
+		choose(after, l => l.startsWith('Attention'))
+		await after.settle()
+		check('with Trust MarkLong0467\'s plugins off it is checked like any other', !!row(after, 'Webhook Builder'))
 		await s.running.stop()
 	}
 
