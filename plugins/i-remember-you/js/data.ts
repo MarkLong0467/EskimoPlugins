@@ -63,9 +63,53 @@ export const isGuildKey = (key: string, id: string) =>
 	key !== FRIENDS.id &&
 	!key.startsWith(GROUP_PREFIX)
 
+/** A deep copy of a collection, so changing one never changes the other. */
+const copyOf = (collection: UsersCollection | undefined): UsersCollection =>
+	collection ? JSON.parse(JSON.stringify(collection)) : {}
+
+/** When a person was last met, or 0. */
+const seenAt = (user: IStorageUser | undefined) => user?.extra?.updatedAt ?? 0
+
+/**
+ * Everyone of two collections: each group and each person that is in either. Someone in both keeps the newer of the two,
+ * with "owner" kept from either. Not in Equicord, which saves only what the running plugin holds.
+ */
+export function mergeCollections(
+	older: UsersCollection,
+	newer: UsersCollection,
+): UsersCollection {
+	const out = copyOf(older)
+	for (const [key, group] of Object.entries(newer)) {
+		const into = out[key]
+		if (!into) {
+			out[key] = copyOf({ [key]: group })[key] as GroupData
+			continue
+		}
+		into.name = group.name || into.name
+		into.inviteLink = group.inviteLink ?? into.inviteLink
+		for (const [id, user] of Object.entries(group.users)) {
+			const had = into.users[id]
+			const [old, recent] =
+				seenAt(had) > seenAt(user) ? [user, had] : [had, user]
+			into.users[id] = {
+				...old,
+				...(recent as IStorageUser),
+				extra: { ...old?.extra, ...recent?.extra },
+			}
+		}
+	}
+	return out
+}
+
 export class Data {
 	usersCollection: UsersCollection = {}
 	_storageAutoSaveProtocol_interval: ReturnType<typeof setInterval> | undefined
+	/**
+	 * Whether the saved list has been read. Until then nothing is saved: on a phone the plugin starts before Valenced has
+	 * read the file, and saving then would put only the people met since in place of everyone saved (switching accounts
+	 * restarts Discord, which is when this was seen).
+	 */
+	loaded = false
 
 	withStart() {
 		return this
@@ -138,22 +182,41 @@ export class Data {
 			usersField[id] = {
 				id,
 				username,
-				tag:
-					user.discriminator === '0' || !user.tag ? user.username : user.tag,
+				tag: user.discriminator === '0' || !user.tag ? user.username : user.tag,
 				extra: { ...previouExtra, ...extra },
 				iconURL: avatarOf(user),
 			}
 		}
 	}
 
+	/** Saves the list. What is saved already is kept too: saving only ever adds, and only removing takes anyone away. */
 	updateStorage() {
-		store.replace('data', JSON.parse(JSON.stringify(this.usersCollection)))
+		if (!this.loaded) {
+			diag.log('storage', 'not saved: the saved list is not read yet')
+			return
+		}
+		this.usersCollection = mergeCollections(
+			store.get('data') ?? {},
+			this.usersCollection,
+		)
+		store.replace('data', copyOf(this.usersCollection))
 		diag.log('storage', `saved ${count(this.usersCollection)} people`)
 	}
 
-	initializeUsersCollection() {
-		const data = store.get('data')
-		this.usersCollection = data ? JSON.parse(JSON.stringify(data)) : {}
+	/**
+	 * Reads the saved list, waiting for Valenced to read the file when it has not yet. The people met meanwhile are kept
+	 * with it.
+	 *
+	 * @param read Valenced's read of the file, for when it is not read yet.
+	 */
+	async initializeUsersCollection(read?: () => Promise<unknown>) {
+		if (read) await read()
+		this.usersCollection = mergeCollections(
+			store.get('data') ?? {},
+			this.usersCollection,
+		)
+		this.loaded = true
+		diag.log('storage', `read ${count(this.usersCollection)} people`)
 	}
 
 	/** Remembers the members of the servers you own (up to a thousand of each). */
@@ -245,7 +308,10 @@ export class Data {
 				.filter((user): user is User => Boolean(user))
 			const source = {
 				id: `${GROUP_PREFIX}${channel.id}`,
-				name: channel.name || users.map(user => user.username).join(', ') || 'Group DM',
+				name:
+					channel.name ||
+					users.map(user => user.username).join(', ') ||
+					'Group DM',
 			}
 			for (const user of users)
 				target.push({ user, source, extra: { updatedAt: now } })
@@ -266,13 +332,19 @@ export class Data {
  * the other. Not in Equicord, which has no way to remove anything.
  */
 function edit(change: (collection: UsersCollection) => void): void {
+	const saved = copyOf(store.get('data'))
+	change(saved)
 	if (current) {
 		change(current.usersCollection)
-		current.updateStorage()
+		// Both lists lose the same people, so saving (which keeps what either has) does not bring them back.
+		if (current.loaded) {
+			current.usersCollection = mergeCollections(saved, current.usersCollection)
+			store.replace('data', copyOf(current.usersCollection))
+			return
+		}
+		// The saved list is not read yet, so writing it now would lose it.
 		return
 	}
-	const saved: UsersCollection = JSON.parse(JSON.stringify(store.get('data')))
-	change(saved)
 	store.replace('data', saved)
 }
 

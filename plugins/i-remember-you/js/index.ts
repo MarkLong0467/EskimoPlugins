@@ -47,7 +47,12 @@ export default plugin<{ jsonStorage: RememberSettings }>({
 		const data = new Data().withStart()
 		setCurrent(data)
 
-		data.initializeUsersCollection()
+		// On a phone the file is often not read yet: until it is, nothing is saved (see `Data.loaded`).
+		data
+			.initializeUsersCollection(
+				jsonStorage.loaded ? undefined : () => jsonStorage.get(),
+			)
+			.catch(error => diag.fail('storage', error))
 		const writeServers = () => {
 			diag.guard('owners of your servers', () =>
 				data.writeGuildsOwnersToCollection(),
@@ -61,7 +66,11 @@ export default plugin<{ jsonStorage: RememberSettings }>({
 		writeServers()
 		// On a phone the plugin can start before Discord has your servers: they are gone through again once it connects,
 		// and again when you make a friend or open a DM.
-		for (const event of ['CONNECTION_OPEN', 'RELATIONSHIP_ADD', 'CHANNEL_CREATE'])
+		for (const event of [
+			'CONNECTION_OPEN',
+			'RELATIONSHIP_ADD',
+			'CHANNEL_CREATE',
+		])
 			cleanup(
 				onFluxEventDispatched(event, payload => {
 					setTimeout(writeServers, 3000)

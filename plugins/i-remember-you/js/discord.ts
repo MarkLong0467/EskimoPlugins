@@ -43,9 +43,14 @@ interface DiscordStores {
 		getGuild(id: string | null | undefined): Guild | undefined
 		getGuilds(): Record<string, Guild>
 	}
-	GuildMemberStore?: { getMembers(guildId: string): { userId: string }[] | undefined }
+	GuildMemberStore?: {
+		getMembers(guildId: string): { userId: string }[] | undefined
+	}
 	MessageStore?: {
-		getMessage(channelId: string, messageId: string): { author?: User } | undefined
+		getMessage(
+			channelId: string,
+			messageId: string,
+		): { author?: User } | undefined
 	}
 	UserStore?: {
 		getUser(id: string | undefined): User | undefined
@@ -110,7 +115,10 @@ export function copyWithToast(text: string, said: string): void {
 
 /** Discord's profile sheet, found through the code it calls into (it loads only when a profile is first opened). */
 const PROFILE_SHEET: SheetSpec = {
-	prop: ['showUserProfileActionSheetPostConnection', 'getUserProfileActionSheetKey'],
+	prop: [
+		'showUserProfileActionSheetPostConnection',
+		'getUserProfileActionSheetKey',
+	],
 	anchor: 'openLazy',
 }
 
@@ -133,7 +141,11 @@ export function openUserProfile(userId: string): void {
 			? sheet
 			: (sheet as { default?: unknown } | undefined)?.default,
 	]
-	for (const name of ['openUserProfile', 'openUserProfileModal', 'showUserProfile'])
+	for (const name of [
+		'openUserProfile',
+		'openUserProfileModal',
+		'showUserProfile',
+	])
 		tries.push(findByProps<Record<string, unknown>>(name)?.[name])
 	for (const open of tries) {
 		if (typeof open !== 'function') continue

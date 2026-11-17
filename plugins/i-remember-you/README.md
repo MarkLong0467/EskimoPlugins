@@ -37,6 +37,11 @@ someone removed from those comes back if they are still there.
 The list is saved every three minutes, as in Equicord, and once more when the plugin stops (Equicord does not, so the last
 few minutes could be lost there).
 
+There is one list for the phone, not one per account: switching accounts keeps everyone, and the people the new account
+meets are added to it. Saving only ever adds to what is saved, so only **Remove** and **Clear all data** take anyone
+away. Nothing is saved until the saved list has been read: on a phone the plugin starts before Valenced has read the file
+(switching accounts restarts Discord), and before 1.2.1 the first save then put only the new people in place of everyone.
+
 ## Differences from Equicord
 
 - Equicord hears a message before it is sent through its MessageEvents API. Discord's `sendMessage` is wrapped here instead,

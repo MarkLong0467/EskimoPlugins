@@ -164,6 +164,24 @@ const GUILDS = {
 	check('friends are found even when the store is not in the list by name', rowsOf(v3).some(r => r.key === 'friends:700000000000000007'))
 	s3.stop()
 
+	// Switching accounts restarts Discord, and on a phone the plugin starts before Valenced has read the saved file.
+	{
+		const other = { old: { id: 'old', name: 'Old Account Server', users: { '111111111111111111': { id: '111111111111111111', username: 'oldfriend', tag: 'oldfriend', extra: { updatedAt: 1 } } } }, g1: { id: 'g1', name: 'My Server', users: { '111111111111111112': { id: '111111111111111112', username: 'oldmember', tag: 'oldmember', extra: { updatedAt: 1 } } } } }
+		const early = await start({ saved: { data: other }, lateSaved: true })
+		early.stop()
+		check('stopping before the saved list is read does not write over it', early.storage.cache?.data === undefined || early.storage.cache.data.old?.users['111111111111111111'], early.storage.cache)
+
+		const late = await start({ saved: { data: other }, lateSaved: true })
+		const before = await late.mountSettings()
+		check('the screen shows everyone while the saved list is being read', rowsOf(before).some(r => r.key === 'g1:300000000000000003'))
+		await sleep(40)
+		const after = await late.mountSettings()
+		check('once it is read, the people saved by another account are on the screen with the new ones', ['old:111111111111111111', 'g1:111111111111111112', 'g1:300000000000000003', 'friends:700000000000000007'].every(k => rowsOf(after).some(r => r.key === k)), rowsOf(after).map(r => r.key))
+		late.stop()
+		const kept = late.storage.cache.data
+		check('and saving keeps them all: a group only the old account had, and old people in a server both have', kept.old?.users['111111111111111111']?.username === 'oldfriend' && kept.g1.users['111111111111111112']?.username === 'oldmember' && kept.g1.users['300000000000000003']?.username === 'member3', Object.keys(kept))
+	}
+
 	// A store that throws never stops a message.
 	const before = sent.length
 	stores.ChannelStore.getChannel = () => { throw new Error('boom') }

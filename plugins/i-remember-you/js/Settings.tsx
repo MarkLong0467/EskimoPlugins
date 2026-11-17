@@ -12,7 +12,14 @@ import { Alert, FlatList, Image, Pressable, View } from 'react-native'
 import { DebugSection } from '../../../shared/kmmiio/Debug'
 import { IntroCard } from '../../../shared/kmmiio/Intro'
 import { store } from './config'
-import { clearAll, current, isGuildKey, removeGroup, removeUser } from './data'
+import {
+	clearAll,
+	current,
+	isGuildKey,
+	mergeCollections,
+	removeGroup,
+	removeUser,
+} from './data'
 import { diag } from './diag'
 import { copyWithToast, openUserProfile, stores, toast } from './discord'
 import type { PluginSettingsComponent } from '@valenced/plugins/types'
@@ -55,35 +62,48 @@ const COMES_BACK =
 let redraw = () => {}
 
 /** Equicord's server context menu (Copy Server ID), with Remove this group. Also for Friends, DMs and group DMs. */
-function groupMenu(item: { groupKey: string; id: string; name: string; isGuild: boolean }) {
-	Alert.alert(item.isGuild ? 'Server Options' : item.name, item.isGuild ? item.id : undefined, [
-		...(item.isGuild
-			? [
-					{
-						text: 'Copy Server ID',
-						onPress: () => copyWithToast(item.id, SERVER_COPIED),
-					},
-				]
-			: []),
-		{
-			text: 'Remove this group',
-			style: 'destructive' as const,
-			onPress: () =>
-				Alert.alert(`Remove "${item.name}"?`, `Everyone in it is forgotten. ${COMES_BACK}`, [
-					{ text: 'Keep it', style: 'cancel' },
-					{
-						text: 'Remove',
-						style: 'destructive',
-						onPress: () => {
-							removeGroup(item.groupKey)
-							toast(`Removed ${item.name}`)
-							redraw()
+function groupMenu(item: {
+	groupKey: string
+	id: string
+	name: string
+	isGuild: boolean
+}) {
+	Alert.alert(
+		item.isGuild ? 'Server Options' : item.name,
+		item.isGuild ? item.id : undefined,
+		[
+			...(item.isGuild
+				? [
+						{
+							text: 'Copy Server ID',
+							onPress: () => copyWithToast(item.id, SERVER_COPIED),
 						},
-					},
-				]),
-		},
-		{ text: 'Cancel', style: 'cancel' },
-	])
+					]
+				: []),
+			{
+				text: 'Remove this group',
+				style: 'destructive' as const,
+				onPress: () =>
+					Alert.alert(
+						`Remove "${item.name}"?`,
+						`Everyone in it is forgotten. ${COMES_BACK}`,
+						[
+							{ text: 'Keep it', style: 'cancel' },
+							{
+								text: 'Remove',
+								style: 'destructive',
+								onPress: () => {
+									removeGroup(item.groupKey)
+									toast(`Removed ${item.name}`)
+									redraw()
+								},
+							},
+						],
+					),
+			},
+			{ text: 'Cancel', style: 'cancel' },
+		],
+	)
 }
 
 /**
@@ -115,18 +135,22 @@ function userMenu(user: IStorageUser, groupKey?: string) {
 
 /** Clear all data, after asking. */
 function confirmClear() {
-	Alert.alert('Clear all data?', `Everyone is forgotten. This cannot be undone. ${COMES_BACK}`, [
-		{ text: 'Keep it', style: 'cancel' },
-		{
-			text: 'Clear all',
-			style: 'destructive',
-			onPress: () => {
-				clearAll()
-				toast('All data cleared')
-				redraw()
+	Alert.alert(
+		'Clear all data?',
+		`Everyone is forgotten. This cannot be undone. ${COMES_BACK}`,
+		[
+			{ text: 'Keep it', style: 'cancel' },
+			{
+				text: 'Clear all',
+				style: 'destructive',
+				onPress: () => {
+					clearAll()
+					toast('All data cleared')
+					redraw()
+				},
 			},
-		},
-	])
+		],
+	)
 }
 
 /** One remembered person: picture, tag (with "(owner)") and id. */
@@ -252,7 +276,14 @@ function rowsOf(usersCollection: UsersCollection): Item[] {
 		}))
 		.sort((a, b) => b.users.length - a.users.length)) {
 		const isGuild = isGuildKey(key, id)
-		items.push({ kind: 'header', key: `g:${key}`, groupKey: key, name, id, isGuild })
+		items.push({
+			kind: 'header',
+			key: `g:${key}`,
+			groupKey: key,
+			name,
+			id,
+			isGuild,
+		})
 		for (const user of users)
 			items.push({
 				kind: 'user',
@@ -288,7 +319,10 @@ export default function Settings({ api }: Props) {
 	const [, setTick] = useState(0)
 	redraw = () => setTick(tick => tick + 1)
 	// The running plugin's list has the people met in the last three minutes too; the saved one is used when it is off.
-	const usersCollection = current?.usersCollection ?? store.get('data')
+	// Until the running plugin has read the saved list, both are shown.
+	const usersCollection = current?.loaded
+		? current.usersCollection
+		: mergeCollections(store.get('data') ?? {}, current?.usersCollection ?? {})
 	const empty = Object.keys(usersCollection).length === 0
 	const items = search
 		? [
