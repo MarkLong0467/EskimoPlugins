@@ -59,7 +59,7 @@ Updates arrive through the same link.
 | [Message Preview](plugins/message-preview) | 1.0.3 | preview your message before sending it |
 | [Message Reminders](plugins/message-reminders) | 1.0.0 | hold a message, tap Remind Me, and get a Jump / Snooze / Done sheet when it's due |
 | [Minecraft Servers](plugins/minecraft-servers) | 1.5.1 | see if your servers are online, who is playing, and the ping |
-| [Mute & Deafen Bubble](plugins/voice-bubble) | 0.1.0 | Floating mute and deafen buttons over other apps while you're in a call and Discord is in the background. |
+| [Mute & Deafen Bubble](plugins/voice-bubble) | 0.2.0 | Floating mute and deafen buttons over other apps while you're in a call and Discord is in the background. |
 | [No Suggestions](plugins/no-suggestions) | 1.3.2 | removes the Suggested channels section that keeps coming back |
 | [Pastelize](plugins/pastelize) | 1.0.0 | Gives every name in chat its own pastel colour, worked out from the person's ID, so people without a role colour are easy to tell apart. |
 | [Pin DMs](plugins/pin-dms) | 1.15.4 | pin DMs and group chats to the top, in sections you can fold |
