@@ -8,7 +8,7 @@
  * what the bubble would be told to show.
  */
 
-const { createReporter, createRuntime, loadPlugin, startPlugin } = require('./lib/harness.cjs')
+const { createReporter, createRuntime, loadPlugin, startPlugin, findNode, findNodes } = require('./lib/harness.cjs')
 
 const { check, done } = createReporter('Mute & Deafen Bubble')
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -85,7 +85,7 @@ async function setup({ inCall = true } = {}) {
 	await test('the bubble is told the call, mute and deafen state, enabled', async () => {
 		const t = await setup()
 		const last = t.calls.setState.at(-1)
-		if (JSON.stringify(last) !== JSON.stringify([true, false, false, true])) throw new Error(JSON.stringify(t.calls.setState))
+		if (JSON.stringify(last) !== JSON.stringify([true, false, false, true, 'both'])) throw new Error(JSON.stringify(t.calls.setState))
 		await t.plugin.stop()
 	})
 
@@ -95,7 +95,7 @@ async function setup({ inCall = true } = {}) {
 		await wait(400)
 		if (t.calls.toggles.join() !== 'mute') throw new Error(t.calls.toggles.join())
 		const last = t.calls.setState.at(-1)
-		if (JSON.stringify(last) !== JSON.stringify([true, true, false, true])) throw new Error(JSON.stringify(last))
+		if (JSON.stringify(last) !== JSON.stringify([true, true, false, true, 'both'])) throw new Error(JSON.stringify(last))
 		await t.plugin.stop()
 	})
 
@@ -105,11 +105,11 @@ async function setup({ inCall = true } = {}) {
 		await wait(400)
 		if (t.calls.toggles.join() !== 'deaf') throw new Error(t.calls.toggles.join())
 		const last = t.calls.setState.at(-1)
-		if (JSON.stringify(last) !== JSON.stringify([true, true, true, true])) throw new Error(JSON.stringify(last))
+		if (JSON.stringify(last) !== JSON.stringify([true, true, true, true, 'both'])) throw new Error(JSON.stringify(last))
 		t.tap('toggleDeaf')
 		await wait(400)
 		const after = t.calls.setState.at(-1)
-		if (JSON.stringify(after) !== JSON.stringify([true, false, false, true])) throw new Error(JSON.stringify(after))
+		if (JSON.stringify(after) !== JSON.stringify([true, false, false, true, 'both'])) throw new Error(JSON.stringify(after))
 		await t.plugin.stop()
 	})
 
@@ -143,11 +143,49 @@ async function setup({ inCall = true } = {}) {
 		const t = await setup()
 		await t.plugin.stop()
 		const last = t.calls.setState.at(-1)
-		if (JSON.stringify(last) !== JSON.stringify([false, false, false, false])) throw new Error(JSON.stringify(last))
+		if (JSON.stringify(last) !== JSON.stringify([false, false, false, false, 'both'])) throw new Error(JSON.stringify(last))
 		if (t.voice.listeners.size || t.media.listeners.size) throw new Error('listeners left behind')
 		t.tap('toggleMute')
 		await wait(400)
 		if (t.calls.toggles.length) throw new Error('a tap after stopping still toggled')
+	})
+
+	await test('the Buttons choice is sent to the bubble (mute only, deafen only, both)', async () => {
+		const t = await setup()
+		for (const choice of ['mute', 'deafen', 'both']) {
+			await t.plugin.storage.set({ buttons: choice })
+			await wait(5)
+			const last = t.calls.setState.at(-1)
+			if (last[4] !== choice) throw new Error(choice + ': ' + JSON.stringify(last))
+		}
+		await t.plugin.stop()
+	})
+
+	await test('an unknown saved choice falls back to both buttons', async () => {
+		const t = await setup()
+		await t.plugin.storage.set({ buttons: 'nonsense' })
+		await wait(5)
+		if (t.calls.setState.at(-1)[4] !== 'both') throw new Error(JSON.stringify(t.calls.setState.at(-1)))
+		await t.plugin.stop()
+	})
+
+	await test('the settings page has a Buttons choice with the three options, and picking one saves it', async () => {
+		const t = await setup()
+		const view = t.runtime.mount(t.runtime.React.createElement(t.definition.SettingsComponent))
+		const tree = await view.settle()
+		const group = findNode(tree, node => node.type === 'Design.TableRadioGroup')
+		if (!group) throw new Error('no radio group')
+		if (group.props.title !== 'Buttons' || group.props.value !== 'both') throw new Error(JSON.stringify({ title: group.props.title, value: group.props.value }))
+		const rows = findNodes(tree, node => node.type === 'Design.TableRadioRow').map(node => node.props.label + '=' + node.props.value)
+		if (rows.join() !== 'Mute and deafen=both,Mute only=mute,Deafen only=deafen') throw new Error(rows.join())
+		group.props.onChange('deafen')
+		await wait(5)
+		if (t.plugin.storage.cache.buttons !== 'deafen') throw new Error('not saved')
+		if (t.calls.setState.at(-1)[4] !== 'deafen') throw new Error('bubble not told')
+		const after = findNode(await view.settle(), node => node.type === 'Design.TableRadioGroup')
+		if (after.props.value !== 'deafen') throw new Error('the choice shown did not change')
+		view.unmount()
+		await t.plugin.stop()
 	})
 
 	done()

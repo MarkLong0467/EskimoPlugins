@@ -30,16 +30,31 @@ interface MediaEngineStore extends ChangeStore {
 	isSelfDeaf(): boolean
 }
 
+/** Which buttons the bubble has. */
+type Buttons = 'both' | 'mute' | 'deafen'
+
 interface BubbleSettings {
 	enabled: boolean
+	buttons: Buttons
 }
 
-const defaults: BubbleSettings = { enabled: true }
+const defaults: BubbleSettings = { enabled: true, buttons: 'both' }
+
+const BUTTON_CHOICES: Array<{ value: Buttons; label: string; subLabel: string }> = [
+	{ value: 'both', label: 'Mute and deafen', subLabel: 'Two buttons, mute on top' },
+	{ value: 'mute', label: 'Mute only', subLabel: 'One button that mutes' },
+	{ value: 'deafen', label: 'Deafen only', subLabel: 'One button that deafens' },
+]
 
 let running = false
 let storage: JsonStorage<BubbleSettings> | undefined
 
 const bubbleEnabled = () => storage?.cache?.enabled ?? defaults.enabled
+/** The saved choice, or both buttons when nothing (or something unknown) is saved. */
+const bubbleButtons = (): Buttons => {
+	const saved = storage?.cache?.buttons
+	return BUTTON_CHOICES.some(choice => choice.value === saved) ? (saved as Buttons) : defaults.buttons
+}
 let voiceStore: VoiceChannelStore | undefined
 let mediaStore: MediaEngineStore | undefined
 let lastState = ''
@@ -61,7 +76,8 @@ function sendState() {
 	const deafened = !!mediaStore?.isSelfDeaf()
 	const muted = !!mediaStore?.isSelfMute() || deafened
 	const enabled = bubbleEnabled()
-	const key = `${inCall}:${muted}:${deafened}:${enabled}`
+	const buttons = bubbleButtons()
+	const key = `${inCall}:${muted}:${deafened}:${enabled}:${buttons}`
 	if (key === lastState) return
 	lastState = key
 	callNativeMethod('marklong.voicebubble.setState', [
@@ -69,6 +85,7 @@ function sendState() {
 		muted,
 		deafened,
 		enabled,
+		buttons,
 	]).catch(() => {
 		lastState = ''
 	})
@@ -104,7 +121,7 @@ function EnableBubbleRow({
 	return (
 		<Row
 			label="Enable Bubble"
-			subLabel="Show floating mute and deafen buttons when you leave Discord during a call"
+			subLabel="Show floating voice buttons when you leave Discord during a call"
 			icon={<TableRowAssetIcon name="MicrophoneIcon" />}
 			value={enabled}
 			onValueChange={(value: boolean) => {
@@ -117,6 +134,28 @@ function EnableBubbleRow({
 const isAudioOutputRow = (element: ReactElement<any>) =>
 	typeof element?.props?.label === 'string' &&
 	element.props.label.trim().toLowerCase() === 'change audio output'
+
+function ButtonsGroup({ store }: { store: JsonStorage<BubbleSettings> }) {
+	store.use()
+	return (
+		<Design.TableRadioGroup
+			title="Buttons"
+			value={bubbleButtons()}
+			onChange={(value: Buttons) => {
+				void store.set({ buttons: value }).then(sendState)
+			}}
+		>
+			{BUTTON_CHOICES.map(choice => (
+				<Design.TableRadioRow
+					key={choice.value}
+					label={choice.label}
+					subLabel={choice.subLabel}
+					value={choice.value}
+				/>
+			))}
+		</Design.TableRadioGroup>
+	)
+}
 
 function SettingsPage() {
 	const { TableRowGroup, TableRow } = Design
@@ -146,6 +185,7 @@ function SettingsPage() {
 						<EnableBubbleRow store={storage} Row={Design.TableSwitchRow} />
 					</TableRowGroup>
 				)}
+				{storage && <ButtonsGroup store={storage} />}
 				<TableRowGroup
 					title="Display Over Other Apps"
 					description="The bubble needs this permission to float over other apps."
@@ -193,6 +233,7 @@ declare module '@valenced/modules/native' {
 				muted: boolean,
 				deafened: boolean,
 				enabled: boolean,
+				buttons: Buttons,
 			],
 			returnValue: boolean,
 		]
@@ -260,6 +301,7 @@ export default plugin<{ jsonStorage: BubbleSettings }>({
 				false,
 				false,
 				false,
+				'both',
 			]).catch(() => {})
 		})
 	},

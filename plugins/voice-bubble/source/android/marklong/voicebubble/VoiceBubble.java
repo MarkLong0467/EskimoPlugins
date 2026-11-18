@@ -3,8 +3,9 @@
  * Based on Mute Bubble 3.3.3 by coder.gg (https://github.com/il1ll/ValencedPlugins, GPL-3.0), rewritten in Java
  * with a second button for deafen. MarkLong0467.
  *
- * A floating bubble over other apps while you are in a call and Discord is in the background. The top button
- * mutes, the bottom one deafens. Taps are handed to the JS half (nextAction), which asks Discord to toggle.
+ * A floating bubble over other apps while you are in a call and Discord is in the background. It has a mute button,
+ * a deafen button, or both (mute on top), as chosen in the settings. Taps are handed to the JS half (nextAction),
+ * which asks Discord to toggle.
  */
 package marklong.voicebubble;
 
@@ -60,11 +61,21 @@ public final class VoiceBubble {
     static final int MUTE = 0;
     static final int DEAF = 1;
 
+    /** Which buttons the bubble has, from the settings ("both", "mute" or "deafen"). */
+    static final int BOTH = 0, MUTE_ONLY = 1, DEAF_ONLY = 2;
+
+    static int buttonsFrom(Object value) {
+        if ("mute".equals(value)) return MUTE_ONLY;
+        if ("deafen".equals(value)) return DEAF_ONLY;
+        return BOTH;
+    }
+
     // ---------------------------------------------------------------------------------------------------------------
     // The bubble: a dark pill with two round buttons, mic on top and headphones below. A button is red while on.
     // ---------------------------------------------------------------------------------------------------------------
     static final class BubbleView extends View {
         boolean muted, deafened;
+        int buttons = BOTH;
         int pressed = -1;
         private final float density;
         private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -92,12 +103,17 @@ public final class VoiceBubble {
         float pad() { return PAD_DP * density; }
         float gap() { return GAP_DP * density; }
 
-        /** Which button a point inside the view is on: the top half mutes, the bottom half deafens. */
-        int buttonAt(float y) { return y < getHeight() / 2f ? MUTE : DEAF; }
+        /** Which button a point inside the view is on: with both, the top half mutes and the bottom half deafens. */
+        int buttonAt(float y) {
+            if (buttons == MUTE_ONLY) return MUTE;
+            if (buttons == DEAF_ONLY) return DEAF;
+            return y < getHeight() / 2f ? MUTE : DEAF;
+        }
 
         @Override
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-            setMeasuredDimension((int) (button() + 2 * pad()), (int) (2 * button() + gap() + 2 * pad()));
+            int count = buttons == BOTH ? 2 : 1;
+            setMeasuredDimension((int) (button() + 2 * pad()), (int) (count * button() + (count - 1) * gap() + 2 * pad()));
         }
 
         @Override
@@ -108,8 +124,8 @@ public final class VoiceBubble {
             float cx = w / 2f, size = button();
             float top = pad() + size / 2f, bottom = h - pad() - size / 2f;
             // The mic shows muted while deafened too, as Discord does.
-            drawButton(canvas, cx, top, size, muted || deafened, pressed == MUTE, MUTE);
-            drawButton(canvas, cx, bottom, size, deafened, pressed == DEAF, DEAF);
+            if (buttons != DEAF_ONLY) drawButton(canvas, cx, top, size, muted || deafened, pressed == MUTE, MUTE);
+            if (buttons != MUTE_ONLY) drawButton(canvas, cx, bottom, size, deafened, pressed == DEAF, DEAF);
         }
 
         private void drawButton(Canvas canvas, float cx, float cy, float size, boolean on, boolean down, int which) {
@@ -243,6 +259,7 @@ public final class VoiceBubble {
 
         final Set<Activity> startedActivities = new HashSet<Activity>();
         boolean reportedInCall, muted, deafened, enabled = true, bubbleEnabled = true, attached;
+        int buttons = BOTH;
         BubbleView bubble;
         WindowManager.LayoutParams params;
         int savedX = -1, savedY = -1;
@@ -320,14 +337,24 @@ public final class VoiceBubble {
             }
         }
 
-        void setState(final boolean inCall, final boolean isMuted, final boolean isDeafened, final boolean isEnabled) {
+        void setState(final boolean inCall, final boolean isMuted, final boolean isDeafened, final boolean isEnabled, final int which) {
             handler.post(new Runnable() {
                 public void run() {
                     bubbleEnabled = isEnabled;
                     reportedInCall = inCall;
                     muted = isMuted;
                     deafened = isDeafened;
-                    if (bubble != null) bubble.set(muted, deafened);
+                    boolean resized = buttons != which;
+                    buttons = which;
+                    if (bubble != null) {
+                        bubble.buttons = buttons;
+                        bubble.set(muted, deafened);
+                        if (resized) {
+                            // One button or two: the bubble's size changes, so the window is told.
+                            bubble.requestLayout();
+                            try { if (params != null) windowManager.updateViewLayout(bubble, params); } catch (Throwable ignored) {}
+                        }
+                    }
                     refresh();
                 }
             });
@@ -364,6 +391,7 @@ public final class VoiceBubble {
             layout.y = savedY >= 0 ? savedY : (int) (180 * density);
 
             final BubbleView view = new BubbleView(context);
+            view.buttons = buttons;
             view.set(muted, deafened);
             final int touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
 
@@ -521,7 +549,8 @@ public final class VoiceBubble {
         register(bridge, "setState", new Function1<List<?>, Object>() {
             public Object invoke(List<?> args) {
                 Controller bubble = ensureController(null);
-                if (bubble != null) bubble.setState(bool(args, 0, false), bool(args, 1, false), bool(args, 2, false), bool(args, 3, true));
+                Object which = args != null && args.size() > 4 ? args.get(4) : null;
+                if (bubble != null) bubble.setState(bool(args, 0, false), bool(args, 1, false), bool(args, 2, false), bool(args, 3, true), buttonsFrom(which));
                 return Boolean.TRUE;
             }
         });
