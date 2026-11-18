@@ -4626,16 +4626,29 @@
     },
     "marklong.voice-bubble": {
       "name": "Mute & Deafen Bubble",
-      "description": "Floating mute and deafen buttons over other apps while you're in a call and Discord is in the background. Drag to move.",
+      "description": "Floating mute and deafen buttons over other apps while you're in a call and Discord is in the background. Choose mute, deafen or both. Drag to move.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "0.1.0"
+        "latest": "0.2.0"
       },
       "versions": {
         "0.1.0": {
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.voice-bubble@0.1.0.zip",
           "sha256": "85823e448fa8370d32299b29f73c784ae4a837721a71cef672fa35db1fb01677",
           "size": 13246,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "0.2.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.voice-bubble@0.2.0.zip",
+          "sha256": "6b756851caf71d0b9bc4d997bce21d2a75b5322064586f4c2f19aa348cf4f828",
+          "size": 13812,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
