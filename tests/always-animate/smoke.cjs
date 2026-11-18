@@ -209,6 +209,10 @@ const unrelated = Object.freeze({ visible: false, source: { uri: 'https://exampl
 assert.equal(runtime.jsx({ displayName: 'Modal' }, unrelated).props, unrelated);
 assert.equal(runtime.jsx(() => null, input).props.source.uri.endsWith('.gif?size=128'), true);
 assert.equal(runtime.jsx(avatar, Object.freeze({})).props.animate, true);
+// A profile frame piece is drawn from its /static picture at a measured width and height; there is no /animated one.
+const framePiece = Object.freeze({ resizeMode: 'cover', width: 412, height: 96, source: Object.freeze({ uri: 'https://cdn.discordapp.com/media/v1/collectibles-shop/1400000000000000001/2/static?width=1236&height=288' }) });
+assert.equal(runtime.jsx(() => null, framePiece).props, framePiece, 'profile frame pieces keep their own picture');
+assert.equal(runtime.jsx(() => null, { source: { uri: 'https://cdn.discordapp.com/media/v1/collectibles-shop/1400000000000000001/static?size=96' } }).props.source.uri, 'https://cdn.discordapp.com/media/v1/collectibles-shop/1400000000000000001/animated?size=96', 'decorations still animate');
 assert.equal(images.getUserAvatarURL({ url: 'https://cdn.discordapp.com/avatars/12/static.webp' }), 'https://cdn.discordapp.com/avatars/12/static.webp');
 assert.equal(images.getUserAvatarURL({ url: 'https://example.com/avatars/12/a_abc.webp' }), 'https://example.com/avatars/12/a_abc.webp');
 assert.equal(images.getUserAvatarURL({ url: 3 }), 3);

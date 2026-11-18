@@ -8,7 +8,7 @@
  * Uses Valenced's documented runtime API; no desktop webpack patches.
  */
   'use strict';
-  var VERSION = '4.1.3';
+  var VERSION = '4.1.4';
   var defaults = { images: true, emojis: true, stickers: true, cosmetics: true, gifs: true, motion: true };
   var storage;
   var stats = {};
@@ -30,8 +30,13 @@
 
   function animatedDecorationURL(url) {
     if (typeof url !== 'string' || !/^https:\/\/(?:cdn\.discordapp\.com|media\.discordapp\.net)\//i.test(url)) return url;
-    if (/\/media\/v1\/collectibles-shop\/\d+\/(?:[a-z0-9_-]+\/)*static(?:[?#]|$)/i.test(url))
+    if (/\/media\/v1\/collectibles-shop\/\d+\/(?:[a-z0-9_-]+\/)*static(?:[?#]|$)/i.test(url)) {
+      // A profile frame piece (collectibles-shop/<sku>/<layer>/static?width=..&height=..) only exists as that picture:
+      // Discord measures it before drawing it, and there is no /animated one, so the piece vanished. It is left as it
+      // is; one that is itself animated plays anyway, because animated pictures are turned on (setFastImageApngEnabled).
+      if (/[?&]width=\d/i.test(url) && /[?&]height=\d/i.test(url)) return url;
       return url.replace(/\/static(?=[?#]|$)/i, '/animated');
+    }
     if (!/\/avatar-decoration-presets\/[a-z0-9_]+\.png(?:[?#]|$)/i.test(url)) return url;
     var result = url.replace(/([?&])format=[^&#]*(?=&|#|$)/gi, '$1')
       .replace(/\?&/g, '?').replace(/&&+/g, '&').replace(/[?&](?=#|$)/g, '');
