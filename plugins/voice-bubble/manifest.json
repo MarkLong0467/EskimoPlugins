@@ -1,0 +1,27 @@
+{
+	"format": 1,
+	"id": "marklong.voice-bubble",
+	"name": "Mute & Deafen Bubble",
+	"description": "Floating mute and deafen buttons over other apps while you're in a call and Discord is in the background. Drag to move.",
+	"icon": "MicrophoneSlashIcon",
+	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+	"contributors": [
+		"coder.gg <1099039269391171765> (Mute Bubble, which this is based on) (https://github.com/il1ll \"GitHub\")"
+	],
+	"version": "0.1.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js",
+		"android": {
+			"path": "android/voice-bubble.jar",
+			"class": "marklong.voicebubble.VoiceBubble"
+		}
+	}
+}
