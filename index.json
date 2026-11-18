@@ -4623,6 +4623,32 @@
       "contributors": [
         "Discohook (https://discohook.app), whose message editor this follows"
       ]
+    },
+    "marklong.voice-bubble": {
+      "name": "Mute & Deafen Bubble",
+      "description": "Floating mute and deafen buttons over other apps while you're in a call and Discord is in the background. Drag to move.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "0.1.0"
+      },
+      "versions": {
+        "0.1.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.voice-bubble@0.1.0.zip",
+          "sha256": "85823e448fa8370d32299b29f73c784ae4a837721a71cef672fa35db1fb01677",
+          "size": 13246,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "contributors": [
+        "coder.gg <1099039269391171765> (Mute Bubble, which this is based on) (https://github.com/il1ll \"GitHub\")"
+      ]
     }
   }
 }
