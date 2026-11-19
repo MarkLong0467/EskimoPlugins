@@ -148,7 +148,7 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 	const hrow = a.runtime.jsx(MessagesItemChannelFast, { channelId: 'pin-head:s1', row: 0 })
 	check('the list asking for a heading row gets the heading', hrow.type.name === 'ListHeader')
 	a.setCur('hd'); const ht = texts(expand(hrow.type(hrow.props)))
-	check('the heading shows the section name and count', ht.join('').indexOf('BOYS') >= 0 && ht.join('').indexOf('1') >= 0, ht.join('|'))
+	check('the heading shows just the section name', ht.join('') === 'BOYS', ht.join('|'))
 	const hs = (o) => { const x = load(Object.assign({ sectionsJson: secs, assignJson: asg, hdStyle2: 'rows' }, o)); const r = x.runtime.jsx(MessagesItemChannelFast, { channelId: 'pin-head:s1', row: 0 }); x.setCur('s'); return r.type(r.props).props.style }
 	check('a heading is as tall as a chat row and has a little room above its text', hs({}).height === 55 && hs({}).paddingTop === 29, JSON.stringify(hs({})))
 	check('more space above a heading means more padding above its text', hs({ hdAbove2: 50 }).paddingTop === 39 && hs({ hdAbove2: 11 }).paddingTop === 0)
@@ -210,7 +210,7 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 		check('compact: the children of a labelled row are not wrapped or changed', kidsOf(rowFor('c2'))[0].props.style === undefined)
 		const lab = kidsOf(rowFor('c2')).filter((k) => k.type && k.type.name === 'CompactLabel')[0]
 		c.setCur('lab'); const ltxt = texts(expand(lab.type(lab.props))).join('')
-		check('compact: the label shows the section name and count', ltxt.indexOf('S1') < 0 && ltxt.toUpperCase().indexOf('BOYS') >= 0 && ltxt.indexOf('2') >= 0, ltxt)
+		check('compact: the label shows just the section name', ltxt === 'BOYS', ltxt)
 		const z = load({ sectionsJson: secs, assignJson: asg2, hdClear: 0 })
 		z.runtime.jsx(MessagesFastestList, { data: { channels: mk(), sections: [0, 1, 6] } })
 		const zr = z.runtime.jsx(PressableHighlight, { onLongPress: () => {}, children: { type: 'V', props: { channelId: LONG.c2 } }, style: { height: 55 } })

@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.15.6'
+	var VERSION = '1.15.7'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -1100,8 +1100,8 @@
 		var sec = state.sections.filter(function (x) { return x.id === kind })[0]
 		var name = sec ? sec.name : kind === 'loose' ? 'Pinned' : 'Direct messages'
 		var color = sec ? sec.color : '#80848e'
-		var count = sec ? state.pins.filter(function (id) { return state.assign[id] === sec.id }).length : 0
-		var label = (sec ? (sec.collapsed ? '▸ ' : '▾ ') : '') + String(name).toUpperCase() + (sec ? '  ' + count : '')
+		// Just the section's name; a folded section keeps a ▸ so its hidden chats are not lost.
+		var label = (sec && sec.collapsed ? '▸ ' : '') + String(name).toUpperCase()
 		return h(
 			RN.Pressable,
 			{ onPress: sec ? function () { toggleFold(sec.id) } : undefined, onLongPress: sec ? function () { openEditSection(sec) } : undefined, hitSlop: { top: 8, bottom: 6, left: 8, right: 8 }, style: { position: 'absolute', top: 0, left: 16, right: 16, height: 10, flexDirection: 'row', alignItems: 'center', gap: 6 } },
@@ -1126,8 +1126,8 @@
 		var sec = state.sections.filter(function (x) { return x.id === kind })[0]
 		var name = sec ? sec.name : kind === 'loose' ? 'Pinned' : 'Direct messages'
 		var color = sec ? sec.color : '#80848e'
-		var count = sec ? state.pins.filter(function (id) { return state.assign[id] === sec.id }).length : 0
-		var label = (sec ? (sec.collapsed ? '▸ ' : '▾ ') : '') + String(name).toUpperCase() + (sec ? '  ' + count : '')
+		// Just the section's name; a folded section keeps a ▸ so its hidden chats are not lost.
+		var label = (sec && sec.collapsed ? '▸ ' : '') + String(name).toUpperCase()
 		return h(
 			RN.Pressable,
 			{ onPress: sec ? function () { toggleFold(sec.id) } : undefined, onLongPress: sec ? function () { openEditSection(sec) } : undefined, style: { height: ROW, paddingHorizontal: 16, justifyContent: 'flex-start', paddingTop: gapTop(), transform: props.shift ? [{ translateY: -props.shift }] : undefined } },
