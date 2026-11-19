@@ -68,6 +68,13 @@
       "suffix": ""
     },
     {
+      "id": "marklong.better-medias",
+      "name": "Better Medias",
+      "version": "0.1.0",
+      "short": "Videos, audio files and voice messages keep playing in the background and with the screen locked",
+      "suffix": ""
+    },
+    {
       "id": "marklong.bypass-status",
       "name": "Bypass Status",
       "version": "3.0.1",
