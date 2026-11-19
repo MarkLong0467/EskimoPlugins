@@ -84,7 +84,7 @@ import kotlin.jvm.functions.Function2;
 public final class BetterMedias {
     static final String PREFIX = "marklong.bettermedias.";
     static final String REGISTRY_KEY = "marklong.bettermedias.instance";
-    static final String VERSION = "0.7.0";
+    static final String VERSION = "0.8.0";
     static final long WAIT_MS = 25000;
     static final String CHANNEL = "marklong_better_medias";
     static final int NOTIFICATION_ID = 0x4d454449; // "MEDI"
@@ -509,6 +509,8 @@ public final class BetterMedias {
         int videoH = 9;
         boolean filling;
         boolean audioOnly;
+        /** Whether videoW x videoH is the video's real size (not the 16:9 placeholder). */
+        boolean sizeKnown;
         final Matrix fit = new Matrix();
         float downX, downY, startTX, startTY;
         boolean dragged;
@@ -590,6 +592,12 @@ public final class BetterMedias {
             String bare = newUrl == null ? "" : (newUrl.indexOf('?') >= 0 ? newUrl.substring(0, newUrl.indexOf('?')) : newUrl).toLowerCase();
             audioOnly = bare.matches(".*\\.(mp3|ogg|oga|opus|flac|wav|m4a|aac|wma)$") || "Voice message".equals(title);
             badge.setTextSize(TypedValue.COMPLEX_UNIT_SP, audioOnly ? 14 : 30);
+            sizeKnown = false;
+            if (newUrl != null && newUrl.equals(Media.probedUrl) && Media.probedW > 0 && Media.probedH > 0) {
+                videoW = Media.probedW;
+                videoH = Media.probedH;
+                sizeKnown = true;
+            }
             layoutMini();
             startAt = Math.max(0, positionMs);
             wantPlay = play;
@@ -611,6 +619,7 @@ public final class BetterMedias {
                     if (width > 0 && height > 0 && !audioOnly) {
                         videoW = width;
                         videoH = height;
+                        sizeKnown = true;
                         layoutMini();
                         fitVideo();
                         pip.set(MINI, isPlaying(), videoW, videoH);
@@ -653,11 +662,17 @@ public final class BetterMedias {
 
         /** In Picture-in-Picture, the window takes the video's shape. */
         void fitPip() {
-            if (audioOnly || videoW <= 0 || videoH <= 0) return;
+            if (audioOnly || !sizeKnown || videoW <= 0 || videoH <= 0) return;
             pip.w = videoW;
             pip.h = videoH;
+            shapeWindow();
+            // Android can ignore a new shape while the window is still growing into Picture-in-Picture: say it again after.
+            main.postDelayed(new Runnable() { public void run() { if (mini == MiniView.this) shapeWindow(); } }, 800);
+        }
+
+        void shapeWindow() {
             Activity a = activity();
-            if (a == null || Build.VERSION.SDK_INT < 26) return;
+            if (a == null || Build.VERSION.SDK_INT < 26 || !sizeKnown) return;
             try {
                 if (a.isInPictureInPictureMode()) {
                     a.setPictureInPictureParams(pip.params(pip.active()));
@@ -697,7 +712,7 @@ public final class BetterMedias {
             report();
             main.removeCallbacks(ticker);
             if (isPlaying()) main.postDelayed(ticker, 1000);
-            pip.set(MINI, isPlaying() && !audioOnly, videoW, videoH);
+            pip.set(MINI, isPlaying() && !audioOnly, sizeKnown ? videoW : 0, sizeKnown ? videoH : 0);
         }
 
         void report() {
@@ -929,11 +944,14 @@ public final class BetterMedias {
         static volatile String sourceUrl = "";
 
         static volatile String probedUrl = "";
+        static volatile int probedW, probedH;
 
         /** The video's own width and height (read from the file in the background), so Picture-in-Picture opens in its shape. */
         static void probeSize(final String url) {
             if (url.equals(probedUrl)) return;
             probedUrl = url;
+            probedW = 0;
+            probedH = 0;
             new Thread(new Runnable() {
                 public void run() {
                     android.media.MediaMetadataRetriever r = new android.media.MediaMetadataRetriever();
@@ -943,6 +961,7 @@ public final class BetterMedias {
                         int h = Integer.parseInt(String.valueOf(r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)));
                         String rot = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);
                         if ("90".equals(rot) || "270".equals(rot)) { int t = w; w = h; h = t; }
+                        if (w > 0 && h > 0) { probedW = w; probedH = h; }
                         if (w > 0 && h > 0 && url.equals(videoUrl)) {
                             pip.w = w;
                             pip.h = h;
