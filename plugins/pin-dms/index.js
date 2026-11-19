@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.15.9'
+	var VERSION = '1.16.0'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -142,14 +142,53 @@
 		return /^\d{15,}$/.test(id) || isDm(id)
 	}
 
+	// ---- Discord's own pinned DMs ----------------------------------------------------------------------
+	// Discord hands its pinned DMs to the list separately and draws them above everything. With this on (the default) they are
+	// put in with the rest: a chat pinned both ways goes to the top of its section, any other at the top of Direct messages.
+	var nativeFavs = []
+	function nativeOn() {
+		try { return !storage || !storage.cache || storage.cache.nativeInto !== false } catch (e) { return true }
+	}
+	var favCache = null
+	function mergeFavorites(d) {
+		try {
+			var fav = d.channelFavorites
+			if (!nativeOn() || !Array.isArray(fav) || !fav.length || !Array.isArray(d.channels) || !Array.isArray(d.sections)) { if (!nativeOn() || !Array.isArray(fav) || !fav.length) nativeFavs = []; return d }
+			if (!read().pins.length) return d
+			if (d.sections[0] !== fav.length || d.sections[1] !== d.channels.length) return d
+			if (favCache && favCache.src === d) return favCache.out
+			var ids = fav.map(chatId).filter(Boolean)
+			var have = {}
+			ids.forEach(function (id) { have[id] = 1 })
+			var channels = fav.concat(d.channels.filter(function (e) { return !have[chatId(e)] }))
+			var sections = d.sections.slice()
+			sections[0] = 0
+			sections[1] = channels.length
+			var out = Object.assign({}, d, { channels: channels, channelFavorites: [], sections: sections })
+			nativeFavs = ids
+			favCache = { src: d, out: out }
+			if (status.listKey.indexOf('native pins merged') < 0) { status.listKey.push('native pins merged'); changed() }
+			return out
+		} catch (e) {
+			return d
+		}
+	}
+	/** Within one group, Discord's pinned DMs first (in Discord's order), then the rest in the plugin's order. */
+	function favsFirst(group) {
+		if (!nativeFavs.length || !nativeOn()) return group
+		var natives = nativeFavs.filter(function (id) { return group.indexOf(id) >= 0 })
+		return natives.length ? natives.concat(group.filter(function (id) { return natives.indexOf(id) < 0 })) : group
+	}
 	/** Pinned chats with no section first, then each section's chats in order, then everything else. */
 	function pinnedOrder(ids) {
 		var state = read()
 		var out = []
 		var seen = {}
-		state.pins.forEach(function (id) { if (ids.indexOf(id) >= 0 && !sectionOf(state, id) && !seen[id]) { out.push(id); seen[id] = 1 } })
+		var loose = state.pins.filter(function (id) { return ids.indexOf(id) >= 0 && !sectionOf(state, id) })
+		favsFirst(loose).forEach(function (id) { if (!seen[id]) { out.push(id); seen[id] = 1 } })
 		state.sections.forEach(function (section) {
-			state.pins.forEach(function (id) { if (ids.indexOf(id) >= 0 && state.assign[id] === section.id && !seen[id]) { out.push(id); seen[id] = 1 } })
+			var group = state.pins.filter(function (id) { return ids.indexOf(id) >= 0 && state.assign[id] === section.id })
+			favsFirst(group).forEach(function (id) { if (!seen[id]) { out.push(id); seen[id] = 1 } })
 		})
 		return out
 	}
@@ -1099,9 +1138,10 @@
 	 * Discord keeps a chat row as it was drawn, so a label or stripe on it would keep an old name or colour after the section
 	 * is renamed. These redraw themselves when the sections or pins change.
 	 */
-	function useSectionsWatch() {
+	function useSectionsWatch() { useWatch(function () { var st = read(); return JSON.stringify([st.sections, st.assign, st.pins]) }) }
+	/** Draws the piece again when keyOf() gives something new after a change. */
+	function useWatch(keyOf) {
 		var React = valenced.react.React
-		var keyOf = function () { var st = read(); return JSON.stringify([st.sections, st.assign]) }
 		var key = React.useState(keyOf)
 		React.useEffect(function () {
 			var live = true
@@ -1202,9 +1242,29 @@
 
 	/** The real DM list ("MessagesFastestList"): note what it is given, and put the pinned chats first in any list it holds. */
 	var fastCache = null
+	/**
+	 * The DM list only draws again when Discord's own data changes. Folding a section changes nothing of Discord's, so the
+	 * list is wrapped in a piece that draws it again whenever a pin, a section or a setting changes.
+	 */
 	function decorateFast(result) {
 		try {
 			if (nameOf(result) !== 'MessagesFastestList') return result
+			if (result.props && (result.props.__pinFast || result.props.__pinWrapped)) return result
+			return h(FastWrap, { key: result.key, el: result })
+		} catch (e) {
+			return result
+		}
+	}
+	function settingsKey() {
+		try { return JSON.stringify(storage && storage.cache) || '' } catch (e) { return '' }
+	}
+	function FastWrap(props) {
+		useWatch(settingsKey)
+		var out = decorateFastInner(props.el)
+		return out === props.el ? valenced.react.React.cloneElement(props.el, { __pinWrapped: true }) : out
+	}
+	function decorateFastInner(result) {
+		try {
 			var props = result.props || {}
 			var keys = Object.keys(props)
 			if (!status.fastList) {
@@ -1220,9 +1280,11 @@
 			var next = { __pinFast: true }
 			var any = false
 			// The DM tab hands the chats over as data.channels: [{ channelId, lastMessageId, ... }]. Pinned ones go first.
-			var d = props.data
+			// Discord's own pinned DMs come separately (data.channelFavorites); they are merged in, see mergeFavorites.
+			var d0 = props.data
+			var d = d0 && typeof d0 === 'object' && !Array.isArray(d0) ? mergeFavorites(d0) : d0
 			if (d && typeof d === 'object' && !Array.isArray(d) && Array.isArray(d.channels) && d.channels.length > 1) {
-				var stateKey = JSON.stringify(state)
+				var stateKey = JSON.stringify(state) + '|' + compactOn() + hdOn() + nativeOn()
 				if (!(fastCache && fastCache.orig === d.channels && fastCache.key === stateKey)) {
 					var orderedCh = reorderRows(d.channels)
 					var withHd = null
@@ -1232,7 +1294,7 @@
 					var labels = null
 					try { labels = compact && hdOn() ? computeLabels(finalList) : null } catch (e) { labels = null }
 					if (withHd || labels) armHeadingTrial()
-					fastCache = { orig: d.channels, key: stateKey, data: withHd ? Object.assign({}, d, withHd) : orderedCh === d.channels ? d : Object.assign({}, d, { channels: orderedCh }), moved: !!withHd || orderedCh !== d.channels, headings: !!withHd && !compact, labels: labels, pos: withHd && !compact ? positionMap(withHd.channels) : null }
+					fastCache = { orig: d.channels, key: stateKey, data: withHd ? Object.assign({}, d, withHd) : orderedCh === d.channels ? d : Object.assign({}, d, { channels: orderedCh }), moved: !!withHd || orderedCh !== d.channels || d !== d0, headings: !!withHd && !compact, labels: labels, pos: withHd && !compact ? positionMap(withHd.channels) : null }
 				}
 				if (fastCache.moved) {
 					next.data = fastCache.data
@@ -1887,6 +1949,7 @@
 					{ title: 'Experimental' },
 					h(Design.TableSwitchRow, { key: 'strip', label: 'Pinned strip above the DM tab', subLabel: 'Repeats your pinned chats in a panel at the top. Off by default.', value: stripEnabled(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripOn2: !!v }); changed() } catch (e) {} } }),
 					h(Design.TableSwitchRow, { key: 'stripbelow', label: 'Put the strip under the Messages header', subLabel: 'Only matters when the strip is on.', value: stripBelow(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripBelow2: !!v }); changed() } catch (e) {} } }),
+					h(Design.TableSwitchRow, { key: 'nativeinto', label: "Put Discord's pinned DMs in the sections", subLabel: 'A chat pinned in Discord goes to the top of its section, or to the top of Direct messages, instead of above everything.', value: nativeOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { nativeInto: !!v }); favCache = null; fastCache = null; refreshList() } catch (e) {} } }),
 					h(Design.TableSwitchRow, { key: 'hidepinned', label: 'Hide pinned chats from other lists', subLabel: 'Leaves them out of the normal DM lists the plugin can reach.', value: hideOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { hidePinned2: !!v }); refreshList() } catch (e) {} } }),
 				),
 				h(

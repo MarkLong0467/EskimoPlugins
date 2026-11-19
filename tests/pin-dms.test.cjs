@@ -48,6 +48,11 @@ function load(initial) {
 	const src = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'pin-dms', 'index.js'), 'utf8')
 	const p = new Function('valenced', 'plugin', 'return ' + src)(global.valenced, global.plugin).default
 	p.start({ cleanup: (f) => f, jsonStorage: json })
+	// The plugin wraps the DM list in a piece that draws it again on changes; draw that piece here, as React would.
+	for (const name of ['jsx', 'jsxs']) {
+		const patched = runtime[name]
+		runtime[name] = (t, props, key) => { const el = patched(t, props, key); return el && el.type && el.type.name === 'FastWrap' ? el.type(el.props) : el }
+	}
 	return { p, sort, channelStore, runtime, data, json, setCur: (c) => { cur = c; hi = 0 } }
 }
 const texts = (n, out = []) => { if (Array.isArray(n)) n.forEach((x) => texts(x, out)); else if (typeof n === 'string') out.push(n); else if (n && typeof n === 'object') texts(n.props && n.props.children, out); return out }
@@ -399,6 +404,65 @@ const later = []
 	check('the rows made for the menu are not swapped for the whole list again', again.every((w, i) => w.props.children.length === 1 && w.props.children[0] === rowsOf(wg)[i]), again.map((w) => w.props.children.length).join())
 	const regroup = wrap.runtime.jsx(TableRowGroup, { children: rowsOf(wg).slice(-2) })
 	check('a small group of the menu\'s own Pin rows is left alone', labelsOf(regroup).join('|') === 'Pin (no group)|Unpin', labelsOf(regroup).join('|'))
+}
+
+// Discord's own pinned DMs (data.channelFavorites) go into the groups: to the top of their section, or of Direct messages.
+{
+	const secs1 = '[{"id":"s1","name":"Boys","color":"#e67e22"}]'
+	const r = load({ sectionsJson: secs1, assignJson: JSON.stringify({ [LONG.c2]: 's1', [LONG.c4]: 's1' }) })
+	function MessagesFastestList() {}
+	function PressableHighlight() {}
+	const entry = (k) => ({ channelId: LONG[k], lastMessageId: '1', isFavorite: false, isRequest: false })
+	const data = { channels: ['c1', 'c2', 'c3', 'g1'].map(entry), channelFavorites: ['c4', 'c5'].map((k) => ({ ...entry(k), isFavorite: true })), sections: [2, 4, 0, 0, 0] }
+	const el = r.runtime.jsx(MessagesFastestList, { data })
+	const order = el.props.data.channels.map((c) => Object.keys(LONG).find((k) => LONG[k] === c.channelId)).join()
+	check('native pins: a chat pinned in Discord and in a section goes to the top of that section', order.startsWith('c4,c2'), order)
+	check('native pins: a chat pinned only in Discord goes to the top of Direct messages', order === 'c4,c2,c5,c1,c3,g1', order)
+	check('native pins: Discord no longer draws them above everything', el.props.data.channelFavorites.length === 0 && el.props.data.sections.slice(0, 2).join() === '0,6', JSON.stringify(el.props.data.sections))
+	const labelKind = (k) => { const row = r.runtime.jsx(PressableHighlight, { onLongPress: () => {}, children: { type: 'V', props: { channelId: LONG[k] } }, style: { height: 55 } }); const kids = Array.isArray(row.props.children) ? row.props.children : [row.props.children]; const lab = kids.filter((x) => x && x.type && x.type.name === 'CompactLabel')[0]; if (!lab) return ''; r.setCur('n' + k); return texts(expand(lab.type(lab.props))).join('') }
+	check('native pins: the section label sits on the first chat of the section', labelKind('c4') === 'BOYS' && labelKind('c2') === '', labelKind('c4') + '/' + labelKind('c2'))
+	check('native pins: Direct messages label sits on the Discord-pinned chat at its top', labelKind('c5') === 'DIRECT MESSAGES' && labelKind('c1') === '', labelKind('c5') + '/' + labelKind('c1'))
+	r.data.cache.nativeInto = false
+	const off = r.runtime.jsx(MessagesFastestList, { data: { ...data } })
+	check('native pins: with the switch off Discord keeps them above everything', off.props.data.channelFavorites.length === 2 && off.props.data.sections[0] === 2)
+	delete r.data.cache.nativeInto
+	const none = load({})
+	none.data.cache.pinsJson = '[]'
+	const plain = none.runtime.jsx(MessagesFastestList, { data })
+	check('native pins: with nothing pinned in the plugin the list is left as Discord made it', plain.props.data === data)
+}
+
+// Folding redraws the list straight away: the list piece listens for changes and draws again with the folded section.
+{
+	const secs1 = '[{"id":"s1","name":"Boys","color":"#e67e22"}]'
+	const r = load({ sectionsJson: secs1, assignJson: JSON.stringify({ [LONG.c2]: 's1', [LONG.c4]: 's1' }) })
+	const mine = globalThis.__pinDmsInstance
+	const React = global.valenced.react.React
+	const effects = []
+	React.useEffect = (fn) => { effects.push(fn) }
+	let redraws = 0
+	const realState = React.useState
+	React.useState = (i) => { const pair = realState(i); return [pair[0], (v) => { const before = pair[0]; pair[1]((old) => { const n = typeof v === 'function' ? v(old) : v; if (n !== old) redraws++; return n }); void before }] }
+	function MessagesFastestList() {}
+	function PressableHighlight() {}
+	const chans = () => Object.keys(LONG).map((k) => ({ channelId: LONG[k], lastMessageId: '1', isFavorite: false, isRequest: false }))
+	const data = { channels: chans(), sections: [0, 6, 0, 0, 0] }
+	r.setCur('wrap')
+	const first = r.runtime.jsx(MessagesFastestList, { data })
+	effects.forEach((fn) => fn())
+	check('fold: the list starts with both chats of the section', first.props.data.channels.length === 6)
+	const row = r.runtime.jsx(PressableHighlight, { onLongPress: () => {}, children: { type: 'V', props: { channelId: LONG.c2 } }, style: { height: 55 } })
+	const lab = (Array.isArray(row.props.children) ? row.props.children : [row.props.children]).filter((x) => x && x.type && x.type.name === 'CompactLabel')[0]
+	r.setCur('lab'); lab.type(lab.props).props.onPress()
+	later.push(new Promise((res) => setTimeout(() => {
+		globalThis.__pinDmsInstance = mine
+		check('fold: tapping the label asks the list to draw again (no need to open a chat)', redraws > 0, redraws)
+		r.setCur('wrap')
+		const again = r.runtime.jsx(MessagesFastestList, { data })
+		check('fold: drawn again, the folded section shows only its first chat', again.props.data.channels.length === 5, again.props.data.channels.length)
+		React.useState = realState
+		res()
+	}, 30)))
 }
 
 Promise.all(later).then(() => {
