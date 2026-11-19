@@ -323,6 +323,7 @@ function findInner(view) {
 		s.sendAction('pause:native')
 		await sleep(5)
 		check('pause from the notification pauses Discord’s player', s.nativePlayer.calls.includes('pause'))
+		check('the file it plays is told to the native half (to find the player to seek)', calls(s, 'nativeSource').some(c => /song\.mp3/.test(c.args[0])))
 
 		// The phone's report: a 7 second voice message came as time 2734, duration 7125 (it showed 38:40 before).
 		s.nativeCalls.length = 0

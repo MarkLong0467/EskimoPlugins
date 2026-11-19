@@ -12,7 +12,7 @@ import { lookupModule } from '@valenced/modules/finders'
 import { withProps } from '@valenced/modules/finders/filters'
 import { AppState, NativeEventEmitter, NativeModules } from 'react-native'
 import { count, errorText, found, note } from './diag'
-import { clearMedia, openMini, sendNativeVideo, sendUpdate, setPip } from './native'
+import { clearMedia, openMini, sendNativeSource, sendNativeVideo, sendUpdate, setPip } from './native'
 import { on } from './config'
 import { titleOf } from './videos'
 
@@ -340,6 +340,7 @@ function startNativePlayer(cleanup: Cleanup): NativePlayerModule | undefined {
 			nativeDurationMs = 0
 			nativeTimeMs = 0
 			pendingSeek = null
+			sendNativeSource(urlOf(source))
 		}
 		nativeSource = source
 		nativeKind = kindOf(source)

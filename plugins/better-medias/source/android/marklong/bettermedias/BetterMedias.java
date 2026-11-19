@@ -21,6 +21,7 @@ import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.Matrix;
 import android.graphics.Outline;
 import android.graphics.SurfaceTexture;
 import android.graphics.drawable.GradientDrawable;
@@ -83,7 +84,7 @@ import kotlin.jvm.functions.Function2;
 public final class BetterMedias {
     static final String PREFIX = "marklong.bettermedias.";
     static final String REGISTRY_KEY = "marklong.bettermedias.instance";
-    static final String VERSION = "0.5.0";
+    static final String VERSION = "0.6.0";
     static final long WAIT_MS = 25000;
     static final String CHANNEL = "marklong_better_medias";
     static final int NOTIFICATION_ID = 0x4d454449; // "MEDI"
@@ -507,6 +508,7 @@ public final class BetterMedias {
         int videoH = 9;
         boolean filling;
         boolean audioOnly;
+        final Matrix fit = new Matrix();
         float downX, downY, startTX, startTY;
         boolean dragged;
         final int touchSlop;
@@ -532,6 +534,9 @@ public final class BetterMedias {
             texture = new TextureView(context);
             texture.setSurfaceTextureListener(this);
             addView(texture, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+            texture.addOnLayoutChangeListener(new OnLayoutChangeListener() {
+                @Override public void onLayoutChange(View v, int l, int t, int r, int b, int ol, int ot, int or, int ob) { fitVideo(); }
+            });
             badge = new TextView(context);
             badge.setTextColor(Color.WHITE);
             badge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 30);
@@ -602,7 +607,14 @@ public final class BetterMedias {
             });
             mp.setOnVideoSizeChangedListener(new MediaPlayer.OnVideoSizeChangedListener() {
                 @Override public void onVideoSizeChanged(MediaPlayer p, int width, int height) {
-                    if (width > 0 && height > 0 && !audioOnly) { videoW = width; videoH = height; layoutMini(); pip.set(MINI, isPlaying(), videoW, videoH); }
+                    if (width > 0 && height > 0 && !audioOnly) {
+                        videoW = width;
+                        videoH = height;
+                        layoutMini();
+                        fitVideo();
+                        pip.set(MINI, isPlaying(), videoW, videoH);
+                        fitPip();
+                    }
                 }
             });
             mp.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
@@ -625,6 +637,34 @@ public final class BetterMedias {
                 return;
             }
             refresh();
+        }
+
+        /** The video keeps its shape inside the player (black bars instead of stretching). */
+        void fitVideo() {
+            int vw = texture.getWidth(), vh = texture.getHeight();
+            if (vw <= 0 || vh <= 0 || videoW <= 0 || videoH <= 0) return;
+            float scale = Math.min(vw / (float) videoW, vh / (float) videoH);
+            fit.reset();
+            fit.setScale(videoW * scale / vw, videoH * scale / vh, vw / 2f, vh / 2f);
+            texture.setTransform(fit);
+            texture.invalidate();
+        }
+
+        /** In Picture-in-Picture, the window takes the video's shape. */
+        void fitPip() {
+            if (audioOnly || videoW <= 0 || videoH <= 0) return;
+            pip.w = videoW;
+            pip.h = videoH;
+            Activity a = activity();
+            if (a == null || Build.VERSION.SDK_INT < 26) return;
+            try {
+                if (a.isInPictureInPictureMode()) {
+                    a.setPictureInPictureParams(pip.params(pip.active()));
+                    diag.count("Picture-in-Picture shaped to the video");
+                }
+            } catch (Throwable error) {
+                diag.error("pip shape", error);
+            }
         }
 
         void seekTo(long ms) {
@@ -884,6 +924,8 @@ public final class BetterMedias {
         static volatile long videoAt;
         static volatile boolean videoPlaying;
         static volatile long videoPlayedAt;
+        /** What Discord's chat player plays now (from the JavaScript half), to find its ExoPlayer. */
+        static volatile String sourceUrl = "";
 
         static long videoPosition() {
             return videoPlaying ? videoPosMs + (SystemClock.elapsedRealtime() - videoAt) : videoPosMs;
@@ -1243,15 +1285,174 @@ public final class BetterMedias {
             return null;
         }
 
-        /** Seeks the chat player that played last. False when it cannot be found (the JavaScript half then tries). */
+        /** "<folder>/<file>" of a URL: enough to recognise it inside a player whatever its query string. */
+        static String tailOf(String url) {
+            if (url == null || url.isEmpty()) return "";
+            int q = url.indexOf('?');
+            String bare = q >= 0 ? url.substring(0, q) : url;
+            String[] parts = bare.split("/");
+            return parts.length >= 2 ? parts[parts.length - 2] + "/" + parts[parts.length - 1] : bare;
+        }
+
+        /** Does this player hold that file (its media item's address, somewhere in its fields)? */
+        static boolean plays(Object player, String tail) {
+            if (tail.isEmpty()) return false;
+            IdentityHashMap<Object, Boolean> seen = new IdentityHashMap<Object, Boolean>();
+            java.util.ArrayDeque<Object[]> queue = new java.util.ArrayDeque<Object[]>();
+            queue.add(new Object[] {player, 0});
+            while (!queue.isEmpty() && seen.size() < 5000) {
+                Object[] item = queue.poll();
+                Object o = item[0];
+                int depth = (Integer) item[1];
+                if (o == null || seen.containsKey(o)) continue;
+                seen.put(o, Boolean.TRUE);
+                if (o instanceof String || o instanceof Uri) {
+                    if (o.toString().contains(tail)) return true;
+                    continue;
+                }
+                if (depth >= 8 || Media.skip(o)) continue;
+                if (o instanceof Collection) {
+                    int i = 0;
+                    try { for (Object v : (Collection<?>) o) { if (i++ > 50) break; queue.add(new Object[] {v, depth + 1}); } } catch (Throwable ignored) {}
+                    continue;
+                }
+                if (o instanceof Map) {
+                    int i = 0;
+                    try { for (Object v : ((Map<?, ?>) o).values()) { if (i++ > 50) break; queue.add(new Object[] {v, depth + 1}); } } catch (Throwable ignored) {}
+                    continue;
+                }
+                if (o instanceof Object[]) {
+                    Object[] array = (Object[]) o;
+                    for (int i = 0; i < array.length && i < 50; i++) queue.add(new Object[] {array[i], depth + 1});
+                    continue;
+                }
+                if (o.getClass().isArray()) continue;
+                for (Class<?> c = o.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+                    String n = c.getName();
+                    if (n.startsWith("java.") || n.startsWith("android.") || n.startsWith("kotlin.")) break;
+                    Field[] fields;
+                    try { fields = c.getDeclaredFields(); } catch (Throwable error) { continue; }
+                    for (Field f : fields) {
+                        if (f.getType().isPrimitive() || java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                        try { f.setAccessible(true); queue.add(new Object[] {f.get(o), depth + 1}); } catch (Throwable ignored) {}
+                    }
+                }
+            }
+            return false;
+        }
+
+        /** The playback handler for the file Discord's chat player plays now; else the one that worked last. */
+        static Object pickInternal() {
+            List<Object> all = new ArrayList<Object>();
+            synchronized (lastWork) { for (Object k : lastWork.keySet()) if (k != null) all.add(k); }
+            String tail = tailOf(Media.sourceUrl);
+            for (Object internal : all) {
+                if (plays(internal, tail)) {
+                    pickedHow = "the one playing " + tail + " (of " + all.size() + ")";
+                    return internal;
+                }
+            }
+            pickedHow = (tail.isEmpty() ? "no current file known" : "none holds " + tail) + ", the busiest of " + all.size();
+            return activeInternal();
+        }
+        static volatile String pickedHow = "";
+
+        /**
+         * The playback handler's own seek: seekTo(Timeline, int item, long positionUs). It only queues a message on the playback
+         * thread, so it is safe from any thread. Found by shape: void (object, int, long); the timeline is the one it holds.
+         */
+        static Object[] internalSeek(Object internal) {
+            Method found = null;
+            for (Class<?> c = internal.getClass(); c != null && c != Object.class && found == null; c = c.getSuperclass()) {
+                Method[] methods;
+                try { methods = c.getDeclaredMethods(); } catch (Throwable error) { continue; }
+                for (Method m : methods) {
+                    Class<?>[] t = m.getParameterTypes();
+                    if (t.length == 3 && !t[0].isPrimitive() && !t[0].getName().startsWith("java.") && !t[0].getName().startsWith("android.")
+                        && t[1] == int.class && t[2] == long.class && m.getReturnType() == void.class
+                        && !java.lang.reflect.Modifier.isStatic(m.getModifiers()) && !java.lang.reflect.Modifier.isAbstract(m.getModifiers())) {
+                        m.setAccessible(true);
+                        found = m;
+                        break;
+                    }
+                }
+            }
+            if (found == null) return null;
+            Object timeline = instanceOf(internal, found.getParameterTypes()[0]);
+            return timeline == null ? new Object[] {found, null} : new Object[] {found, timeline};
+        }
+
+        /** The first object of that type in its fields (a few levels deep). */
+        static Object instanceOf(Object root, Class<?> type) {
+            IdentityHashMap<Object, Boolean> seen = new IdentityHashMap<Object, Boolean>();
+            java.util.ArrayDeque<Object[]> queue = new java.util.ArrayDeque<Object[]>();
+            queue.add(new Object[] {root, 0});
+            while (!queue.isEmpty() && seen.size() < 2000) {
+                Object[] item = queue.poll();
+                Object o = item[0];
+                int depth = (Integer) item[1];
+                if (o == null || seen.containsKey(o)) continue;
+                seen.put(o, Boolean.TRUE);
+                if (o != root && type.isInstance(o)) return o;
+                if (depth >= 3 || Media.skip(o) || o.getClass().isArray()) continue;
+                for (Class<?> c = o.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+                    String n = c.getName();
+                    if (n.startsWith("java.") || n.startsWith("android.") || n.startsWith("kotlin.")) break;
+                    Field[] fields;
+                    try { fields = c.getDeclaredFields(); } catch (Throwable error) { continue; }
+                    for (Field f : fields) {
+                        if (f.getType().isPrimitive() || java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                        try { f.setAccessible(true); queue.add(new Object[] {f.get(o), depth + 1}); } catch (Throwable ignored) {}
+                    }
+                }
+            }
+            return null;
+        }
+
+        /** Methods of the handler that take a long: what there is to work with, for the report. */
+        static String longMethods(Object internal) {
+            List<String> out = new ArrayList<String>();
+            try {
+                for (Method m : internal.getClass().getDeclaredMethods()) {
+                    StringBuilder sig = new StringBuilder(m.getName()).append('(');
+                    boolean hasLong = false;
+                    Class<?>[] t = m.getParameterTypes();
+                    for (int i = 0; i < t.length; i++) { sig.append(i > 0 ? "," : "").append(t[i].getSimpleName()); if (t[i] == long.class) hasLong = true; }
+                    if (hasLong && out.size() < 12) out.add(sig.append(')').toString());
+                }
+            } catch (Throwable ignored) {}
+            return out.toString();
+        }
+
+        /** Seeks Discord's chat player. False when it cannot be done here (the JavaScript half then tries). */
         static boolean seek(final long ms) {
-            Object internal = activeInternal();
-            if (internal == null) { info = internalClass == null ? info : "no player has played yet"; return false; }
+            if (lastWork.isEmpty()) { info = internalClass == null ? info : "no player has played yet"; return false; }
+            final Object internal;
+            try { internal = pickInternal(); } catch (Throwable error) { info = "picking the player: " + error; return false; }
+            if (internal == null) { info = "no player"; return false; }
+            Object[] way = null;
+            try { way = internalSeek(internal); } catch (Throwable error) { info = "handler seek: " + error; }
+            if (way != null && way[1] != null) {
+                final Method m = (Method) way[0];
+                final Object timeline = way[1];
+                try {
+                    m.invoke(internal, timeline, 0, ms * 1000L);
+                    info = "seek through " + internal.getClass().getName() + "." + m.getName() + " (" + pickedHow + ")";
+                    diag.count("seek through ExoPlayer");
+                    return true;
+                } catch (Throwable error) {
+                    diag.error("ExoPlayer seek", error instanceof java.lang.reflect.InvocationTargetException && error.getCause() != null ? error.getCause() : error);
+                }
+            }
+            // The player object, if it can be reached from the handler: seekTo(int item, long ms, int command, boolean).
             final Object[] found;
             try { found = findPlayer(internal); } catch (Throwable error) { info = "looking for the player: " + error; return false; }
-            if (found == null) { info = "player not found from " + internal.getClass().getName(); return false; }
+            if (found == null) {
+                info = "no seek found on " + internal.getClass().getName() + (way == null ? "" : way[1] == null ? " (seek found, no timeline)" : "") + "; methods with a long: " + longMethods(internal);
+                return false;
+            }
             final Method seek = (Method) found[1];
-            info = "player " + found[0].getClass().getName() + "." + seek.getName() + "(int,long,int,boolean)";
+            info = "player " + found[0].getClass().getName() + "." + seek.getName() + "(int,long,int,boolean) (" + pickedHow + ")";
             post(new Runnable() {
                 public void run() {
                     try {
@@ -1489,7 +1690,7 @@ public final class BetterMedias {
                                     diag.count("entered Picture-in-Picture");
                                     Media.handOffForPip((Activity) param.thisObject);
                                 }
-                                post(new Runnable() { public void run() { MiniView v = mini; if (v != null) v.layoutMini(); } });
+                                post(new Runnable() { public void run() { MiniView v = mini; if (v != null) { v.layoutMini(); v.fitVideo(); v.fitPip(); } } });
                             } catch (Throwable error) {
                                 diag.error("pip changed", error);
                             }
@@ -1635,6 +1836,9 @@ public final class BetterMedias {
                 pip.set(str(args, 4).isEmpty() ? "js" : str(args, 4), bool(args, 0, false), (int) num(args, 1, 16), (int) num(args, 2, 9));
                 return Boolean.TRUE;
             }
+        });
+        register(bridge, "nativeSource", new Function1<List<?>, Object>() {
+            public Object invoke(List<?> args) { Media.sourceUrl = str(args, 0); return Boolean.TRUE; }
         });
         register(bridge, "nativeVideo", new Function1<List<?>, Object>() {
             public Object invoke(List<?> args) {

@@ -57,6 +57,11 @@ export function miniCommand(command: 'play' | 'pause' | 'close'): void {
 }
 
 /** The chat video that plays now: when Discord is left, the small player shows it in Picture-in-Picture. */
+/** The file Discord's chat player plays now: the native half finds the player holding it, to seek it. */
+export function sendNativeSource(url: string): void {
+	void call('nativeSource', [url])
+}
+
 export function sendNativeVideo(url: string, positionMs: number, title: string, playing: boolean): void {
 	void call('nativeVideo', [url, Math.max(0, Math.round(positionMs)), title, playing])
 }
@@ -74,6 +79,7 @@ export interface NativeBetterMedias {
 	mini: [[command: string], boolean]
 	miniState: [[], string]
 	pip: [[wanted: boolean, width: number, height: number, inCall: boolean, by: string], boolean]
+	nativeSource: [[url: string], boolean]
 	nativeVideo: [[url: string, positionMs: number, title: string, playing: boolean], boolean]
 	status: [[], string]
 	report: [[], string]
