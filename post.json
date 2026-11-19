@@ -196,8 +196,8 @@
     {
       "id": "marklong.voice-bubble",
       "name": "Mute & Deafen Bubble",
-      "version": "0.2.0",
-      "short": "Floating mute and deafen buttons over other apps while you're in a call and Discord is in the…",
+      "version": "0.3.0",
+      "short": "Floating mute, deafen, screen share and disconnect buttons over other apps while you're in a call…",
       "suffix": ""
     },
     {
