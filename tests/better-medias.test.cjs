@@ -437,30 +437,50 @@ function findInner(view) {
 		await running.stop()
 	}
 
-	// --- 0.3.0: seeking Discord's chat player through changeProgress (seconds first, milliseconds if it did not land)
+	// --- Seeking Discord's chat player: changeProgress(number, number). The phone said: "Expected argument 0 of method
+	// changeProgress to be a number, but got a string". The numbers in the source id are tried, in s, ms and as a fraction.
 	{
 		const s = setup()
-		s.nativePlayer.changeProgress = (id, value) => s.nativePlayer.calls.push(`seek ${id} ${value}`)
+		const sent = []
+		s.nativePlayer.changeProgress = (id, value) => {
+			if (typeof id !== 'number') throw new Error('Exception in HostFunction: Expected argument 0 of method "changeProgress" to be a number, but got a string')
+			sent.push(`${id} ${value}`)
+		}
 		const running = await startPlugin(loadPlugin('better-medias').definition, s.runtime, { storage: s.storage })
 		await sleep(10)
-		const song = { id: 'm1', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/song.mp3' }
-		s.emit('MediaPlayerPlaybackRateChanged', { source: song, rate: 1 })
-		s.emit('MediaPlayerPlaybackProgressUpdated', { source: song, time: 1000, duration: 60000 })
+		const clip = { id: '1573063218341875735.0:1626432719', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/clip.mp4' }
+		s.emit('MediaPlayerPlaybackRateChanged', { source: clip, rate: 1 })
+		s.emit('MediaPlayerPlaybackProgressUpdated', { source: clip, time: 1000, duration: 60000 })
 		await sleep(5)
 		check('the notification gets a seek bar for Discord’s chat player', updates(s).filter(x => x.target === 'native').at(-1).canSeek === true)
 		s.sendAction('seek:native:30000')
 		await sleep(5)
-		check('seeking from the notification asks Discord’s player to go there (seconds)', s.nativePlayer.calls.includes('seek m1 30'), String(s.nativePlayer.calls))
-		// The player did not move (it wanted milliseconds): the other unit is tried.
-		await sleep(1100)
-		s.emit('MediaPlayerPlaybackProgressUpdated', { source: song, time: 2100, duration: 60000 })
-		check('when it did not land there, milliseconds are tried', s.nativePlayer.calls.includes('seek m1 30000'), String(s.nativePlayer.calls))
+		check('a seek sends the number from the id, never the text id (seconds first)', sent[0] === '1626432719 30', String(sent))
+		await sleep(1300)
+		s.emit('MediaPlayerPlaybackProgressUpdated', { source: clip, time: 2300, duration: 60000 })
+		check('when the player did not move, milliseconds are tried', sent[1] === '1626432719 30000', String(sent))
 		await sleep(300)
-		s.emit('MediaPlayerPlaybackProgressUpdated', { source: song, time: 30200, duration: 60000 })
-		s.nativePlayer.calls.length = 0
+		s.emit('MediaPlayerPlaybackProgressUpdated', { source: clip, time: 30200, duration: 60000 })
+		sent.length = 0
 		s.sendAction('seek:native:45000')
 		await sleep(5)
-		check('and the unit that worked is used from then on', s.nativePlayer.calls.includes('seek m1 45000'), String(s.nativePlayer.calls))
+		check('and the way that worked is used from then on', sent[0] === '1626432719 45000', String(sent))
+		await running.stop()
+	}
+
+	// --- Several at once with two short audio clips: a 2 second voice message is carried on too
+	{
+		const s = setup()
+		const running = await startPlugin(loadPlugin('better-medias').definition, s.runtime, { storage: s.storage })
+		await sleep(10)
+		const voice = { id: 'v1', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/voice-message.ogg', isVoiceMessage: true }
+		const song = { id: 'm1', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/01_.flac' }
+		s.emit('MediaPlayerPlaybackRateChanged', { source: voice, rate: 1 })
+		s.emit('MediaPlayerPlaybackProgressUpdated', { source: voice, time: 600, duration: 2320 })
+		s.emit('MediaPlayerPlaybackSourceChanged', { source: song })
+		await sleep(5)
+		const mini = calls(s, 'miniOpen').at(-1)
+		check('audio + audio: a short voice message playing when a song starts carries on', mini && /voice-message/.test(mini.args[0]) && mini.args[2] === 'Voice message', JSON.stringify(mini))
 		await running.stop()
 	}
 

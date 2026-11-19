@@ -82,8 +82,7 @@ function startVoiceMessages(cleanup: Cleanup): void {
  *   notification's play button does), so when it was playing as Discord left, it is started again.
  * - It plays one thing at a time. With "Play several at once" on, what was playing carries on in the plugin's small player when
  *   something else starts; a chat video left by changing chats carries on there too, so it can be seen.
- * - Seeking: Discord's media viewer seeks it with `changeProgress(id, value)`. The unit is not known for sure (seconds is
- *   tried first, as Discord's viewer counts in seconds); if the player does not land there, milliseconds are tried.
+ * - Seeking: see nativeSeek below.
  */
 interface NativePlayerModule {
 	playCurrentPlayer?: () => void
@@ -114,9 +113,6 @@ let resumes = 0
 let userPausedAt = 0
 let pipWanted = false
 let appActive = true
-/** Seeking through changeProgress: the unit that worked, and a seek waiting to be checked. */
-let seekUnit: 's' | 'ms' = 's'
-let pendingSeek: { target: number; unit: 's' | 'ms'; at: number; retried: boolean } | null = null
 let lastRaw = ''
 let inCallNow = () => false
 
@@ -206,47 +202,86 @@ function handToMini(reason: string): void {
 	count(reason)
 }
 
-/** Seeks Discord's chat player (see the top of this part for the unit). */
+/**
+ * Seeking Discord's chat player: `changeProgress(id: number, value: number)`. Neither the id nor the unit is documented. The
+ * chat player's source id looks like "<message id>.<n>:<number>", so the numbers in it are tried, each in seconds,
+ * milliseconds and as a fraction of the length. The first way that moves the player there is kept.
+ */
+type SeekWay = { id: 'after' | 'before' | 'portal'; unit: 's' | 'ms' | 'frac' }
+const SEEK_WAYS: SeekWay[] = (['portal', 'after', 'before'] as const).flatMap(id => (['s', 'ms', 'frac'] as const).map(unit => ({ id, unit })))
+let seekWay = 0
+let seekWorks = false
+let pendingSeek: { target: number; from: number; way: number; at: number; tries: number } | null = null
+
+function seekId(source: any, way: SeekWay): number | undefined {
+	if (way.id === 'portal') return typeof source?.portal === 'number' ? source.portal : undefined
+	const id = String(source?.id ?? '')
+	const part = way.id === 'after' ? id.split(':')[1] : id.split(':')[0]
+	const value = part === undefined || part === '' ? NaN : Number(part)
+	return Number.isFinite(value) ? value : undefined
+}
+
+/** Seeks Discord's chat player (see above). */
 function nativeSeek(ms: number): void {
 	if (!canSeek() || !(ms >= 0)) {
 		note('seek: Discord’s chat player has no changeProgress here')
 		return
 	}
-	pendingSeek = { target: ms, unit: seekUnit, at: Date.now(), retried: false }
-	sendSeek(ms, seekUnit)
+	pendingSeek = { target: ms, from: nativeTimeMs, way: seekWay, at: Date.now(), tries: 0 }
+	trySeek()
 }
 
-function sendSeek(ms: number, unit: 's' | 'ms'): void {
-	try {
-		nativeModule?.changeProgress?.(nativeSource.id, unit === 's' ? ms / 1000 : ms)
-	} catch (error) {
-		note(`seek (${unit}): ${errorText(error)}`)
+/** Sends the pending seek the current way; ways that cannot even be sent (no such id, an error) are skipped at once. */
+function trySeek(): void {
+	const seek = pendingSeek
+	if (!seek) return
+	while (seek.tries < SEEK_WAYS.length) {
+		const way = SEEK_WAYS[seek.way % SEEK_WAYS.length]!
+		seek.tries++
+		const id = seekId(nativeSource, way)
+		const value = way.unit === 's' ? seek.target / 1000 : way.unit === 'ms' ? seek.target : nativeDurationMs > 0 ? seek.target / nativeDurationMs : NaN
+		if (id !== undefined && Number.isFinite(value)) {
+			try {
+				nativeModule?.changeProgress?.(id, value)
+				seek.at = Date.now()
+				nativeTimeMs = seek.target
+				reportedAt = 0
+				return
+			} catch (error) {
+				note(`seek (${way.id} ${way.unit}): ${errorText(error).slice(0, 80)}`)
+			}
+		}
+		seek.way = (seek.way + 1) % SEEK_WAYS.length
 	}
-	nativeTimeMs = ms
-	reportedAt = 0
+	note(`seek: no way moved the player (id ${String(nativeSource?.id)})`)
+	pendingSeek = null
 }
 
-/** After a seek: did the player land there? If not, the other unit is tried once. */
+/** After a seek: did the player land there? If not, the next way is tried. */
 function checkSeek(): void {
 	const seek = pendingSeek
 	if (!seek) return
 	const since = Date.now() - seek.at
 	if (since < 250) return
-	if (Math.abs(nativeTimeMs - seek.target) < 2500) {
-		seekUnit = seek.unit
+	if (Math.abs(nativeTimeMs - seek.target) < 1500) {
+		// Landing where it already was proves nothing; otherwise this way works.
+		if (Math.abs(seek.from - seek.target) > 2500) {
+			seekWay = seek.way
+			const way = SEEK_WAYS[seek.way]!
+			if (!seekWorks) count(`seek works (${way.id} ${way.unit})`)
+			seekWorks = true
+		}
 		pendingSeek = null
-		count(`seek works (${seek.unit})`)
 		return
 	}
-	if (since < 1000) return
-	if (seek.retried) {
-		pendingSeek = null
-		note(`seek: the player did not move to ${seek.target} ms (tried s and ms with id ${String(nativeSource?.id)})`)
-		return
+	if (since < 1200) return
+	if (seekWorks && seek.way === seekWay && seek.tries === 1) {
+		// The way that worked before did not this time (another player?): look again.
+		seekWorks = false
 	}
-	const other = seek.unit === 's' ? 'ms' : 's'
-	pendingSeek = { target: seek.target, unit: other, at: Date.now(), retried: true }
-	sendSeek(seek.target, other)
+	seek.way = (seek.way + 1) % SEEK_WAYS.length
+	seek.from = nativeTimeMs
+	trySeek()
 }
 
 /** Discord pauses every chat player when another chat opens; with "across chats" on, that is skipped. */
@@ -291,10 +326,11 @@ function startNativePlayer(cleanup: Cleanup): NativePlayerModule | undefined {
 		if (!source) return
 		if (source.id !== nativeSource?.id || urlOf(source) !== urlOf(nativeSource)) {
 			// Something else starts while one plays: with "Play several at once" on, the one before carries on in the small
-			// player (Discord's player plays one thing at a time). Very short clips (GIF-like videos) are left alone.
+			// player (Discord's player plays one thing at a time). Very short videos (GIF-like clips) are left alone; short voice
+			// messages are not.
 			const before = nativeSource
 			const wasPlaying = !!before && (playing() || Date.now() - playingAt < 1500)
-			if (wasPlaying && appActive && on('simultaneous') && nativeDurationMs > 3000 && nativeDurationMs - nativeTimeMs > 1500) {
+			if (wasPlaying && appActive && on('simultaneous') && (nativeKind !== 'video' || nativeDurationMs > 3000) && nativeDurationMs - nativeTimeMs > 300) {
 				const url = urlOf(before)
 				if (url) {
 					openMini(url, nativeTimeMs, nativeTitle(before).title, true)
@@ -377,7 +413,8 @@ export function nativeCommand(module: NativePlayerModule | undefined, cmd: strin
 
 export function nativeReport(): string {
 	const state = nativeSource ? `${nativeKind} ${playing() ? 'playing' : 'paused'} ${nativeTimeMs}/${nativeDurationMs} ms` : 'nothing yet'
-	const seek = canSeek() ? `seek via changeProgress (${seekUnit})` : 'no seek'
+	const way = SEEK_WAYS[seekWay]!
+	const seek = canSeek() ? `seek via changeProgress (${seekWorks ? `${way.id} ${way.unit}` : 'way not found yet'})` : 'no seek'
 	return `native player: ${state}, ${seek}${lastRaw ? `, first progress ${lastRaw}` : ''}`
 }
 

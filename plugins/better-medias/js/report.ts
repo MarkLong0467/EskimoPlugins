@@ -5,7 +5,7 @@ import { call } from './native'
 import { current } from './config'
 import { isPlaying, videos } from './videos'
 
-export const VERSION = '0.3.0'
+export const VERSION = '0.4.0'
 
 /** Discord's native modules that look like they play media, with their methods: what there is to work with. */
 function mediaModules(): string {

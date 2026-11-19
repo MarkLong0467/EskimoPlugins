@@ -83,7 +83,7 @@ import kotlin.jvm.functions.Function2;
 public final class BetterMedias {
     static final String PREFIX = "marklong.bettermedias.";
     static final String REGISTRY_KEY = "marklong.bettermedias.instance";
-    static final String VERSION = "0.3.0";
+    static final String VERSION = "0.4.0";
     static final long WAIT_MS = 25000;
     static final String CHANNEL = "marklong_better_medias";
     static final int NOTIFICATION_ID = 0x4d454449; // "MEDI"
@@ -1097,6 +1097,22 @@ public final class BetterMedias {
                         out.append(")");
                     }
                 } catch (Throwable ignored) {}
+                try {
+                    List<String> fields = new ArrayList<String>();
+                    for (Field f : m.getClass().getDeclaredFields()) {
+                        if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                        f.setAccessible(true);
+                        Object v = f.get(m);
+                        String text = f.getName() + ":" + (v == null ? "null" : v.getClass().getName());
+                        if (v instanceof Map) {
+                            List<String> keys = new ArrayList<String>();
+                            for (Object k : ((Map<?, ?>) v).keySet()) { if (keys.size() >= 4) break; keys.add(String.valueOf(k)); }
+                            text += "{" + ((Map<?, ?>) v).size() + " " + keys + "}";
+                        }
+                        fields.add(text);
+                    }
+                    out.append("; fields ").append(fields);
+                } catch (Throwable ignored) {}
                 out.append("; chat video: ").append(videoUrl.isEmpty() ? "none" : shortUrl(videoUrl) + (videoPlaying ? " playing" : " paused"));
             }
             return out.toString();
@@ -1223,6 +1239,7 @@ public final class BetterMedias {
                     if (app != null && !a.getPackageName().equals(app.getPackageName())) return;
                     activityRef = new WeakReference<Activity>(a);
                     foreground = true;
+                    hookActivityClass(a.getClass());
                     MiniView m = mini;
                     if (m != null) m.attachTo(a);
                     pip.apply();
@@ -1283,6 +1300,49 @@ public final class BetterMedias {
                 diag.pausedBy("MediaPlayer");
             }
         });
+    }
+
+    /**
+     * Discord's own activity replaces onUserLeaveHint (it starts Picture-in-Picture for calls there) without calling Android's,
+     * so the hook on Activity never runs: its own methods are hooked too. onPictureInPictureModeChanged catches the moment the
+     * window becomes Picture-in-Picture, whichever way that happened.
+     */
+    static final Set<Class<?>> hookedActivities = new LinkedHashSet<Class<?>>();
+
+    static void hookActivityClass(Class<?> cls) {
+        synchronized (hookedActivities) { if (!hookedActivities.add(cls)) return; }
+        for (Class<?> c = cls; c != null && c != Activity.class && c != Object.class; c = c.getSuperclass()) {
+            Method[] methods;
+            try { methods = c.getDeclaredMethods(); } catch (Throwable error) { continue; }
+            for (Method m : methods) {
+                String name = m.getName();
+                Class<?>[] types = m.getParameterTypes();
+                if (java.lang.reflect.Modifier.isAbstract(m.getModifiers())) continue;
+                if (name.equals("onUserLeaveHint") && types.length == 0) {
+                    hook(c.getSimpleName() + ".onUserLeaveHint", m, new XC_MethodHook() {
+                        @Override protected void beforeHookedMethod(MethodHookParam param) {
+                            if (!(param.thisObject instanceof Activity)) return;
+                            try { Media.handOffForPip((Activity) param.thisObject); } catch (Throwable error) { diag.error("pip hand-off", error); }
+                        }
+                    });
+                } else if (name.equals("onPictureInPictureModeChanged") && types.length >= 1 && types[0] == boolean.class) {
+                    hook(c.getSimpleName() + ".onPictureInPictureModeChanged(" + types.length + ")", m, new XC_MethodHook() {
+                        @Override protected void afterHookedMethod(MethodHookParam param) {
+                            try {
+                                boolean inPip = param.args != null && param.args.length > 0 && Boolean.TRUE.equals(param.args[0]);
+                                if (inPip && param.thisObject instanceof Activity) {
+                                    diag.count("entered Picture-in-Picture");
+                                    Media.handOffForPip((Activity) param.thisObject);
+                                }
+                                post(new Runnable() { public void run() { MiniView v = mini; if (v != null) v.layoutMini(); } });
+                            } catch (Throwable error) {
+                                diag.error("pip changed", error);
+                            }
+                        }
+                    });
+                }
+            }
+        }
     }
 
     static Field field(Class<?> cls, String name) {
