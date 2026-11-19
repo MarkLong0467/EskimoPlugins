@@ -217,7 +217,7 @@
     {
       "id": "marklong.pin-dms",
       "name": "Pin DMs",
-      "version": "1.16.1",
+      "version": "1.16.2",
       "short": "pin DMs and group chats to the top, in sections you can fold",
       "suffix": ""
     },
