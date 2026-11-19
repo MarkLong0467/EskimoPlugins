@@ -218,6 +218,15 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 		c.setCur('stripe'); const st = stripe && stripe.type(stripe.props)
 		check('compact: the stripe follows the section colour too', !!st && st.props.style.backgroundColor === '#ff0000', st && JSON.stringify(st.props.style))
 		c.data.cache.sectionsJson = secs
+		c.data.cache.sectionsJson = '[{"id":"s2","name":"Girls","color":"#ff69b4"}]'
+		c.setCur('lab'); const afterDelete = texts(expand(lab.type(lab.props))).join('')
+		check('compact: after its section is deleted, the label over those chats says Pinned, not Direct messages', afterDelete === 'PINNED', afterDelete)
+		c.data.cache.sectionsJson = secs
+		const unpinnedLab = kidsOf(rowFor('c1')).filter((k) => k.type && k.type.name === 'CompactLabel')[0]
+		c.data.cache.pinsJson = '[]'
+		c.setCur('lab2'); const gone = unpinnedLab.type(unpinnedLab.props)
+		check('compact: with nothing pinned any more, an old label draws nothing', gone === null, JSON.stringify(gone))
+		c.data.cache.pinsJson = JSON.stringify([LONG.c2, LONG.c4])
 		const z = load({ sectionsJson: secs, assignJson: asg2, hdClear: 0 })
 		z.runtime.jsx(MessagesFastestList, { data: { channels: mk(), sections: [0, 1, 6] } })
 		const zr = z.runtime.jsx(PressableHighlight, { onLongPress: () => {}, children: { type: 'V', props: { channelId: LONG.c2 } }, style: { height: 55 } })

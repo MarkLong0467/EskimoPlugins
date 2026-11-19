@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.15.8'
+	var VERSION = '1.15.9'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -58,14 +58,16 @@
 			assign: assign && typeof assign === 'object' && !Array.isArray(assign) ? assign : {},
 		}
 	}
+	var rowVersion = 0
 	function commit(state) {
 		memo = {}
+		rowVersion++
 		var patch = { pinsJson: JSON.stringify(state.pins), sectionsJson: JSON.stringify(state.sections), assignJson: JSON.stringify(state.assign) }
 		try { if (storage && typeof storage.set === 'function') storage.set(patch) } catch (e) {}
 		try { if (storage && storage.cache) Object.assign(storage.cache, patch) } catch (e) {}
 		refreshList()
 		// The rows draw before the list has worked out the new labels; a second pass draws them.
-		setTimeout(function () { fastCache = null; refreshList() }, 350)
+		setTimeout(function () { refreshList() }, 350)
 	}
 	function sectionOf(state, id) {
 		var sid = state.assign[id]
@@ -429,7 +431,8 @@
 	}
 	function moveIn(id, by) {
 		var state = read()
-		var group = state.pins.filter(function (x) { return (state.assign[x] || '') === (state.assign[id] || '') })
+		var groupOf = function (x) { var sec = sectionOf(state, x); return sec ? sec.id : '' }
+		var group = state.pins.filter(function (x) { return groupOf(x) === groupOf(id) })
 		var at = group.indexOf(id)
 		var to = at + by
 		if (at < 0 || to < 0 || to >= group.length) return
@@ -905,7 +908,7 @@
 				rows.push(h(
 					RN.Pressable,
 					{ key: 'h' + g.section.id, onPress: function () { toggleFold(g.section.id) }, onLongPress: function () { openEditSection(g.section) }, style: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, height: 28 } },
-					h(Design.Text, { variant: 'text-xs/bold', style: { color: g.section.color } }, (folded ? '▸ ' : '▾ ') + String(g.section.name).toUpperCase() + '  ' + g.ids.length),
+					h(Design.Text, { variant: 'text-xs/bold', style: { color: g.section.color } }, (folded ? '▸ ' : '') + String(g.section.name).toUpperCase()),
 					h(RN.View, { style: { flex: 1, height: 1.5, borderRadius: 1, backgroundColor: g.section.color, opacity: 0.5 } }),
 				))
 			} else if (groups.length > 1) {
@@ -1117,12 +1120,27 @@
 		if (!section) return null
 		return h(RN.View, { pointerEvents: 'none', style: { position: 'absolute', left: 0, top: 8, bottom: 8, width: 4, borderRadius: 2, backgroundColor: section.color } })
 	}
+	/** Which label each chat carries right now, from the list as last drawn and the pins and sections as they are now. */
+	var liveCache = null
+	function liveLabels() {
+		try {
+			var orig = fastCache && fastCache.orig
+			if (!orig) return null
+			var key = JSON.stringify(read())
+			if (liveCache && liveCache.orig === orig && liveCache.key === key) return liveCache.labels
+			var labels = computeLabels(reorderRows(orig))
+			liveCache = { orig: orig, key: key, labels: labels }
+			return labels
+		} catch (e) { return null }
+	}
 	function CompactLabel(props) {
 		useSectionsWatch()
 		var RN = valenced.react.ReactNative
 		var Design = valenced.discord.design.Design
 		var state = read()
-		var kind = props.kind
+		var live = props.chatId ? liveLabels() : null
+		var kind = live ? live[props.chatId] : props.kind
+		if (!kind || !hdOn()) return null
 		var sec = state.sections.filter(function (x) { return x.id === kind })[0]
 		var name = sec ? sec.name : kind === 'loose' ? 'Pinned' : 'Direct messages'
 		var color = sec ? sec.color : '#80848e'
@@ -1170,7 +1188,10 @@
 		try {
 			if (nameOf(result) !== 'MessagesItemChannelFast') return result
 			var id = result.props && result.props.channelId
-			if (typeof id !== 'string' || id.indexOf('pin-head:') !== 0) return result
+			if (typeof id !== 'string') return result
+			// A chat row: give it a key that changes with every pin or section change, so Discord draws it again with the
+			// new labels, stripes and spacing instead of keeping the row it drew before.
+			if (id.indexOf('pin-head:') !== 0) return rowVersion ? valenced.react.React.cloneElement(result, { key: String(result.key == null ? id : result.key) + '~pin' + rowVersion }) : result
 			status.hdRows++
 			var before = fastCache && fastCache.pos ? fastCache.pos[id] || 0 : 0
 			return valenced.react.React.createElement(ListHeader, { key: result.key, kind: id.slice(9), shift: gapShift() * before })
@@ -1491,7 +1512,7 @@
 					))
 				}
 			}
-			if (lab) extra.push(React.createElement(CompactLabel, { key: 'pin-label', kind: lab }))
+			if (lab) extra.push(React.createElement(CompactLabel, { key: 'pin-label', kind: lab, chatId: id }))
 			var kids = Array.isArray(props.children) ? props.children : [props.children]
 			var patch = lab && labelClear() > 0 ? { style: padStyle(props.style, labelClear() * 2) } : {}
 			if (lab) status.labelRows++
