@@ -163,7 +163,8 @@ const lines = text => text.split('\n')
 		const s = await setup({ premium: 2 })
 		await s.look()
 		const text = s.state.patches[0]?.body.content || ''
-		check('with Nitro the limit is 4000 and the full descriptions fit', text.length > 2000 && text.length <= 4000 && text.includes('removes the untrusted link confirmation') && !text.includes('…'), text.length)
+		// With 43 plugins the full descriptions no longer fit in 4000, so they are shortened; the post still uses the Nitro room.
+		check('with Nitro the limit is 4000 and the post uses that room', text.length > 3500 && text.length <= 4000 && text.includes('**EskimoPlugins**'), text.length)
 		s.stop()
 	}
 	{
@@ -266,7 +267,7 @@ const lines = text => text.split('\n')
 	{
 		const s = await setup({ saved: { auto: false }, premium: 2 })
 		const view = await s.mountSettings()
-		check('with Nitro the preview says full descriptions', /of 4000 characters\. Full descriptions\./.test(textOf(view.tree)))
+		check('with Nitro the preview counts against 4000 and says how the descriptions fit', /of 4000 characters\. (Full descriptions\.|Descriptions shortened to fit)/.test(textOf(view.tree)))
 		view.unmount()
 		s.stop()
 	}

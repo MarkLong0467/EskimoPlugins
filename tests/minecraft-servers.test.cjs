@@ -57,7 +57,7 @@ global.fetch=async(u,o)=>{
  closeAfter=160;
  let t=await openList();await sleep(900);t=await draw(el(lastSheet,{}));
  let tx=texts(t).join(' | ');
- check('the ping shown comes from the phone (160 ms close / 2 = 80 ms), not the site\'s 380 ms', /80 ms/.test(tx) && !/380 ms/.test(tx), tx.slice(0,300));
+ check('the ping shown comes from the phone (160 ms close / 2 = about 80 ms; timers here run a few ms late), not the site\'s 380 ms', (m=>m&&+m[1]>=78&&+m[1]<=100)(/(\d+) ms/.exec(tx)) && !/380 ms/.test(tx), tx.slice(0,300));
  check('the phone asks the real address behind the name (port from the SRV record)', phoneUrls.length>0 && phoneUrls.every(u=>u.indexOf('play.baconetworks.com:25570')>0), phoneUrls[0]);
  check('the first try is thrown away: 3 tries asks 4 times', phoneUrls.length===4, String(phoneUrls.length));
 

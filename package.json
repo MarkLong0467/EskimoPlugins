@@ -3,7 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"build": "valenced-plugin build",
+		"build": "node scripts/build-plugins.cjs",
 		"build:dev": "valenced-plugin build --dev",
 		"generate-index": "valenced-plugin generate-index",
 		"plan-releases": "valenced-plugin plan-releases --plugins-dir plugins",
