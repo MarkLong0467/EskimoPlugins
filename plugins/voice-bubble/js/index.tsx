@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Mute & Deafen Bubble for Valenced, by MarkLong0467.
- * Based on Mute Bubble 3.3.3 by coder.gg (https://github.com/il1ll/ValencedPlugins, GPL-3.0): the bubble now has a
- * second button that deafens. The native half is source/android/marklong/voicebubble/VoiceBubble.java.
+ * Based on Mute Bubble 3.3.3 by coder.gg (https://github.com/il1ll/ValencedPlugins, GPL-3.0): the bubble also has
+ * deafen, screen share and disconnect buttons. The native half is source/android/marklong/voicebubble/VoiceBubble.java.
  */
 import Page from '@valenced/components/Page'
 import TableRowAssetIcon from '@valenced/components/TableRowAssetIcon'
@@ -30,33 +30,60 @@ interface MediaEngineStore extends ChangeStore {
 	isSelfDeaf(): boolean
 }
 
-/** Which buttons the bubble has. */
-type Buttons = 'both' | 'mute' | 'deafen'
+interface StreamingStore extends ChangeStore {
+	getCurrentUserActiveStream(): { state?: string } | null | undefined
+}
+
+/** A button the bubble can have, in the order they appear (top to bottom). */
+type Button = 'mute' | 'deafen' | 'screenshare' | 'disconnect'
+
+/** The 0.2 setting (mute and deafen only). Still read for people upgrading. */
+type OldButtons = 'both' | 'mute' | 'deafen'
 
 interface BubbleSettings {
 	enabled: boolean
-	buttons: Buttons
+	buttons?: OldButtons
+	show?: Partial<Record<Button, boolean>>
 }
 
-const defaults: BubbleSettings = { enabled: true, buttons: 'both' }
+const defaults: BubbleSettings = { enabled: true }
 
-const BUTTON_CHOICES: Array<{ value: Buttons; label: string; subLabel: string }> = [
-	{ value: 'both', label: 'Mute and deafen', subLabel: 'Two buttons, mute on top' },
-	{ value: 'mute', label: 'Mute only', subLabel: 'One button that mutes' },
-	{ value: 'deafen', label: 'Deafen only', subLabel: 'One button that deafens' },
+const BUTTONS: Array<{ value: Button; label: string; subLabel: string; icon: string }> = [
+	{ value: 'mute', label: 'Mute', subLabel: 'Mute or unmute your mic', icon: 'MicrophoneIcon' },
+	{ value: 'deafen', label: 'Deafen', subLabel: 'Deafen or undeafen', icon: 'HeadphonesIcon' },
+	{
+		value: 'screenshare',
+		label: 'Screen share',
+		subLabel: 'Start or stop sharing your screen (opens Discord so Android can ask)',
+		icon: 'ScreenArrowIcon',
+	},
+	{ value: 'disconnect', label: 'Disconnect', subLabel: 'Leave the call', icon: 'PhoneHangUpIcon' },
 ]
 
 let running = false
 let storage: JsonStorage<BubbleSettings> | undefined
 
 const bubbleEnabled = () => storage?.cache?.enabled ?? defaults.enabled
-/** The saved choice, or both buttons when nothing (or something unknown) is saved. */
-const bubbleButtons = (): Buttons => {
-	const saved = storage?.cache?.buttons
-	return BUTTON_CHOICES.some(choice => choice.value === saved) ? (saved as Buttons) : defaults.buttons
+
+/** Whether a button is on: its saved switch, else what the 0.2 choice meant. Buttons new in 0.3 start on. */
+function isShown(settings: Partial<BubbleSettings> | undefined, button: Button): boolean {
+	const saved = settings?.show?.[button]
+	if (typeof saved === 'boolean') return saved
+	const old = settings?.buttons
+	if (button === 'mute') return old !== 'deafen'
+	if (button === 'deafen') return old !== 'mute'
+	return true
 }
+
+/** The buttons the bubble shows, top to bottom. Never empty: with every switch off, mute and deafen show. */
+function bubbleButtons(settings: Partial<BubbleSettings> | undefined = storage?.cache): Button[] {
+	const shown = BUTTONS.map(button => button.value).filter(button => isShown(settings, button))
+	return shown.length ? shown : ['mute', 'deafen']
+}
+
 let voiceStore: VoiceChannelStore | undefined
 let mediaStore: MediaEngineStore | undefined
+let streamStore: StreamingStore | undefined
 let lastState = ''
 
 /** Asks Discord to toggle mute (`toggleSelfMute`) or deafen (`toggleSelfDeaf`), as its own buttons do. */
@@ -70,14 +97,51 @@ function toggle(method: 'toggleSelfMute' | 'toggleSelfDeaf') {
 	}
 }
 
+/** Whether you are sharing your screen now. */
+function isSharing() {
+	const stream = streamStore?.getCurrentUserActiveStream()
+	return !!stream && stream.state !== 'ENDED' && stream.state !== 'FAILED'
+}
+
+/** Discord's own screen share functions (its call screen and Go Live sheet use them). */
+const screenshareUtils = () => lookupModule(withProps<any>('stopScreenshare', 'startStream'))[0]
+
+/** Starts sharing as Discord's screen share button does; Android then asks for permission. */
+async function startScreenshare() {
+	// The bubble brings Discord to the front first: Android only asks while Discord is showing.
+	for (let i = 0; i < 30 && AppState.currentState !== 'active'; i++)
+		await new Promise(resolve => setTimeout(resolve, 100))
+	const utils = screenshareUtils()
+	const channelId = voiceStore?.getVoiceChannelId()
+	const [ChannelStore] = lookupModule(withProps<any>('getChannel', 'getDMFromUserId'))
+	const channel = channelId ? ChannelStore?.getChannel?.(channelId) : null
+	// tryStartScreenShare checks the channel's video permission and the Android version first.
+	if (channel && typeof utils?.tryStartScreenShare === 'function') utils.tryStartScreenShare(channel)
+	else if (typeof utils?.startStream === 'function') utils.startStream()
+}
+
+function stopScreenshare() {
+	const utils = screenshareUtils()
+	if (typeof utils?.stopScreenshare === 'function') utils.stopScreenshare()
+	else if (typeof utils?.handleCloseScreenshare === 'function') utils.handleCloseScreenshare()
+}
+
+/** Leaves the call, as Discord's disconnect button does. */
+function disconnect() {
+	const [ChannelActions] = lookupModule(withProps<any>('selectVoiceChannel', 'disconnect'))
+	if (typeof ChannelActions?.disconnect === 'function') ChannelActions.disconnect()
+	else ChannelActions?.selectVoiceChannel?.(null)
+}
+
 function sendState() {
 	if (!running) return
 	const inCall = !!voiceStore?.getVoiceChannelId()
 	const deafened = !!mediaStore?.isSelfDeaf()
 	const muted = !!mediaStore?.isSelfMute() || deafened
 	const enabled = bubbleEnabled()
-	const buttons = bubbleButtons()
-	const key = `${inCall}:${muted}:${deafened}:${enabled}:${buttons}`
+	const buttons = bubbleButtons().join(',')
+	const sharing = isSharing()
+	const key = `${inCall}:${muted}:${deafened}:${enabled}:${buttons}:${sharing}`
 	if (key === lastState) return
 	lastState = key
 	callNativeMethod('marklong.voicebubble.setState', [
@@ -86,9 +150,21 @@ function sendState() {
 		deafened,
 		enabled,
 		buttons,
+		sharing,
 	]).catch(() => {
 		lastState = ''
 	})
+}
+
+/** Runs a bubble action, then tells the bubble Discord's real state. */
+function act(action: () => unknown) {
+	Promise.resolve()
+		.then(action)
+		.catch(() => {})
+		.then(() => {
+			lastState = ''
+			setTimeout(sendState, 300)
+		})
 }
 
 async function listenForTaps() {
@@ -101,11 +177,11 @@ async function listenForTaps() {
 			continue
 		}
 		if (!running || action === 'stop') return
-		if (action === 'toggleMute' || action === 'toggleDeaf') {
-			toggle(action === 'toggleMute' ? 'toggleSelfMute' : 'toggleSelfDeaf')
-			lastState = ''
-			setTimeout(sendState, 300)
-		}
+		if (action === 'toggleMute') act(() => toggle('toggleSelfMute'))
+		else if (action === 'toggleDeaf') act(() => toggle('toggleSelfDeaf'))
+		else if (action === 'startShare') act(startScreenshare)
+		else if (action === 'stopShare') act(stopScreenshare)
+		else if (action === 'disconnect') act(disconnect)
 	}
 }
 
@@ -136,24 +212,34 @@ const isAudioOutputRow = (element: ReactElement<any>) =>
 	element.props.label.trim().toLowerCase() === 'change audio output'
 
 function ButtonsGroup({ store }: { store: JsonStorage<BubbleSettings> }) {
-	store.use()
+	const settings = store.use() ?? store.cache
+	const onCount = BUTTONS.filter(button => isShown(settings, button.value)).length
 	return (
-		<Design.TableRadioGroup
+		<Design.TableRowGroup
 			title="Buttons"
-			value={bubbleButtons()}
-			onChange={(value: Buttons) => {
-				void store.set({ buttons: value }).then(sendState)
-			}}
+			description="The buttons on the bubble, top to bottom. At least one stays on."
 		>
-			{BUTTON_CHOICES.map(choice => (
-				<Design.TableRadioRow
-					key={choice.value}
-					label={choice.label}
-					subLabel={choice.subLabel}
-					value={choice.value}
-				/>
-			))}
-		</Design.TableRadioGroup>
+			{BUTTONS.map(button => {
+				const on = isShown(settings, button.value)
+				return (
+					<Design.TableSwitchRow
+						key={button.value}
+						label={button.label}
+						subLabel={button.subLabel}
+						icon={<TableRowAssetIcon name={button.icon} />}
+						value={on}
+						disabled={on && onCount === 1}
+						onValueChange={(value: boolean) => {
+							const show = {} as Record<Button, boolean>
+							for (const each of BUTTONS) show[each.value] = isShown(store.cache, each.value)
+							show[button.value] = value
+							if (!Object.values(show).some(Boolean)) return
+							void store.set({ show }).then(sendState)
+						}}
+					/>
+				)
+			})}
+		</Design.TableRowGroup>
 	)
 }
 
@@ -233,7 +319,8 @@ declare module '@valenced/modules/native' {
 				muted: boolean,
 				deafened: boolean,
 				enabled: boolean,
-				buttons: Buttons,
+				buttons: string,
+				sharing: boolean,
 			],
 			returnValue: boolean,
 		]
@@ -274,19 +361,18 @@ export default plugin<{ jsonStorage: BubbleSettings }>({
 				}),
 			)
 
+		const watch = <T extends ChangeStore>(name: string, keep: (store: T) => void) =>
+			getStore<T>(name, store => {
+				keep(store)
+				store.addChangeListener(sendState)
+				cleanup(() => store.removeChangeListener(sendState))
+				sendState()
+			})
+
 		cleanup(
-			getStore<VoiceChannelStore>('SelectedVoiceChannelStore', store => {
-				voiceStore = store
-				store.addChangeListener(sendState)
-				cleanup(() => store.removeChangeListener(sendState))
-				sendState()
-			}),
-			getStore<MediaEngineStore>('MediaEngineStore', store => {
-				mediaStore = store
-				store.addChangeListener(sendState)
-				cleanup(() => store.removeChangeListener(sendState))
-				sendState()
-			}),
+			watch<VoiceChannelStore>('SelectedVoiceChannelStore', store => { voiceStore = store }),
+			watch<MediaEngineStore>('MediaEngineStore', store => { mediaStore = store }),
+			watch<StreamingStore>('ApplicationStreamingStore', store => { streamStore = store }),
 		)
 
 		void listenForTaps()
@@ -295,13 +381,15 @@ export default plugin<{ jsonStorage: BubbleSettings }>({
 			running = false
 			voiceStore = undefined
 			mediaStore = undefined
+			streamStore = undefined
 			storage = undefined
 			callNativeMethod('marklong.voicebubble.setState', [
 				false,
 				false,
 				false,
 				false,
-				'both',
+				'mute,deafen',
+				false,
 			]).catch(() => {})
 		})
 	},

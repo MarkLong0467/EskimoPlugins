@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Mute & Deafen Bubble for Valenced: the native half.
  * Based on Mute Bubble 3.3.3 by coder.gg (https://github.com/il1ll/ValencedPlugins, GPL-3.0), rewritten in Java
- * with a second button for deafen. MarkLong0467.
+ * with deafen, screen share and disconnect buttons. MarkLong0467.
  *
- * A floating bubble over other apps while you are in a call and Discord is in the background. It has a mute button,
- * a deafen button, or both (mute on top), as chosen in the settings. Taps are handed to the JS half (nextAction),
- * which asks Discord to toggle.
+ * A floating bubble over other apps while you are in a call and Discord is in the background. It has the buttons
+ * chosen in the settings, top to bottom: mute, deafen, screen share, disconnect. Taps are handed to the JS half
+ * (nextAction), which asks Discord to do it.
  */
 package marklong.voicebubble;
 
@@ -60,22 +60,40 @@ public final class VoiceBubble {
 
     static final int MUTE = 0;
     static final int DEAF = 1;
+    static final int SHARE = 2;
+    static final int LEAVE = 3;
 
-    /** Which buttons the bubble has, from the settings ("both", "mute" or "deafen"). */
-    static final int BOTH = 0, MUTE_ONLY = 1, DEAF_ONLY = 2;
+    static final int[] DEFAULT_BUTTONS = {MUTE, DEAF};
 
-    static int buttonsFrom(Object value) {
-        if ("mute".equals(value)) return MUTE_ONLY;
-        if ("deafen".equals(value)) return DEAF_ONLY;
-        return BOTH;
+    /**
+     * Which buttons the bubble has, top to bottom, from the settings: a list such as "mute,deafen,screenshare,
+     * disconnect" (0.3), or 0.2's "both", "mute" or "deafen".
+     */
+    static int[] buttonsFrom(Object value) {
+        if (!(value instanceof String)) return DEFAULT_BUTTONS;
+        String text = (String) value;
+        if ("both".equals(text)) return DEFAULT_BUTTONS;
+        boolean[] has = new boolean[4];
+        int count = 0;
+        for (String part : text.split(",")) {
+            int which = "mute".equals(part) ? MUTE : "deafen".equals(part) ? DEAF
+                : "screenshare".equals(part) ? SHARE : "disconnect".equals(part) ? LEAVE : -1;
+            if (which >= 0 && !has[which]) { has[which] = true; count++; }
+        }
+        if (count == 0) return DEFAULT_BUTTONS;
+        int[] result = new int[count];
+        int i = 0;
+        for (int which = 0; which < has.length; which++) if (has[which]) result[i++] = which;
+        return result;
     }
 
     // ---------------------------------------------------------------------------------------------------------------
-    // The bubble: a dark pill with two round buttons, mic on top and headphones below. A button is red while on.
+    // The bubble: a dark pill with a column of round buttons. Mute and deafen are red while on, screen share is blue
+    // while sharing, and disconnect is always red.
     // ---------------------------------------------------------------------------------------------------------------
     static final class BubbleView extends View {
-        boolean muted, deafened;
-        int buttons = BOTH;
+        boolean muted, deafened, sharing;
+        int[] buttons = DEFAULT_BUTTONS;
         int pressed = -1;
         private final float density;
         private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -90,12 +108,13 @@ public final class VoiceBubble {
             ring.setStyle(Paint.Style.STROKE);
             ring.setStrokeWidth(1.5f * density);
             ring.setColor(0x33FFFFFF);
-            setContentDescription("Mute and deafen");
+            setContentDescription("Voice buttons");
         }
 
-        void set(boolean muted, boolean deafened) {
+        void set(boolean muted, boolean deafened, boolean sharing) {
             this.muted = muted;
             this.deafened = deafened;
+            this.sharing = sharing;
             invalidate();
         }
 
@@ -103,16 +122,18 @@ public final class VoiceBubble {
         float pad() { return PAD_DP * density; }
         float gap() { return GAP_DP * density; }
 
-        /** Which button a point inside the view is on: with both, the top half mutes and the bottom half deafens. */
+        /** Which button a point inside the view is on (each button owns its slot and half of the gaps around it). */
         int buttonAt(float y) {
-            if (buttons == MUTE_ONLY) return MUTE;
-            if (buttons == DEAF_ONLY) return DEAF;
-            return y < getHeight() / 2f ? MUTE : DEAF;
+            float step = button() + gap();
+            int index = (int) Math.floor((y - pad() + gap() / 2f) / step);
+            if (index < 0) index = 0;
+            if (index >= buttons.length) index = buttons.length - 1;
+            return buttons[index];
         }
 
         @Override
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-            int count = buttons == BOTH ? 2 : 1;
+            int count = buttons.length;
             setMeasuredDimension((int) (button() + 2 * pad()), (int) (count * button() + (count - 1) * gap() + 2 * pad()));
         }
 
@@ -122,25 +143,50 @@ public final class VoiceBubble {
             fill.setColor(0xF01E1F22);
             canvas.drawRoundRect(new RectF(0, 0, w, h), r, r, fill);
             float cx = w / 2f, size = button();
-            float top = pad() + size / 2f, bottom = h - pad() - size / 2f;
-            // The mic shows muted while deafened too, as Discord does.
-            if (buttons != DEAF_ONLY) drawButton(canvas, cx, top, size, muted || deafened, pressed == MUTE, MUTE);
-            if (buttons != MUTE_ONLY) drawButton(canvas, cx, bottom, size, deafened, pressed == DEAF, DEAF);
+            for (int i = 0; i < buttons.length; i++) {
+                int which = buttons[i];
+                float cy = pad() + size / 2f + i * (size + gap());
+                // The mic shows muted while deafened too, as Discord does.
+                boolean on = which == MUTE ? muted || deafened : which == DEAF ? deafened : which == SHARE && sharing;
+                drawButton(canvas, cx, cy, size, on, pressed == which, which);
+            }
         }
 
         private void drawButton(Canvas canvas, float cx, float cy, float size, boolean on, boolean down, int which) {
-            int background = on ? 0xFFDA373C : 0xFF2B2D31;
-            if (down) background = on ? 0xFFA12828 : 0xFF404249;
+            int background;
+            if (which == LEAVE) background = down ? 0xFFA12828 : 0xFFDA373C;
+            else if (which == SHARE && on) background = down ? 0xFF3C45A5 : 0xFF5865F2;
+            else if (on) background = down ? 0xFFA12828 : 0xFFDA373C;
+            else background = down ? 0xFF404249 : 0xFF2B2D31;
+            boolean filled = on || which == LEAVE;
             float radius = size / 2f - density;
             fill.setColor(background);
             canvas.drawCircle(cx, cy, radius, fill);
-            if (!on) canvas.drawCircle(cx, cy, radius, ring);
+            if (!filled) canvas.drawCircle(cx, cy, radius, ring);
 
             float unit = size / 40f;
             float left = cx - 12f * unit, top = cy - 12f * unit;
             fill.setColor(0xFFFFFFFF);
             stroke.setColor(0xFFFFFFFF);
             stroke.setStrokeWidth(2f * unit);
+            if (which == SHARE) {
+                // A screen with an arrow going up out of it.
+                canvas.drawRoundRect(new RectF(left + 2f * unit, top + 4f * unit, left + 22f * unit, top + 18f * unit), 2f * unit, 2f * unit, stroke);
+                canvas.drawLine(left + 8f * unit, top + 21.5f * unit, left + 16f * unit, top + 21.5f * unit, stroke);
+                canvas.drawLine(left + 12f * unit, top + 15f * unit, left + 12f * unit, top + 8f * unit, stroke);
+                canvas.drawLine(left + 9f * unit, top + 11f * unit, left + 12f * unit, top + 8f * unit, stroke);
+                canvas.drawLine(left + 15f * unit, top + 11f * unit, left + 12f * unit, top + 8f * unit, stroke);
+                return;
+            }
+            if (which == LEAVE) {
+                // A phone handset lying on its back: a curved earpiece-to-mouthpiece band with two feet.
+                stroke.setStrokeWidth(3.5f * unit);
+                canvas.drawArc(new RectF(left + 2.5f * unit, top + 8f * unit, left + 21.5f * unit, top + 22f * unit), 200f, 140f, false, stroke);
+                stroke.setStrokeWidth(2f * unit);
+                canvas.drawRoundRect(new RectF(left + 1.5f * unit, top + 11f * unit, left + 7.5f * unit, top + 16f * unit), 2f * unit, 2f * unit, fill);
+                canvas.drawRoundRect(new RectF(left + 16.5f * unit, top + 11f * unit, left + 22.5f * unit, top + 16f * unit), 2f * unit, 2f * unit, fill);
+                return;
+            }
             if (which == MUTE) {
                 canvas.drawRoundRect(new RectF(left + 9f * unit, top + 2f * unit, left + 15f * unit, top + 14f * unit), 3f * unit, 3f * unit, fill);
                 canvas.drawArc(new RectF(left + 5.5f * unit, top + 5f * unit, left + 18.5f * unit, top + 17f * unit), 0f, 180f, false, stroke);
@@ -258,8 +304,10 @@ public final class VoiceBubble {
         final Actions actions = new Actions(handler);
 
         final Set<Activity> startedActivities = new HashSet<Activity>();
-        boolean reportedInCall, muted, deafened, enabled = true, bubbleEnabled = true, attached;
-        int buttons = BOTH;
+        boolean reportedInCall, muted, deafened, sharing, enabled = true, bubbleEnabled = true, attached;
+        int[] buttons = DEFAULT_BUTTONS;
+        /** After disconnect is tapped the bubble stays hidden until then, while Android's call audio winds down. */
+        long hiddenUntil;
         BubbleView bubble;
         WindowManager.LayoutParams params;
         int savedX = -1, savedY = -1;
@@ -337,20 +385,21 @@ public final class VoiceBubble {
             }
         }
 
-        void setState(final boolean inCall, final boolean isMuted, final boolean isDeafened, final boolean isEnabled, final int which) {
+        void setState(final boolean inCall, final boolean isMuted, final boolean isDeafened, final boolean isEnabled, final int[] which, final boolean isSharing) {
             handler.post(new Runnable() {
                 public void run() {
                     bubbleEnabled = isEnabled;
                     reportedInCall = inCall;
                     muted = isMuted;
                     deafened = isDeafened;
-                    boolean resized = buttons != which;
+                    sharing = isSharing;
+                    boolean resized = !java.util.Arrays.equals(buttons, which);
                     buttons = which;
                     if (bubble != null) {
                         bubble.buttons = buttons;
-                        bubble.set(muted, deafened);
+                        bubble.set(muted, deafened, sharing);
                         if (resized) {
-                            // One button or two: the bubble's size changes, so the window is told.
+                            // A different number of buttons: the bubble's size changes, so the window is told.
                             bubble.requestLayout();
                             try { if (params != null) windowManager.updateViewLayout(bubble, params); } catch (Throwable ignored) {}
                         }
@@ -365,7 +414,8 @@ public final class VoiceBubble {
         }
 
         void refresh() {
-            boolean show = enabled && bubbleEnabled && startedActivities.isEmpty() && inCall() && canDraw();
+            boolean show = enabled && bubbleEnabled && startedActivities.isEmpty() && inCall() && canDraw()
+                && System.currentTimeMillis() >= hiddenUntil;
             if (show) show(); else hide();
         }
 
@@ -392,7 +442,7 @@ public final class VoiceBubble {
 
             final BubbleView view = new BubbleView(context);
             view.buttons = buttons;
-            view.set(muted, deafened);
+            view.set(muted, deafened, sharing);
             final int touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
 
             view.setOnTouchListener(new View.OnTouchListener() {
@@ -469,7 +519,24 @@ public final class VoiceBubble {
         /** Shows the change straight away; the JS half then reports Discord's real state and the bubble follows it. */
         void onTap(BubbleView view, int which) {
             vibrate();
-            if (which == DEAF) {
+            if (which == LEAVE) {
+                actions.send("disconnect");
+                reportedInCall = false;
+                hiddenUntil = System.currentTimeMillis() + 5000L;
+                hide();
+                handler.postDelayed(new Runnable() { public void run() { refresh(); } }, 5100L);
+                return;
+            }
+            if (which == SHARE) {
+                if (sharing) {
+                    sharing = false;
+                    actions.send("stopShare");
+                } else {
+                    // Android asks before a screen share starts, and only while Discord is showing, so it is opened.
+                    openDiscord();
+                    actions.send("startShare");
+                }
+            } else if (which == DEAF) {
                 deafened = !deafened;
                 actions.send("toggleDeaf");
             } else {
@@ -477,7 +544,17 @@ public final class VoiceBubble {
                 if (deafened) { deafened = false; muted = false; } else muted = !muted;
                 actions.send("toggleMute");
             }
-            view.set(muted, deafened);
+            view.set(muted, deafened, sharing);
+        }
+
+        /** Brings Discord to the front (allowed from the background because Discord may draw over other apps). */
+        void openDiscord() {
+            try {
+                Intent intent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+                if (intent == null) return;
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                context.startActivity(intent);
+            } catch (Throwable ignored) {}
         }
 
         @SuppressWarnings("deprecation")
@@ -550,7 +627,7 @@ public final class VoiceBubble {
             public Object invoke(List<?> args) {
                 Controller bubble = ensureController(null);
                 Object which = args != null && args.size() > 4 ? args.get(4) : null;
-                if (bubble != null) bubble.setState(bool(args, 0, false), bool(args, 1, false), bool(args, 2, false), bool(args, 3, true), buttonsFrom(which));
+                if (bubble != null) bubble.setState(bool(args, 0, false), bool(args, 1, false), bool(args, 2, false), bool(args, 3, true), buttonsFrom(which), bool(args, 5, false));
                 return Boolean.TRUE;
             }
         });

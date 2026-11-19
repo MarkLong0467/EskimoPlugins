@@ -13,6 +13,8 @@ const { createReporter, createRuntime, loadPlugin, startPlugin, findNode, findNo
 const { check, done } = createReporter('Mute & Deafen Bubble')
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 
+const ALL = 'mute,deafen,screenshare,disconnect'
+
 /** Runs one async test: it passes when it finishes without throwing. */
 async function test(name, fn) {
 	try {
@@ -36,22 +38,34 @@ function store(methods) {
 }
 
 async function setup({ inCall = true } = {}) {
-	const state = { channel: inCall ? '123' : null, mute: false, deaf: false }
+	const state = { channel: inCall ? '123' : null, mute: false, deaf: false, sharing: false }
 	const voice = store({ getVoiceChannelId: () => state.channel })
 	const media = store({ isSelfMute: () => state.mute || state.deaf, isSelfDeaf: () => state.deaf })
-	const calls = { setState: [], toggles: [] }
+	const streaming = store({ getCurrentUserActiveStream: () => (state.sharing ? { state: 'ACTIVE' } : null) })
+	const calls = { setState: [], toggles: [], shares: [], disconnects: 0 }
 	const taps = []
 	let waiter = null
 	const audio = {
 		toggleSelfMute: () => { calls.toggles.push('mute'); state.mute = !state.mute; if (!state.mute) state.deaf = false; media.emit() },
 		toggleSelfDeaf: () => { calls.toggles.push('deaf'); state.deaf = !state.deaf; media.emit() },
 	}
+	// Discord's screen share functions (useScreenshareUtils), its channel actions and its channel store.
+	const screenshare = {
+		startStream: () => { calls.shares.push('startStream'); state.sharing = true; streaming.emit() },
+		tryStartScreenShare: channel => { calls.shares.push('try:' + channel.id); state.sharing = true; streaming.emit() },
+		stopScreenshare: () => { calls.shares.push('stop'); state.sharing = false; streaming.emit() },
+	}
+	const channelActions = {
+		selectVoiceChannel: id => { if (id == null) { state.channel = null; voice.emit() } },
+		disconnect() { calls.disconnects++; this.selectVoiceChannel(null) },
+	}
+	const channels = { getChannel: id => ({ id }), getDMFromUserId: () => null }
 	const runtime = createRuntime({
 		overrides: {
 			discord: {
 				flux: {
 					getStore(name, callback) {
-						const found = { SelectedVoiceChannelStore: voice, MediaEngineStore: media }[name]
+						const found = { SelectedVoiceChannelStore: voice, MediaEngineStore: media, ApplicationStreamingStore: streaming }[name]
 						if (found) callback(found)
 						return () => {}
 					},
@@ -73,19 +87,31 @@ async function setup({ inCall = true } = {}) {
 		},
 	}).install()
 	runtime.finders.loadModule(audio)
+	runtime.finders.loadModule(screenshare)
+	runtime.finders.loadModule(channelActions)
+	runtime.finders.loadModule(channels)
 	const { definition } = loadPlugin('voice-bubble')
 	const plugin = await startPlugin(definition, runtime)
 	await wait(5)
 	/** Pretends the bubble was tapped. */
 	const tap = action => { if (waiter) { const w = waiter; waiter = null; w(action) } else taps.push(action) }
-	return { runtime, plugin, state, voice, media, calls, tap, definition, stopNative: () => tap('stop') }
+	return { runtime, plugin, state, voice, media, streaming, calls, tap, definition }
+}
+
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+
+/** The Buttons group's switch rows in a rendered settings tree. */
+const buttonRows = tree => {
+	const group = findNode(tree, node => node.type === 'Design.TableRowGroup' && node.props.title === 'Buttons')
+	if (!group) throw new Error('no Buttons group')
+	return findNodes(group, node => node.type === 'Design.TableSwitchRow')
 }
 
 ;(async () => {
-	await test('the bubble is told the call, mute and deafen state, enabled', async () => {
+	await test('the bubble is told the call, mute, deafen and share state, enabled, and all four buttons', async () => {
 		const t = await setup()
 		const last = t.calls.setState.at(-1)
-		if (JSON.stringify(last) !== JSON.stringify([true, false, false, true, 'both'])) throw new Error(JSON.stringify(t.calls.setState))
+		if (!same(last, [true, false, false, true, ALL, false])) throw new Error(JSON.stringify(t.calls.setState))
 		await t.plugin.stop()
 	})
 
@@ -95,7 +121,7 @@ async function setup({ inCall = true } = {}) {
 		await wait(400)
 		if (t.calls.toggles.join() !== 'mute') throw new Error(t.calls.toggles.join())
 		const last = t.calls.setState.at(-1)
-		if (JSON.stringify(last) !== JSON.stringify([true, true, false, true, 'both'])) throw new Error(JSON.stringify(last))
+		if (!same(last, [true, true, false, true, ALL, false])) throw new Error(JSON.stringify(last))
 		await t.plugin.stop()
 	})
 
@@ -105,11 +131,11 @@ async function setup({ inCall = true } = {}) {
 		await wait(400)
 		if (t.calls.toggles.join() !== 'deaf') throw new Error(t.calls.toggles.join())
 		const last = t.calls.setState.at(-1)
-		if (JSON.stringify(last) !== JSON.stringify([true, true, true, true, 'both'])) throw new Error(JSON.stringify(last))
+		if (!same(last, [true, true, true, true, ALL, false])) throw new Error(JSON.stringify(last))
 		t.tap('toggleDeaf')
 		await wait(400)
 		const after = t.calls.setState.at(-1)
-		if (JSON.stringify(after) !== JSON.stringify([true, false, false, true, 'both'])) throw new Error(JSON.stringify(after))
+		if (!same(after, [true, false, false, true, ALL, false])) throw new Error(JSON.stringify(after))
 		await t.plugin.stop()
 	})
 
@@ -118,6 +144,36 @@ async function setup({ inCall = true } = {}) {
 		t.tap('toggleMute'); t.tap('toggleDeaf'); t.tap('toggleDeaf')
 		await wait(50)
 		if (t.calls.toggles.join() !== 'mute,deaf,deaf') throw new Error(t.calls.toggles.join())
+		await t.plugin.stop()
+	})
+
+	await test('tapping screen share starts sharing in the call\'s channel, and tapping again stops it', async () => {
+		const t = await setup()
+		t.tap('startShare')
+		await wait(400)
+		if (t.calls.shares.join() !== 'try:123') throw new Error(t.calls.shares.join())
+		if (t.calls.setState.at(-1)[5] !== true) throw new Error(JSON.stringify(t.calls.setState.at(-1)))
+		t.tap('stopShare')
+		await wait(400)
+		if (t.calls.shares.join() !== 'try:123,stop') throw new Error(t.calls.shares.join())
+		if (t.calls.setState.at(-1)[5] !== false) throw new Error(JSON.stringify(t.calls.setState.at(-1)))
+		await t.plugin.stop()
+	})
+
+	await test('a share started from Discord itself shows on the bubble', async () => {
+		const t = await setup()
+		t.state.sharing = true
+		t.streaming.emit()
+		if (t.calls.setState.at(-1)[5] !== true) throw new Error(JSON.stringify(t.calls.setState.at(-1)))
+		await t.plugin.stop()
+	})
+
+	await test('tapping disconnect leaves the call with Discord\'s disconnect, and the bubble is told', async () => {
+		const t = await setup()
+		t.tap('disconnect')
+		await wait(400)
+		if (t.calls.disconnects !== 1) throw new Error('disconnect called ' + t.calls.disconnects + ' times')
+		if (t.calls.setState.at(-1)[0] !== false) throw new Error(JSON.stringify(t.calls.setState.at(-1)))
 		await t.plugin.stop()
 	})
 
@@ -143,47 +199,79 @@ async function setup({ inCall = true } = {}) {
 		const t = await setup()
 		await t.plugin.stop()
 		const last = t.calls.setState.at(-1)
-		if (JSON.stringify(last) !== JSON.stringify([false, false, false, false, 'both'])) throw new Error(JSON.stringify(last))
-		if (t.voice.listeners.size || t.media.listeners.size) throw new Error('listeners left behind')
+		if (!same(last, [false, false, false, false, 'mute,deafen', false])) throw new Error(JSON.stringify(last))
+		if (t.voice.listeners.size || t.media.listeners.size || t.streaming.listeners.size) throw new Error('listeners left behind')
 		t.tap('toggleMute')
 		await wait(400)
 		if (t.calls.toggles.length) throw new Error('a tap after stopping still toggled')
 	})
 
-	await test('the Buttons choice is sent to the bubble (mute only, deafen only, both)', async () => {
+	await test('the button switches choose what the bubble shows, top to bottom', async () => {
 		const t = await setup()
-		for (const choice of ['mute', 'deafen', 'both']) {
-			await t.plugin.storage.set({ buttons: choice })
+		const cases = [
+			[{ show: { screenshare: false } }, 'mute,deafen,disconnect'],
+			[{ show: { mute: false, disconnect: false } }, 'deafen'],
+			[{ show: { mute: true, deafen: false, screenshare: true } }, 'mute,screenshare'],
+		]
+		for (const [change, expected] of cases) {
+			await t.plugin.storage.set(change)
 			await wait(5)
 			const last = t.calls.setState.at(-1)
-			if (last[4] !== choice) throw new Error(choice + ': ' + JSON.stringify(last))
+			if (last[4] !== expected) throw new Error(JSON.stringify(change) + ': ' + JSON.stringify(last))
 		}
 		await t.plugin.stop()
 	})
 
-	await test('an unknown saved choice falls back to both buttons', async () => {
+	await test('every switch off still leaves mute and deafen', async () => {
 		const t = await setup()
-		await t.plugin.storage.set({ buttons: 'nonsense' })
+		await t.plugin.storage.set({ show: { mute: false, deafen: false, screenshare: false, disconnect: false } })
 		await wait(5)
-		if (t.calls.setState.at(-1)[4] !== 'both') throw new Error(JSON.stringify(t.calls.setState.at(-1)))
+		if (t.calls.setState.at(-1)[4] !== 'mute,deafen') throw new Error(JSON.stringify(t.calls.setState.at(-1)))
 		await t.plugin.stop()
 	})
 
-	await test('the settings page has a Buttons choice with the three options, and picking one saves it', async () => {
+	await test('a 0.2 choice carries over (mute only, deafen only), with the new buttons on', async () => {
+		const cases = [
+			['mute', 'mute,screenshare,disconnect'],
+			['deafen', 'deafen,screenshare,disconnect'],
+			['both', ALL],
+			['nonsense', ALL],
+		]
+		for (const [old, expected] of cases) {
+			const t = await setup()
+			await t.plugin.storage.set({ buttons: old })
+			await wait(5)
+			if (t.calls.setState.at(-1)[4] !== expected) throw new Error(old + ': ' + JSON.stringify(t.calls.setState.at(-1)))
+			await t.plugin.stop()
+		}
+	})
+
+	await test('the settings page has a switch per button; flipping one saves it and tells the bubble', async () => {
 		const t = await setup()
 		const view = t.runtime.mount(t.runtime.React.createElement(t.definition.SettingsComponent))
-		const tree = await view.settle()
-		const group = findNode(tree, node => node.type === 'Design.TableRadioGroup')
-		if (!group) throw new Error('no radio group')
-		if (group.props.title !== 'Buttons' || group.props.value !== 'both') throw new Error(JSON.stringify({ title: group.props.title, value: group.props.value }))
-		const rows = findNodes(tree, node => node.type === 'Design.TableRadioRow').map(node => node.props.label + '=' + node.props.value)
-		if (rows.join() !== 'Mute and deafen=both,Mute only=mute,Deafen only=deafen') throw new Error(rows.join())
-		group.props.onChange('deafen')
+		const rows = buttonRows(await view.settle())
+		const shown = rows.map(row => row.props.label + '=' + row.props.value).join()
+		if (shown !== 'Mute=true,Deafen=true,Screen share=true,Disconnect=true') throw new Error(shown)
+		rows.find(row => row.props.label === 'Screen share').props.onValueChange(false)
 		await wait(5)
-		if (t.plugin.storage.cache.buttons !== 'deafen') throw new Error('not saved')
-		if (t.calls.setState.at(-1)[4] !== 'deafen') throw new Error('bubble not told')
-		const after = findNode(await view.settle(), node => node.type === 'Design.TableRadioGroup')
-		if (after.props.value !== 'deafen') throw new Error('the choice shown did not change')
+		const saved = t.plugin.storage.cache.show
+		if (!saved || saved.screenshare !== false || saved.mute !== true) throw new Error(JSON.stringify(saved))
+		if (t.calls.setState.at(-1)[4] !== 'mute,deafen,disconnect') throw new Error('bubble not told: ' + JSON.stringify(t.calls.setState.at(-1)))
+		const after = buttonRows(await view.settle())
+		if (after.find(row => row.props.label === 'Screen share').props.value !== false) throw new Error('the switch shown did not change')
+		view.unmount()
+		await t.plugin.stop()
+	})
+
+	await test('the last button left on cannot be switched off', async () => {
+		const t = await setup()
+		await t.plugin.storage.set({ show: { mute: true, deafen: false, screenshare: false, disconnect: false } })
+		const view = t.runtime.mount(t.runtime.React.createElement(t.definition.SettingsComponent))
+		const mute = buttonRows(await view.settle()).find(row => row.props.label === 'Mute')
+		if (!mute || mute.props.disabled !== true) throw new Error('mute switch not locked: ' + JSON.stringify(mute && mute.props.disabled))
+		mute.props.onValueChange(false)
+		await wait(5)
+		if (t.plugin.storage.cache.show.mute !== true) throw new Error('the last button was turned off')
 		view.unmount()
 		await t.plugin.stop()
 	})
