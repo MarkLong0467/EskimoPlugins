@@ -287,6 +287,88 @@ const later = []
 	const rowsOf = (gg) => (Array.isArray(gg.props.children) ? gg.props.children : [gg.props.children])
 	check('the rows copy the look of Discord\'s own row', rowsOf(g)[0].type === TableRow)
 	rowsOf(g)[0].props.onPress()
+	// What the phone does after a change: the list is drawn again, and each chat row comes back with a new key, so Discord
+	// draws it fresh with the new label instead of keeping the old row.
+	{
+		const r = load({ sectionsJson: '[]', pinsJson: '[]' })
+		const mine = globalThis.__pinDmsInstance
+		function MessagesFastestList() {}
+		function MessagesItemChannelFast() {}
+		function PressableHighlight() {}
+		const chans = () => Object.keys(LONG).map((k) => ({ channelId: LONG[k], lastMessageId: '1', isFavorite: false, isRequest: false }))
+		const drawList = () => r.runtime.jsx(MessagesFastestList, { data: { channels: chans(), sections: [0, 1, 6] } })
+		const rowKey = (id) => { const el = r.runtime.jsx(MessagesItemChannelFast, { channelId: LONG[id], row: 0 }); return el.key != null ? el.key : el.props.key }
+		const labelOn = (id) => { const el = r.runtime.jsx(PressableHighlight, { onLongPress: () => {}, children: { type: 'V', props: { channelId: LONG[id] } }, style: { height: 55 } }); const kids = Array.isArray(el.props.children) ? el.props.children : [el.props.children]; const lab = kids.filter((k) => k && k.type && k.type.name === 'CompactLabel')[0]; if (!lab) return ''; r.setCur('L' + id); return texts(expand(lab.type(lab.props))).join('') }
+		drawList()
+		const before = rowKey('c3')
+		const icon = r.runtime.jsx(PinIcon, {})
+		const sheetRow = r.runtime.jsx(TableRow, { label: 'Pin', icon, onPress: () => {} })
+		r.runtime.jsx(function DMSheet() {}, { channel: { id: LONG.c3, type: 1 } })
+		const grp = r.runtime.jsx(TableRowGroup, { children: [sheetRow] })
+		;(Array.isArray(grp.props.children) ? grp.props.children : [grp.props.children])[0].props.onPress()
+		later.push(new Promise((res) => setTimeout(() => {
+			globalThis.__pinDmsInstance = mine // later tests start other copies; draw with this one
+			check('after pinning, the chat is pinned', JSON.parse(r.data.cache.pinsJson).includes(LONG.c3))
+			const ordered = drawList().props.data.channels.map((c) => c.channelId)
+			check('after pinning, the list is drawn with the chat first', ordered[0] === LONG.c3)
+			check('after pinning, the row comes back with a new key, so Discord draws it again', rowKey('c3') !== before, before + ' -> ' + rowKey('c3'))
+			check('the redrawn pinned row has the PINNED label (no restart)', labelOn('c3') === 'PINNED', labelOn('c3'))
+			check('the first other chat has the DIRECT MESSAGES label', labelOn('c1') === 'DIRECT MESSAGES', labelOn('c1'))
+			res()
+		}, 30)))
+	}
+	// Rename and delete a section the way a person does: hold its label in the list, change it in the sheet, Save / Delete.
+	{
+		const secs1 = '[{"id":"s1","name":"Boys","color":"#e67e22"}]'
+		const r = load({ sectionsJson: secs1, assignJson: JSON.stringify({ [LONG.c2]: 's1', [LONG.c4]: 's1' }) })
+		const mine = globalThis.__pinDmsInstance
+		const V = global.valenced
+		let sheet = null
+		V.discord.actions.ActionSheetActionCreators.openLazy = (p) => { p.then((m) => { sheet = m.default }) }
+		function MessagesFastestList() {}
+		function MessagesItemChannelFast() {}
+		function PressableHighlight() {}
+		const chans = () => Object.keys(LONG).map((k) => ({ channelId: LONG[k], lastMessageId: '1', isFavorite: false, isRequest: false }))
+		const drawList = () => r.runtime.jsx(MessagesFastestList, { data: { channels: chans(), sections: [0, 1, 6] } })
+		const rowKey = (id) => { const el = r.runtime.jsx(MessagesItemChannelFast, { channelId: LONG[id], row: 0 }); return el.key != null ? el.key : el.props.key }
+		const labelEl = (id) => { const el = r.runtime.jsx(PressableHighlight, { onLongPress: () => {}, children: { type: 'V', props: { channelId: LONG[id] } }, style: { height: 55 } }); const kids = Array.isArray(el.props.children) ? el.props.children : [el.props.children]; return kids.filter((k) => k && k.type && k.type.name === 'CompactLabel')[0] }
+		const drawn = (id) => { const lab = labelEl(id); if (!lab) return null; r.setCur('L' + id); return lab.type(lab.props) }
+		const find = (n, f) => { if (Array.isArray(n)) { for (const x of n) { const y = find(x, f); if (y) return y } return null } if (!n || typeof n !== 'object') return null; if (f(n)) return n; return find(n.props && n.props.children, f) }
+		const wait = (ms) => new Promise((res) => setTimeout(res, ms))
+		later.push((async () => {
+			drawList()
+			check('a section label starts with its name', texts(drawn('c2')).join('') === 'BOYS')
+			const key0 = rowKey('c2')
+			// hold the label: the edit sheet opens
+			drawn('c2').props.onLongPress()
+			await wait(5)
+			globalThis.__pinDmsInstance = mine
+			r.setCur('edit'); let tree = expand(sheet({}))
+			find(tree, (n) => n.type === 'TextInput' && n.props.label === 'Name').props.onChange('Lads')
+			r.setCur('edit'); tree = expand(sheet({}))
+			find(tree, (n) => n.type === 'Button' && n.props.text === 'Save').props.onPress()
+			await wait(400)
+			globalThis.__pinDmsInstance = mine
+			drawList()
+			check('rename: saved', JSON.parse(r.data.cache.sectionsJson)[0].name === 'Lads')
+			check('rename: the row comes back with a new key, so Discord draws it again', rowKey('c2') !== key0)
+			check('rename: the label shows the new name with no restart', texts(drawn('c2')).join('') === 'LADS', texts(drawn('c2')).join(''))
+			const key1 = rowKey('c2')
+			// hold it again and delete the section
+			drawn('c2').props.onLongPress()
+			await wait(5)
+			globalThis.__pinDmsInstance = mine
+			r.setCur('edit2'); tree = expand(sheet({}))
+			find(tree, (n) => n.type === 'Button' && n.props.text === 'Delete section').props.onPress()
+			await wait(400)
+			globalThis.__pinDmsInstance = mine
+			drawList()
+			check('delete: the section is gone and its chats stay pinned', JSON.parse(r.data.cache.sectionsJson).length === 0 && JSON.parse(r.data.cache.pinsJson).length === 2)
+			check('delete: the row comes back with a new key', rowKey('c2') !== key1)
+			check('delete: the label over the pinned chats says PINNED, not DIRECT MESSAGES', texts(drawn('c2')).join('') === 'PINNED', texts(drawn('c2')).join(''))
+			check('delete: DIRECT MESSAGES is over the first unpinned chat only', texts(drawn('c1')).join('') === 'DIRECT MESSAGES' && drawn('c4') === null)
+		})())
+	}
 	later.push(new Promise((res) => setTimeout(() => { check('choosing Pin to Boys pins the chat in that section', a.data.cache.pinsJson.indexOf(LONG.c3) >= 0 && JSON.parse(a.data.cache.assignJson)[LONG.c3] === 's1', a.data.cache.assignJson); res() }, 20)))
 	const pinned = load({ sectionsJson: secs, pinsJson: JSON.stringify([LONG.c3]), assignJson: JSON.stringify({ [LONG.c3]: 's2' }) })
 	const gp = mkGroup(pinned)
