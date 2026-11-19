@@ -7,7 +7,7 @@
 	"contributors": [
 		"PinDMs for Vencord and BetterDiscord (the idea; code written from scratch for Valenced)"
 	],
-	"version": "1.15.5",
+	"version": "1.15.6",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"

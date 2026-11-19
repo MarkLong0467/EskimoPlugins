@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.15.5'
+	var VERSION = '1.15.6'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -64,6 +64,8 @@
 		try { if (storage && typeof storage.set === 'function') storage.set(patch) } catch (e) {}
 		try { if (storage && storage.cache) Object.assign(storage.cache, patch) } catch (e) {}
 		refreshList()
+		// The rows draw before the list has worked out the new labels; a second pass draws them.
+		setTimeout(function () { fastCache = null; refreshList() }, 350)
 	}
 	function sectionOf(state, id) {
 		var sid = state.assign[id]
@@ -965,7 +967,7 @@
 	/** Pinned chats first, with a heading row in front of each section. Returns null when it cannot be done safely. */
 	function withListHeaders(list, d) {
 		var state = read()
-		if (!state.sections.length || !hdOn() || !Array.isArray(d.sections)) return null
+		if (!state.pins.length || !hdOn() || !Array.isArray(d.sections)) return null
 		var at = -1
 		for (var i = 0; i < d.sections.length; i++) { if (d.sections[i] === d.channels.length && typeof d.sections[i] === 'number') { at = i; break } }
 		if (at < 0) return null
@@ -973,7 +975,6 @@
 		var shown = {}
 		var restShown = false
 		var anyPinned = false
-		var sectioned = list.some(function (e) { var id = chatId(e); return id && state.pins.indexOf(id) >= 0 && sectionOf(state, id) })
 		var loose = false
 		list.forEach(function (entry) {
 			var id = chatId(entry)
@@ -984,7 +985,7 @@
 				if (sec) {
 					if (!shown[sec.id]) { shown[sec.id] = true; out.push(headerEntry(sec.id)) }
 					if (sec.collapsed) return
-				} else if (sectioned && !loose) { loose = true; out.push(headerEntry('loose')) }
+				} else if (!loose) { loose = true; out.push(headerEntry('loose')) }
 			} else if (id && anyPinned && !restShown) { restShown = true; out.push(headerEntry('rest')) }
 			out.push(entry)
 		})
@@ -1078,7 +1079,6 @@
 		var anyPinned = false
 		var restDone = false
 		var looseDone = false
-		var sectioned = list.some(function (e) { var id = chatId(e); return id && state.pins.indexOf(id) >= 0 && sectionOf(state, id) })
 		list.forEach(function (entry) {
 			var id = chatId(entry)
 			if (!id) return
@@ -1087,7 +1087,7 @@
 				anyPinned = true
 				var sec = sectionOf(state, id)
 				if (sec && !seen[sec.id]) { seen[sec.id] = true; labels[id] = sec.id }
-				else if (!sec && sectioned && !looseDone) { looseDone = true; labels[id] = 'loose' }
+				else if (!sec && !looseDone) { looseDone = true; labels[id] = 'loose' }
 			} else if (anyPinned && !restDone) { restDone = true; labels[id] = 'rest' }
 		})
 		return labels
@@ -1183,7 +1183,7 @@
 					try { withHd = compact ? withCompactFold(orderedCh, d) : withListHeaders(orderedCh, d) } catch (e) { withHd = null }
 					var finalList = withHd ? withHd.channels : orderedCh
 					var labels = null
-					try { labels = compact && hdOn() && state.sections.length ? computeLabels(finalList) : null } catch (e) { labels = null }
+					try { labels = compact && hdOn() ? computeLabels(finalList) : null } catch (e) { labels = null }
 					if (withHd || labels) armHeadingTrial()
 					fastCache = { orig: d.channels, key: stateKey, data: withHd ? Object.assign({}, d, withHd) : orderedCh === d.channels ? d : Object.assign({}, d, { channels: orderedCh }), moved: !!withHd || orderedCh !== d.channels, headings: !!withHd && !compact, labels: labels, pos: withHd && !compact ? positionMap(withHd.channels) : null }
 				}
@@ -1439,7 +1439,7 @@
 			var tn = result.type.displayName || result.type.name || ''
 			if (!/Pressable/.test(tn)) return result
 			var state = read()
-			if (!state.pins.length || !state.sections.length) return result
+			if (!state.pins.length) return result
 			var id = deepId(props.children)
 			if (!id) return result
 			var React = valenced.react.React
