@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.15.4'
+	var VERSION = '1.15.5'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -1255,6 +1255,19 @@
 			return result
 		}
 	}
+	/**
+	 * Discord has two pieces called "Messages": the DM tab (given only a style) and the message list inside every chat
+	 * (displayName "Messages", given the channel and its messages). Only the DM tab gets the strip.
+	 */
+	function isDmTabMessages(t, props) {
+		var inner = t.type || t.render || t
+		if ((inner && inner.displayName === 'Messages') || t.displayName === 'Messages') return false
+		if (props && typeof props === 'object') {
+			var chatKeys = ['channel', 'channelId', 'messages', 'interactionStates', 'guildId']
+			for (var i = 0; i < chatKeys.length; i++) if (chatKeys[i] in props) return false
+		}
+		return true
+	}
 	/** Puts the strip above the whole Messages screen. */
 	function wrapMessages(result) {
 		try {
@@ -1265,6 +1278,9 @@
 			if (status.screens.length < 8 && /messages|private|dms?$|home/i.test(name) && status.screens.indexOf(name) < 0) { status.screens.push(name); changed() }
 			if (name !== 'Messages' || !stripEnabled()) return result
 			if (result.props && result.props.__pinStrip) return result
+			if (!isDmTabMessages(t, result.props)) return result
+			// With the strip under the header, the header puts it there; a second one on top would double it.
+			if (stripBelow()) return result
 			var React = valenced.react.React
 			var RN = valenced.react.ReactNative
 			return React.createElement(RN.View, { key: result.key, style: { flex: 1 } }, React.createElement(PinnedStrip, { key: 'pin-strip' }), React.cloneElement(result, { __pinStrip: true }))
@@ -1596,6 +1612,8 @@
 			if (!props || props.__pinGroup || !props.children) return result
 			var rows = (Array.isArray(props.children) ? props.children : [props.children]).filter(function (r) { return r && typeof r === 'object' })
 			if (!rows.length || rows.length > 3 || !rows.some(isPinRow)) return result
+			// Discord wraps each row of a group in its own small piece; the rows made here must not be swapped again.
+			if (rows.some(function (r) { return r.props && r.props.__pinDmsRow })) return result
 			var nativeRow = rows.filter(isPinRow)[0]
 			if (!status.pinRow) { status.pinRow = nameOf(result) + ' > ' + nameOf(nativeRow) + ' ' + describe(nativeRow.props, 0); changed() }
 			if (!lastMenu.id || Date.now() - lastMenu.at > 5000 || lastMenu.message) return result
@@ -1607,7 +1625,7 @@
 			var pinIcon = nativeRow.props.icon
 			function close() { try { sheets().hideAllActionSheets() } catch (e) {} }
 			function row(key, label, icon, run) {
-				return React.createElement(nativeRow.type, Object.assign({}, nativeRow.props, { key: key, label: label, icon: icon, subLabel: undefined, onPress: function () { close(); setTimeout(run, 0) } }))
+				return React.createElement(nativeRow.type, Object.assign({}, nativeRow.props, { __pinDmsRow: true, key: key, label: label, icon: icon, subLabel: undefined, onPress: function () { close(); setTimeout(run, 0) } }))
 			}
 			var list = []
 			state.sections.forEach(function (sec) {

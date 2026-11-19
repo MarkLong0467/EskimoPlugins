@@ -89,6 +89,17 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 	check('tapping a row opens the chat', /discord\.com\/channels\/@me\/9000/.test(global.opened || ''), global.opened)
 	const off = load({ stripOn2: false }); const el2 = off.runtime.jsx(Messages, {})
 	check('the strip can be turned off', el2.type === Messages)
+	// Discord's message list inside every chat is also called "Messages" (displayName), and is given the channel.
+	const chat = load({ stripOn2: true, sectionsJson: '[{"id":"s1","name":"Boys","color":"#00d4ff"}]', assignJson: JSON.stringify({ [LONG.c2]: 's1' }) })
+	function MessagesRenderer() {}
+	MessagesRenderer.displayName = 'Messages'
+	const memoChat = { $$typeof: Symbol.for('react.memo'), type: MessagesRenderer }
+	check('the message list inside a chat gets no strip', chat.runtime.jsx(memoChat, { channel: { id: '1' }, messages: {} }).type === memoChat)
+	function Messages2() {}
+	Object.defineProperty(Messages2, 'name', { value: 'Messages' })
+	check('a chat\'s list given the channel gets no strip, whatever it is called', chat.runtime.jsx(Messages2, { channel: { id: '1' }, messages: {} }).type === Messages2)
+	const below = load({ stripOn2: true, stripBelow2: true })
+	check('with the strip under the header, the screen does not get a second one on top', below.runtime.jsx(Messages, { style: [] }).type === Messages)
 }
 
 // 4. Under the header, under the voice card, one strip only
@@ -282,6 +293,14 @@ const later = []
 	const big = load({ sectionsJson: secs }); big.runtime.jsx(DMChannelSheet, { channel: { id: LONG.c3, type: 1 } })
 	const many = big.runtime.jsx(TableRowGroup, { children: [1, 2, 3, 4].map(() => big.runtime.jsx(TableRow, { label: 'Pin', icon: big.runtime.jsx(PinIcon, {}) })) })
 	check('a long group of rows is not mistaken for the Pin group', many.props.children.length === 4)
+	// Discord wraps each row of the group in its own piece; a piece holding one of our rows is not replaced again.
+	const wrap = load({ sectionsJson: secs, pinsJson: JSON.stringify([LONG.c3]), assignJson: JSON.stringify({ [LONG.c3]: 's2' }) })
+	const wg = mkGroup(wrap)
+	function RowWrapper() {}
+	const again = rowsOf(wg).map((r) => wrap.runtime.jsx(RowWrapper, { children: [r] }))
+	check('the rows made for the menu are not swapped for the whole list again', again.every((w, i) => w.props.children.length === 1 && w.props.children[0] === rowsOf(wg)[i]), again.map((w) => w.props.children.length).join())
+	const regroup = wrap.runtime.jsx(TableRowGroup, { children: rowsOf(wg).slice(-2) })
+	check('a small group of the menu\'s own Pin rows is left alone', labelsOf(regroup).join('|') === 'Pin (no group)|Unpin', labelsOf(regroup).join('|'))
 }
 
 Promise.all(later).then(() => {
