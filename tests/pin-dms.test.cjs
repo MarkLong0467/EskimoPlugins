@@ -80,7 +80,7 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 
 // 3. The strip
 {
-	const a = load({ stripOn2: true, sectionsJson: '[{"id":"s1","name":"Boys","color":"#00d4ff"}]', assignJson: JSON.stringify({ [LONG.c2]: 's1' }) })
+	const a = load({ stripOn3: true, sectionsJson: '[{"id":"s1","name":"Boys","color":"#00d4ff"}]', assignJson: JSON.stringify({ [LONG.c2]: 's1' }) })
 	function Messages() {}
 	const el = a.runtime.jsx(Messages, { x: 1 })
 	check('the Messages screen is wrapped with the strip on top', el.type === 'V' && el.props.children[0].type.name === 'PinnedStrip' && el.props.children[1].type === Messages)
@@ -94,8 +94,21 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 	check('tapping a row opens the chat', /discord\.com\/channels\/@me\/9000/.test(global.opened || ''), global.opened)
 	const off = load({ stripOn2: false }); const el2 = off.runtime.jsx(Messages, {})
 	check('the strip can be turned off', el2.type === Messages)
+	const sec1 = '[{"id":"s1","name":"Dummy","color":"#e91e63"}]'
+	const old = load({ stripOn2: true, sectionsJson: sec1, assignJson: JSON.stringify({ [LONG.c2]: 's1' }) })
+	{ const oe = old.runtime.jsx(Messages, {}); check('a strip switched on in an old version no longer shows above the DM list', oe.type === Messages) }
+	const fresh = load({ sectionsJson: sec1, assignJson: JSON.stringify({ [LONG.c2]: 's1' }) })
+	check('a new install has no strip', fresh.runtime.jsx(Messages, {}).type === Messages)
+	function MessagesHeader() {}
+	check('and nothing is added under the Messages header either', fresh.runtime.jsx(MessagesHeader, {}).type === MessagesHeader)
+	const gone = load({ stripOn3: true, sectionsJson: sec1 })
+	gone.json.cache // settings exist
+	const saved = gone.data.cache
+	gone.data.cache = undefined
+	check('while the settings are not loaded, there is no strip', gone.runtime.jsx(Messages, {}).type === Messages)
+	gone.data.cache = saved
 	// Discord's message list inside every chat is also called "Messages" (displayName), and is given the channel.
-	const chat = load({ stripOn2: true, sectionsJson: '[{"id":"s1","name":"Boys","color":"#00d4ff"}]', assignJson: JSON.stringify({ [LONG.c2]: 's1' }) })
+	const chat = load({ stripOn3: true, sectionsJson: '[{"id":"s1","name":"Boys","color":"#00d4ff"}]', assignJson: JSON.stringify({ [LONG.c2]: 's1' }) })
 	function MessagesRenderer() {}
 	MessagesRenderer.displayName = 'Messages'
 	const memoChat = { $$typeof: Symbol.for('react.memo'), type: MessagesRenderer }
@@ -103,13 +116,13 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 	function Messages2() {}
 	Object.defineProperty(Messages2, 'name', { value: 'Messages' })
 	check('a chat\'s list given the channel gets no strip, whatever it is called', chat.runtime.jsx(Messages2, { channel: { id: '1' }, messages: {} }).type === Messages2)
-	const below = load({ stripOn2: true, stripBelow2: true })
+	const below = load({ stripOn3: true, stripBelow2: true })
 	check('with the strip under the header, the screen does not get a second one on top', below.runtime.jsx(Messages, { style: [] }).type === Messages)
 }
 
 // 4. Under the header, under the voice card, one strip only
 {
-	const a = load({ stripOn2: true, stripBelow2: true })
+	const a = load({ stripOn3: true, stripBelow2: true })
 	function MessagesHeader() {}
 	function ActiveVoiceCards() {}
 	const h = a.runtime.jsx(MessagesHeader, {})
@@ -272,10 +285,10 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 
 // 6. An old copy of the plugin that is still hooked in must not add a second strip
 {
-	const a = load({ stripOn2: true })
+	const a = load({ stripOn3: true })
 	function Messages() {}
 	const first = a.runtime.jsx(Messages, {})
-	const b = load({ stripOn2: true }) // a newer copy starts; the first one is now stale
+	const b = load({ stripOn3: true }) // a newer copy starts; the first one is now stale
 	global.valenced.react.ReactJSXRuntime.jsx = b.runtime.jsx
 	const stale = a.runtime.jsx(Messages, {})
 	check('the newest copy wraps the screen', first.type === 'V')

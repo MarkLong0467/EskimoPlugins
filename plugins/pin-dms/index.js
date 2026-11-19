@@ -5,9 +5,9 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.16.3'
+	var VERSION = '1.16.4'
 	var INSTANCE = {}
-	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
+	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn3: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
 	var GROUP_DM = 3
 	var METHODS = ['getPrivateChannelIds', 'getSortedChannels']
@@ -824,10 +824,12 @@
 	// ---- The pinned strip, above the DM tab ----------------------------------------------------------
 	var anchorSeenAt = 0
 	function stripBelow() {
-		try { return !storage || !storage.cache || storage.cache.stripBelow2 === true } catch (e) { return true }
+		try { return !!(storage && storage.cache && storage.cache.stripBelow2 === true) } catch (e) { return false }
 	}
 	function stripEnabled() {
-		try { return !storage || !storage.cache || storage.cache.stripOn2 === true } catch (e) { return true }
+		// Off unless switched on. The saved switch moved to stripOn3 in 1.16.4, so a strip switched on long ago (or settings
+		// that have not loaded yet) no longer puts it above the DM list.
+		try { return !!(storage && storage.cache && storage.cache.stripOn3 === true) } catch (e) { return false }
 	}
 	function openChat(id) {
 		var f = finders()
@@ -1970,7 +1972,7 @@
 				h(
 					Design.TableRowGroup,
 					{ title: 'Experimental' },
-					h(Design.TableSwitchRow, { key: 'strip', label: 'Pinned strip above the DM tab', subLabel: 'Repeats your pinned chats in a panel at the top. Off by default.', value: stripEnabled(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripOn2: !!v }); changed() } catch (e) {} } }),
+					h(Design.TableSwitchRow, { key: 'strip', label: 'Pinned strip above the DM tab', subLabel: 'Repeats your pinned chats in a panel at the top. Off by default.', value: stripEnabled(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripOn3: !!v }); changed() } catch (e) {} } }),
 					h(Design.TableSwitchRow, { key: 'stripbelow', label: 'Put the strip under the Messages header', subLabel: 'Only matters when the strip is on.', value: stripBelow(), onValueChange: function (v) { try { Object.assign(storage.cache, { stripBelow2: !!v }); changed() } catch (e) {} } }),
 					h(Design.TableSwitchRow, { key: 'nativeinto', label: "Put Discord's pinned DMs in the sections", subLabel: 'A chat pinned in Discord goes to the top of its section, or to the top of Direct messages, instead of above everything.', value: nativeOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { nativeInto: !!v }); favCache = null; fastCache = null; refreshList() } catch (e) {} } }),
 					h(Design.TableSwitchRow, { key: 'hidepinned', label: 'Hide pinned chats from other lists', subLabel: 'Leaves them out of the normal DM lists the plugin can reach.', value: hideOn(), onValueChange: function (v) { try { Object.assign(storage.cache, { hidePinned2: !!v }); refreshList() } catch (e) {} } }),
