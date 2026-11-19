@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.16.0'
+	var VERSION = '1.16.1'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -1742,6 +1742,9 @@
 			})
 			list.push(row('pin-none', (pinned && !current ? '✓ ' : '') + (state.sections.length ? 'Pin (no group)' : 'Pin to the top'), pinIcon, function () { pin(id, ''); toast('Pinned') }))
 			if (pinned) list.push(row('pin-un', 'Unpin', pinIcon, function () { unpin(id); toast('Unpinned') }))
+			// Discord's own Pin stays too, renamed, so a chat can still be pinned in Discord (it then sits at the top of its group).
+			var nativeLabel = String(nativeRow.props.label || 'Pin')
+			list.push(React.cloneElement(nativeRow, { key: 'pin-native', __pinDmsRow: true, label: /unpin/i.test(nativeLabel) ? 'Unpin in Discord' : 'Pin in Discord' }))
 			status.pinSheets++
 			changed()
 			return React.cloneElement(result, { __pinGroup: true }, list)

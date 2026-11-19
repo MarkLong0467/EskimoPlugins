@@ -288,9 +288,20 @@ const later = []
 	const labelsOf = (g) => (Array.isArray(g.props.children) ? g.props.children : [g.props.children]).map((r) => r.props.label)
 	const a = load({ sectionsJson: secs })
 	const g = mkGroup(a)
-	check('the hold-down menu shows Pin to each section instead of Discord\'s Pin', labelsOf(g).join('|') === 'Pin to Boys|Pin to Girls|Pin (no group)', labelsOf(g).join('|'))
+	check('the hold-down menu shows Pin to each section instead of Discord\'s Pin', labelsOf(g).join('|') === 'Pin to Boys|Pin to Girls|Pin (no group)|Pin in Discord', labelsOf(g).join('|'))
 	const rowsOf = (gg) => (Array.isArray(gg.props.children) ? gg.props.children : [gg.props.children])
 	check('the rows copy the look of Discord\'s own row', rowsOf(g)[0].type === TableRow)
+	{
+		let nativePressed = 0
+		const b = load({ sectionsJson: secs })
+		const icon = b.runtime.jsx(PinIcon, {})
+		const nrow = b.runtime.jsx(TableRow, { label: 'Pin', icon, onPress: () => { nativePressed++ } })
+		b.runtime.jsx(function DMSheet() {}, { channel: { id: LONG.c3, type: 1 } })
+		const grp = b.runtime.jsx(TableRowGroup, { children: [nrow] })
+		const discordRow = rowsOf(grp).filter((r) => r.props.label === 'Pin in Discord')[0]
+		discordRow.props.onPress()
+		check('Pin in Discord runs Discord’s own Pin and does not pin in the plugin', nativePressed === 1 && !JSON.parse(b.data.cache.pinsJson).includes(LONG.c3))
+	}
 	rowsOf(g)[0].props.onPress()
 	// What the phone does after a change: the list is drawn again, and each chat row comes back with a new key, so Discord
 	// draws it fresh with the new label instead of keeping the old row.
@@ -377,9 +388,9 @@ const later = []
 	later.push(new Promise((res) => setTimeout(() => { check('choosing Pin to Boys pins the chat in that section', a.data.cache.pinsJson.indexOf(LONG.c3) >= 0 && JSON.parse(a.data.cache.assignJson)[LONG.c3] === 's1', a.data.cache.assignJson); res() }, 20)))
 	const pinned = load({ sectionsJson: secs, pinsJson: JSON.stringify([LONG.c3]), assignJson: JSON.stringify({ [LONG.c3]: 's2' }) })
 	const gp = mkGroup(pinned)
-	check('for a pinned chat the menu marks its section and offers Unpin', labelsOf(gp).join('|') === 'Pin to Boys|✓ Pin to Girls|Pin (no group)|Unpin', labelsOf(gp).join('|'))
+	check('for a pinned chat the menu marks its section and offers Unpin', labelsOf(gp).join('|') === 'Pin to Boys|✓ Pin to Girls|Pin (no group)|Unpin|Pin in Discord', labelsOf(gp).join('|'))
 	const none = load({})
-	check('with no sections it is just Pin to the top', labelsOf(mkGroup(none)).join('|') === 'Pin to the top', labelsOf(mkGroup(none)).join('|'))
+	check('with no sections it is just Pin to the top', labelsOf(mkGroup(none)).join('|') === 'Pin to the top|Pin in Discord', labelsOf(mkGroup(none)).join('|'))
 	const msg = load({ sectionsJson: secs })
 	check('the menu of a message is left alone', mkGroup(msg, { channel: { id: LONG.c3, type: 1 }, message: { id: '1' } }).props.children[0].props.label === 'Pin')
 	const off = load({ sectionsJson: secs, pinHideOff: true })
@@ -390,7 +401,7 @@ const later = []
 	function SheetHeader() {}
 	function MessagesItemChannelFast() {}
 	const hdr = load({ sectionsJson: secs }); hdr.runtime.jsx(SheetHeader, { channel: { id: LONG.c3, type: 1 } })
-	check('any piece of the sheet carrying a DM tells us which chat it is', labelsOf(mkGroupNoSheet(hdr)).join('|') === 'Pin to Boys|Pin to Girls|Pin (no group)')
+	check('any piece of the sheet carrying a DM tells us which chat it is', labelsOf(mkGroupNoSheet(hdr)).join('|') === 'Pin to Boys|Pin to Girls|Pin (no group)|Pin in Discord')
 	const rowOnly = load({ sectionsJson: secs }); rowOnly.runtime.jsx(MessagesItemChannelFast, { channelId: LONG.c4 })
 	check('the list\'s own rows do not count as a sheet', mkGroupNoSheet(rowOnly).props.children[0].props.label === 'Pin')
 	const big = load({ sectionsJson: secs }); big.runtime.jsx(DMChannelSheet, { channel: { id: LONG.c3, type: 1 } })
@@ -403,7 +414,7 @@ const later = []
 	const again = rowsOf(wg).map((r) => wrap.runtime.jsx(RowWrapper, { children: [r] }))
 	check('the rows made for the menu are not swapped for the whole list again', again.every((w, i) => w.props.children.length === 1 && w.props.children[0] === rowsOf(wg)[i]), again.map((w) => w.props.children.length).join())
 	const regroup = wrap.runtime.jsx(TableRowGroup, { children: rowsOf(wg).slice(-2) })
-	check('a small group of the menu\'s own Pin rows is left alone', labelsOf(regroup).join('|') === 'Pin (no group)|Unpin', labelsOf(regroup).join('|'))
+	check('a small group of the menu\'s own Pin rows is left alone', labelsOf(regroup).join('|') === 'Unpin|Pin in Discord', labelsOf(regroup).join('|'))
 }
 
 // Discord's own pinned DMs (data.channelFavorites) go into the groups: to the top of their section, or of Direct messages.
