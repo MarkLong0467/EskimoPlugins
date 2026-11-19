@@ -238,7 +238,18 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 		check('compact: the clearance can be set to zero', JSON.stringify(zr.props.style) === '{"height":55}', JSON.stringify(zr.props.style))
 		const f = load({ sectionsJson: secs.replace('"color":"#00d4ff"', '"color":"#00d4ff","collapsed":true'), assignJson: asg2 })
 		const elf = f.runtime.jsx(MessagesFastestList, { data: { channels: mk(), sections: [0, 1, 6] } })
-		check('compact: a folded section keeps its first chat and hides the rest', short(elf.props.data.channels.map((x) => x.channelId)) === 'c2,c1,c3,c5,g1' && elf.props.data.sections.join() === '0,1,5', short(elf.props.data.channels.map((x) => x.channelId)))
+		check('compact: a folded section shows only its heading row, none of its chats', short(elf.props.data.channels.map((x) => x.channelId)) === 'pin-head:s1,c1,c3,c5,g1' && elf.props.data.sections.join() === '0,1,5', short(elf.props.data.channels.map((x) => x.channelId)))
+		function MessagesItemChannelFast() {}
+		const head = f.runtime.jsx(MessagesItemChannelFast, { channelId: 'pin-head:s1', row: 0 })
+		f.setCur('fh'); const headOut = head.type(head.props)
+		check('compact: the folded heading row shows ▸ and the section name', head.type.name === 'ListHeader' && texts(expand(headOut)).join('') === '▸ BOYS', texts(expand(headOut)).join(''))
+		check('compact: the folded heading text is centred in its row', headOut.props.style.justifyContent === 'center' && headOut.props.style.paddingTop === 0)
+		function PressableHighlight2() {}
+		const restRow = f.runtime.jsx(PressableHighlight2, { onLongPress: () => {}, children: { type: 'V', props: { channelId: LONG.c1 } }, style: { height: 55 } })
+		const restKids = Array.isArray(restRow.props.children) ? restRow.props.children : [restRow.props.children]
+		check('compact: under a folded section the first other chat still has the Direct messages label', restKids.some((k) => k && k.type && k.type.name === 'CompactLabel' && k.props.kind === 'rest'))
+		headOut.props.onPress()
+		check('compact: tapping the folded heading unfolds the section', !JSON.parse(f.data.cache.sectionsJson)[0].collapsed)
 	}
 
 // 5. The list pieces and the report
@@ -470,7 +481,7 @@ const later = []
 		check('fold: tapping the label asks the list to draw again (no need to open a chat)', redraws > 0, redraws)
 		r.setCur('wrap')
 		const again = r.runtime.jsx(MessagesFastestList, { data })
-		check('fold: drawn again, the folded section shows only its first chat', again.props.data.channels.length === 5, again.props.data.channels.length)
+		check('fold: drawn again, the folded section shows only its heading', again.props.data.channels.length === 5, again.props.data.channels.length)
 		React.useState = realState
 		res()
 	}, 30)))

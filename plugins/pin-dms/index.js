@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.16.1'
+	var VERSION = '1.16.2'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -1098,16 +1098,18 @@
 		var at = -1
 		for (var i = 0; i < d.sections.length; i++) { if (d.sections[i] === d.channels.length && typeof d.sections[i] === 'number') { at = i; break } }
 		if (at < 0) return null
+		// A folded section becomes one heading row in place of its chats (none of them stay in view).
 		var seen = {}
-		var out = list.filter(function (entry) {
+		var out = []
+		list.forEach(function (entry) {
 			var id = chatId(entry)
-			if (!id || state.pins.indexOf(id) < 0) return true
-			var sec = sectionOf(state, id)
-			if (!sec || !sec.collapsed) return true
-			if (seen[sec.id]) return false
+			var sec = id && state.pins.indexOf(id) >= 0 ? sectionOf(state, id) : undefined
+			if (!sec || !sec.collapsed) { out.push(entry); return }
+			if (seen[sec.id]) return
 			seen[sec.id] = true
-			return true
+			out.push(headerEntry(sec.id))
 		})
+		if (!Object.keys(seen).length) return null
 		if (out.length === list.length) return null
 		var sections = d.sections.slice()
 		sections[at] = sections[at] + (out.length - d.channels.length)
@@ -1122,6 +1124,7 @@
 		var restDone = false
 		var looseDone = false
 		list.forEach(function (entry) {
+			if (entry && entry.__pinHeader) { anyPinned = true; return }
 			var id = chatId(entry)
 			if (!id) return
 			var pinned = state.pins.indexOf(id) >= 0
@@ -1203,6 +1206,7 @@
 		return map
 	}
 	function ListHeader(props) {
+		useSectionsWatch()
 		var RN = valenced.react.ReactNative
 		var Design = valenced.discord.design.Design
 		var state = read()
@@ -1214,7 +1218,7 @@
 		var label = (sec && sec.collapsed ? '▸ ' : '') + String(name).toUpperCase()
 		return h(
 			RN.Pressable,
-			{ onPress: sec ? function () { toggleFold(sec.id) } : undefined, onLongPress: sec ? function () { openEditSection(sec) } : undefined, style: { height: ROW, paddingHorizontal: 16, justifyContent: 'flex-start', paddingTop: gapTop(), transform: props.shift ? [{ translateY: -props.shift }] : undefined } },
+			{ onPress: sec ? function () { toggleFold(sec.id) } : undefined, onLongPress: sec ? function () { openEditSection(sec) } : undefined, style: { height: ROW, paddingHorizontal: 16, justifyContent: compactOn() ? 'center' : 'flex-start', paddingTop: compactOn() ? 0 : gapTop(), transform: props.shift ? [{ translateY: -props.shift }] : undefined } },
 			h(
 				RN.View,
 				{ style: { flexDirection: 'row', alignItems: 'center', gap: 8 } },
