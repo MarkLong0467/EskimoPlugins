@@ -12,7 +12,7 @@ import { lookupModule } from '@valenced/modules/finders'
 import { withProps } from '@valenced/modules/finders/filters'
 import { AppState, NativeEventEmitter, NativeModules } from 'react-native'
 import { count, errorText, found, note } from './diag'
-import { clearMedia, sendUpdate, setPip } from './native'
+import { clearMedia, openMini, sendNativeVideo, sendUpdate, setPip } from './native'
 import { on } from './config'
 import { titleOf } from './videos'
 
@@ -80,11 +80,16 @@ function startVoiceMessages(cleanup: Cleanup): void {
  *   across chats" on, that call is skipped (here, and in the native half if this object cannot be changed).
  * - It pauses itself a few milliseconds after Discord leaves the screen. Playing it again right away works (that is what the
  *   notification's play button does), so when it was playing as Discord left, it is started again.
+ * - It plays one thing at a time. With "Play several at once" on, what was playing carries on in the plugin's small player when
+ *   something else starts; a chat video left by changing chats carries on there too, so it can be seen.
+ * - Seeking: Discord's media viewer seeks it with `changeProgress(id, value)`. The unit is not known for sure (seconds is
+ *   tried first, as Discord's viewer counts in seconds); if the player does not land there, milliseconds are tried.
  */
 interface NativePlayerModule {
 	playCurrentPlayer?: () => void
 	pauseCurrentPlayer?: () => void
 	pauseAllMediaPlayers?: (...args: unknown[]) => unknown
+	changeProgress?: (id: unknown, value: number) => unknown
 }
 
 export type NativeKind = 'voice' | 'video' | 'audio'
@@ -108,6 +113,10 @@ let resumes = 0
 /** When pause was last pressed in the notification (that pause is meant, it is not undone). */
 let userPausedAt = 0
 let pipWanted = false
+let appActive = true
+/** Seeking through changeProgress: the unit that worked, and a seek waiting to be checked. */
+let seekUnit: 's' | 'ms' = 's'
+let pendingSeek: { target: number; unit: 's' | 'ms'; at: number; retried: boolean } | null = null
 let lastRaw = ''
 let inCallNow = () => false
 
@@ -130,10 +139,12 @@ function nativeTitle(source: any): { title: string; subtitle: string } {
 }
 
 const playing = () => nativeRate !== 0
+const canSeek = () => typeof nativeModule?.changeProgress === 'function' && nativeSource?.id != null
 
 function reportNative(): void {
 	if (!nativeSource) return
 	updateNativePip()
+	if (nativeKind === 'video') sendNativeVideo(urlOf(nativeSource), nativeTimeMs, nativeTitle(nativeSource).title, playing())
 	if (!on('notification')) return
 	const { title, subtitle } = nativeTitle(nativeSource)
 	sendUpdate({
@@ -143,8 +154,7 @@ function reportNative(): void {
 		durationMs: nativeDurationMs > 0 ? Math.round(nativeDurationMs) : -1,
 		positionMs: Math.max(0, Math.round(nativeTimeMs)),
 		playing: playing(),
-		// The native half decides: it can seek when it found the player behind Discord's.
-		canSeek: false,
+		canSeek: canSeek(),
 	})
 }
 
@@ -172,6 +182,7 @@ function resumeAfterLeaving(): void {
 }
 
 function onAppState(state: string): void {
+	appActive = state === 'active'
 	if (state === 'active') {
 		leftAt = 0
 		return
@@ -183,6 +194,61 @@ function onAppState(state: string): void {
 	if (leftWhilePlaying && !playing()) resumeAfterLeaving()
 }
 
+/** What the chat player plays carries on in the plugin's small player, and Discord's player is paused. */
+function handToMini(reason: string): void {
+	const url = urlOf(nativeSource)
+	if (!url) return
+	openMini(url, nativeTimeMs, nativeTitle(nativeSource).title, true)
+	userPausedAt = Date.now()
+	try {
+		nativeModule?.pauseCurrentPlayer?.()
+	} catch {}
+	count(reason)
+}
+
+/** Seeks Discord's chat player (see the top of this part for the unit). */
+function nativeSeek(ms: number): void {
+	if (!canSeek() || !(ms >= 0)) {
+		note('seek: Discord’s chat player has no changeProgress here')
+		return
+	}
+	pendingSeek = { target: ms, unit: seekUnit, at: Date.now(), retried: false }
+	sendSeek(ms, seekUnit)
+}
+
+function sendSeek(ms: number, unit: 's' | 'ms'): void {
+	try {
+		nativeModule?.changeProgress?.(nativeSource.id, unit === 's' ? ms / 1000 : ms)
+	} catch (error) {
+		note(`seek (${unit}): ${errorText(error)}`)
+	}
+	nativeTimeMs = ms
+	reportedAt = 0
+}
+
+/** After a seek: did the player land there? If not, the other unit is tried once. */
+function checkSeek(): void {
+	const seek = pendingSeek
+	if (!seek) return
+	const since = Date.now() - seek.at
+	if (since < 250) return
+	if (Math.abs(nativeTimeMs - seek.target) < 2500) {
+		seekUnit = seek.unit
+		pendingSeek = null
+		count(`seek works (${seek.unit})`)
+		return
+	}
+	if (since < 1000) return
+	if (seek.retried) {
+		pendingSeek = null
+		note(`seek: the player did not move to ${seek.target} ms (tried s and ms with id ${String(nativeSource?.id)})`)
+		return
+	}
+	const other = seek.unit === 's' ? 'ms' : 's'
+	pendingSeek = { target: seek.target, unit: other, at: Date.now(), retried: true }
+	sendSeek(seek.target, other)
+}
+
 /** Discord pauses every chat player when another chat opens; with "across chats" on, that is skipped. */
 function keepAcrossChats(module: NativePlayerModule, cleanup: Cleanup): void {
 	const original = module.pauseAllMediaPlayers
@@ -192,7 +258,9 @@ function keepAcrossChats(module: NativePlayerModule, cleanup: Cleanup): void {
 	}
 	const instead = function (this: unknown, ...args: unknown[]) {
 		if (on('crossChat')) {
-			count('chat change: kept playing')
+			// A chat video would play on unseen in the chat that was left: it carries on in the small player instead.
+			if (nativeKind === 'video' && playing()) handToMini('chat change: video to the small player')
+			else count('chat change: kept playing')
 			return undefined
 		}
 		return original.apply(this, args)
@@ -222,8 +290,20 @@ function startNativePlayer(cleanup: Cleanup): NativePlayerModule | undefined {
 	const setSource = (source: any) => {
 		if (!source) return
 		if (source.id !== nativeSource?.id || urlOf(source) !== urlOf(nativeSource)) {
+			// Something else starts while one plays: with "Play several at once" on, the one before carries on in the small
+			// player (Discord's player plays one thing at a time). Very short clips (GIF-like videos) are left alone.
+			const before = nativeSource
+			const wasPlaying = !!before && (playing() || Date.now() - playingAt < 1500)
+			if (wasPlaying && appActive && on('simultaneous') && nativeDurationMs > 3000 && nativeDurationMs - nativeTimeMs > 1500) {
+				const url = urlOf(before)
+				if (url) {
+					openMini(url, nativeTimeMs, nativeTitle(before).title, true)
+					count(`several at once: ${nativeKind} to the small player`)
+				}
+			}
 			nativeDurationMs = 0
 			nativeTimeMs = 0
+			pendingSeek = null
 		}
 		nativeSource = source
 		nativeKind = kindOf(source)
@@ -252,6 +332,7 @@ function startNativePlayer(cleanup: Cleanup): NativePlayerModule | undefined {
 				nativeTimeMs = Number(event?.time) || 0
 				nativeDurationMs = Number(event?.duration) || nativeDurationMs
 				if (playing()) playingAt = Date.now()
+				checkSeek()
 				if (!lastRaw && Number(event?.duration) > 0)
 					lastRaw = JSON.stringify({ time: event?.time, duration: event?.duration, source: Object.keys(event?.source ?? {}) }).slice(0, 240)
 				if (Date.now() - reportedAt > 2000) {
@@ -264,6 +345,7 @@ function startNativePlayer(cleanup: Cleanup): NativePlayerModule | undefined {
 	} catch (error) {
 		note(`native player events: ${errorText(error)}`)
 	}
+	appActive = AppState.currentState === 'active' || AppState.currentState == null
 	const subscription = AppState.addEventListener('change', onAppState)
 	cleanup(() => subscription.remove())
 	cleanup(() => {
@@ -274,10 +356,16 @@ function startNativePlayer(cleanup: Cleanup): NativePlayerModule | undefined {
 	return module
 }
 
-/** Runs a command from the notification on Discord's native player (seeking is done by the native half). */
-export function nativeCommand(module: NativePlayerModule | undefined, cmd: string): void {
+/** Runs a command from the notification (or the native half) on Discord's native player. */
+export function nativeCommand(module: NativePlayerModule | undefined, cmd: string, ms = -1): void {
 	try {
 		if (cmd === 'play') module?.playCurrentPlayer?.()
+		else if (cmd === 'seek') nativeSeek(ms)
+		else if (cmd === 'handoff') {
+			// The small player took the video over for Picture-in-Picture.
+			userPausedAt = Date.now()
+			module?.pauseCurrentPlayer?.()
+		}
 		else if (cmd === 'pause' || cmd === 'stop') {
 			userPausedAt = Date.now()
 			module?.pauseCurrentPlayer?.()
@@ -289,7 +377,8 @@ export function nativeCommand(module: NativePlayerModule | undefined, cmd: strin
 
 export function nativeReport(): string {
 	const state = nativeSource ? `${nativeKind} ${playing() ? 'playing' : 'paused'} ${nativeTimeMs}/${nativeDurationMs} ms` : 'nothing yet'
-	return `native player: ${state}${lastRaw ? `, first progress ${lastRaw}` : ''}`
+	const seek = canSeek() ? `seek via changeProgress (${seekUnit})` : 'no seek'
+	return `native player: ${state}, ${seek}${lastRaw ? `, first progress ${lastRaw}` : ''}`
 }
 
 export function startAudio(cleanup: Cleanup, inCall: () => boolean = () => false): NativePlayerModule | undefined {

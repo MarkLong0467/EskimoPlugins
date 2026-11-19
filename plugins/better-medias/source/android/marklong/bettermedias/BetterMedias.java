@@ -83,7 +83,7 @@ import kotlin.jvm.functions.Function2;
 public final class BetterMedias {
     static final String PREFIX = "marklong.bettermedias.";
     static final String REGISTRY_KEY = "marklong.bettermedias.instance";
-    static final String VERSION = "0.2.0";
+    static final String VERSION = "0.3.0";
     static final long WAIT_MS = 25000;
     static final String CHANNEL = "marklong_better_medias";
     static final int NOTIFICATION_ID = 0x4d454449; // "MEDI"
@@ -312,7 +312,7 @@ public final class BetterMedias {
         void update(String who, String newTitle, String newSubtitle, long duration, long position, boolean isPlaying, boolean seekable) {
             if (!notifyOn) { hide(); return; }
             if (target != null && !target.equals(who) && playing && !isPlaying) return;
-            if (NATIVE.equals(who)) seekable = Media.canSeek();
+            if (NATIVE.equals(who)) seekable = seekable || Media.canSeek();
             // Android moves the seek bar by itself while playing; the notification is only made again when something changes.
             boolean same = shown && who.equals(target) && isPlaying == playing && seekable == canSeek && duration == durationMs
                 && String.valueOf(newTitle).equals(title) && String.valueOf(newSubtitle).equals(subtitle) && Math.abs(position() - position) < 1500;
@@ -503,6 +503,7 @@ public final class BetterMedias {
         int videoW = 16;
         int videoH = 9;
         boolean filling;
+        boolean audioOnly;
         float downX, downY, startTX, startTY;
         boolean dragged;
         final int touchSlop;
@@ -577,6 +578,10 @@ public final class BetterMedias {
             release();
             url = newUrl;
             title = newTitle == null || newTitle.isEmpty() ? "Video" : newTitle;
+            String bare = newUrl == null ? "" : (newUrl.indexOf('?') >= 0 ? newUrl.substring(0, newUrl.indexOf('?')) : newUrl).toLowerCase();
+            audioOnly = bare.matches(".*\\.(mp3|ogg|oga|opus|flac|wav|m4a|aac|wma)$") || "Voice message".equals(title);
+            badge.setTextSize(TypedValue.COMPLEX_UNIT_SP, audioOnly ? 14 : 30);
+            layoutMini();
             startAt = Math.max(0, positionMs);
             wantPlay = play;
             prepared = false;
@@ -594,7 +599,7 @@ public final class BetterMedias {
             });
             mp.setOnVideoSizeChangedListener(new MediaPlayer.OnVideoSizeChangedListener() {
                 @Override public void onVideoSizeChanged(MediaPlayer p, int width, int height) {
-                    if (width > 0 && height > 0) { videoW = width; videoH = height; layoutMini(); pip.set(MINI, isPlaying(), videoW, videoH); }
+                    if (width > 0 && height > 0 && !audioOnly) { videoW = width; videoH = height; layoutMini(); pip.set(MINI, isPlaying(), videoW, videoH); }
                 }
             });
             mp.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
@@ -642,16 +647,18 @@ public final class BetterMedias {
         }
 
         void refresh() {
-            badge.setText(isPlaying() || (wantPlay && !prepared) ? "" : "▶");
+            boolean going = isPlaying() || (wantPlay && !prepared);
+            if (audioOnly) badge.setText((going ? "♪  " : "▶  ") + title);
+            else badge.setText(going ? "" : "▶");
             report();
             main.removeCallbacks(ticker);
             if (isPlaying()) main.postDelayed(ticker, 1000);
-            pip.set(MINI, isPlaying(), videoW, videoH);
+            pip.set(MINI, isPlaying() && !audioOnly, videoW, videoH);
         }
 
         void report() {
             Session s = session();
-            if (s != null) s.update(MINI, title, "Discord video", duration(), position(), isPlaying() || (wantPlay && !prepared), true);
+            if (s != null) s.update(MINI, title, audioOnly ? "Discord" : "Discord video", duration(), position(), isPlaying() || (wantPlay && !prepared), true);
         }
 
         void layoutMini() {
@@ -671,9 +678,9 @@ public final class BetterMedias {
             } else {
                 DisplayMetrics metrics = getResources().getDisplayMetrics();
                 int width = Math.round(Math.min(metrics.widthPixels, metrics.heightPixels) * 0.56f);
-                int height = Math.round(width * (videoH / (float) videoW));
+                int height = audioOnly ? dp(52) : Math.round(width * (videoH / (float) videoW));
                 int maxH = Math.round(metrics.heightPixels * 0.45f);
-                if (height > maxH) { height = maxH; width = Math.round(height * (videoW / (float) videoH)); }
+                if (!audioOnly && height > maxH) { height = maxH; width = Math.round(height * (videoW / (float) videoH)); }
                 lp.width = width;
                 lp.height = height;
                 lp.gravity = Gravity.BOTTOM | Gravity.END;
@@ -867,6 +874,29 @@ public final class BetterMedias {
     // =========================================================================================================
     static final class Media {
         static final String NAME = "MediaPlayerManager";
+        /** The chat video that plays now (from the JavaScript half): Picture-in-Picture shows it in the small player. */
+        static volatile String videoUrl = "";
+        static volatile String videoTitle = "";
+        static volatile long videoPosMs;
+        static volatile long videoAt;
+        static volatile boolean videoPlaying;
+
+        static long videoPosition() {
+            return videoPlaying ? videoPosMs + (SystemClock.elapsedRealtime() - videoAt) : videoPosMs;
+        }
+
+        /** Leaving Discord while a chat video plays: the small player takes it over (it fills the Picture-in-Picture window). */
+        static void handOffForPip(Activity a) {
+            if (!pipOn || inCall || !videoPlaying || videoUrl.isEmpty() || !Pip.supported(a)) return;
+            if (SystemClock.elapsedRealtime() - videoAt > 6000) return; // stale
+            MiniView m = mini;
+            if (m != null && videoUrl.equals(m.url)) return;
+            openMini(videoUrl, videoPosition(), videoTitle, true);
+            Actions queue = actions;
+            if (queue != null) queue.send("handoff:native");
+            videoPlaying = false;
+            diag.count("chat video to Picture-in-Picture");
+        }
         static volatile Object module;
         static volatile String how = "not looked for yet (open Discord once)";
         static volatile Object player;
@@ -1058,6 +1088,16 @@ public final class BetterMedias {
                 List<String> names = new ArrayList<String>();
                 try { for (Method x : m.getClass().getDeclaredMethods()) if (names.size() < 45 && !names.contains(x.getName())) names.add(x.getName()); } catch (Throwable ignored) {}
                 out.append("; methods ").append(names).append("; seek: ").append(playerInfo);
+                try {
+                    for (Method x : m.getClass().getDeclaredMethods()) {
+                        if (!x.getName().equals("changeProgress")) continue;
+                        out.append("; changeProgress(");
+                        Class<?>[] types = x.getParameterTypes();
+                        for (int i = 0; i < types.length; i++) out.append(i > 0 ? "," : "").append(types[i].getSimpleName());
+                        out.append(")");
+                    }
+                } catch (Throwable ignored) {}
+                out.append("; chat video: ").append(videoUrl.isEmpty() ? "none" : shortUrl(videoUrl) + (videoPlaying ? " playing" : " paused"));
             }
             return out.toString();
         }
@@ -1193,7 +1233,9 @@ public final class BetterMedias {
         });
         hook("Activity.onUserLeaveHint", method(Activity.class, "onUserLeaveHint"), new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
-                if (param.thisObject instanceof Activity) pip.onUserLeaveHint((Activity) param.thisObject);
+                if (!(param.thisObject instanceof Activity)) return;
+                try { Media.handOffForPip((Activity) param.thisObject); } catch (Throwable error) { diag.error("pip hand-off", error); }
+                pip.onUserLeaveHint((Activity) param.thisObject);
             }
         });
 
@@ -1376,6 +1418,16 @@ public final class BetterMedias {
             public Object invoke(List<?> args) {
                 inCall = bool(args, 3, inCall);
                 pip.set(str(args, 4).isEmpty() ? "js" : str(args, 4), bool(args, 0, false), (int) num(args, 1, 16), (int) num(args, 2, 9));
+                return Boolean.TRUE;
+            }
+        });
+        register(bridge, "nativeVideo", new Function1<List<?>, Object>() {
+            public Object invoke(List<?> args) {
+                Media.videoUrl = str(args, 0);
+                Media.videoPosMs = num(args, 1, 0);
+                Media.videoTitle = str(args, 2);
+                Media.videoPlaying = bool(args, 3, false) && !Media.videoUrl.isEmpty();
+                Media.videoAt = SystemClock.elapsedRealtime();
                 return Boolean.TRUE;
             }
         });

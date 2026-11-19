@@ -8,14 +8,15 @@ Better media playback for Discord on Android. Every feature has its own switch i
   lock the screen. A switch for each.
 - **Notification controls.** Android's media notification, like Spotify's: play/pause, back and forward 10 seconds, a seek
   bar, the position and the length.
-- **Picture-in-Picture.** A playing video goes to a floating window when you leave Discord (home or recent apps). Discord's
-  own Picture-in-Picture for calls is left alone while you are in a call.
-- **Videos across chats.** Discord pauses whatever plays when you open another chat; with this on it keeps playing. A video
-  in the full-screen viewer that you close while it plays carries on in a small player over Discord (drag it, tap to pause,
-  ✕ to close).
-- **Several at once.** While Discord is open, videos in the viewer play alongside other sound instead of pausing it. (Media
-  inside chats, which are audio files, voice messages and chat videos, go through Discord's one chat player, which plays one
-  thing at a time.)
+- **Picture-in-Picture.** When you leave Discord while a video plays, it goes to a floating window. Chat videos are shown
+  there by the plugin's own small player, because Discord's floating window only shows calls. Discord's Picture-in-Picture
+  for calls is left alone while you are in a call.
+- **Videos across chats.** Discord pauses whatever plays when you open another chat. With this on, audio keeps playing, and a
+  chat video carries on in a small player over Discord, from the same moment. Drag it, tap to pause, or ✕ to close.
+- **Several at once.** Discord's chat player plays one thing at a time. With this on, whatever was playing when you start
+  something else carries on in the small player: a song next to a voice message, for example. Very short clips (GIF-like
+  videos) are left alone.
+- **Seek bar.** The notification's seek bar and its ±10 s buttons move Discord's chat player.
 - **Copy report** in the settings: what the plugin found on your phone, for when something does not work.
 
 ## How it works

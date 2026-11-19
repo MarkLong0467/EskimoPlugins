@@ -437,6 +437,97 @@ function findInner(view) {
 		await running.stop()
 	}
 
+	// --- 0.3.0: seeking Discord's chat player through changeProgress (seconds first, milliseconds if it did not land)
+	{
+		const s = setup()
+		s.nativePlayer.changeProgress = (id, value) => s.nativePlayer.calls.push(`seek ${id} ${value}`)
+		const running = await startPlugin(loadPlugin('better-medias').definition, s.runtime, { storage: s.storage })
+		await sleep(10)
+		const song = { id: 'm1', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/song.mp3' }
+		s.emit('MediaPlayerPlaybackRateChanged', { source: song, rate: 1 })
+		s.emit('MediaPlayerPlaybackProgressUpdated', { source: song, time: 1000, duration: 60000 })
+		await sleep(5)
+		check('the notification gets a seek bar for Discord’s chat player', updates(s).filter(x => x.target === 'native').at(-1).canSeek === true)
+		s.sendAction('seek:native:30000')
+		await sleep(5)
+		check('seeking from the notification asks Discord’s player to go there (seconds)', s.nativePlayer.calls.includes('seek m1 30'), String(s.nativePlayer.calls))
+		// The player did not move (it wanted milliseconds): the other unit is tried.
+		await sleep(1100)
+		s.emit('MediaPlayerPlaybackProgressUpdated', { source: song, time: 2100, duration: 60000 })
+		check('when it did not land there, milliseconds are tried', s.nativePlayer.calls.includes('seek m1 30000'), String(s.nativePlayer.calls))
+		await sleep(300)
+		s.emit('MediaPlayerPlaybackProgressUpdated', { source: song, time: 30200, duration: 60000 })
+		s.nativePlayer.calls.length = 0
+		s.sendAction('seek:native:45000')
+		await sleep(5)
+		check('and the unit that worked is used from then on', s.nativePlayer.calls.includes('seek m1 45000'), String(s.nativePlayer.calls))
+		await running.stop()
+	}
+
+	// --- 0.3.0: a chat video carries on in the small player when you change chats; audio keeps playing in Discord's player
+	{
+		const s = setup()
+		const running = await startPlugin(loadPlugin('better-medias').definition, s.runtime, { storage: s.storage })
+		await sleep(10)
+		const clip = { id: 'c1', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/clip.mp4?ex=1' }
+		s.emit('MediaPlayerPlaybackRateChanged', { source: clip, rate: 1 })
+		s.emit('MediaPlayerPlaybackProgressUpdated', { source: clip, time: 5000, duration: 60000 })
+		await sleep(5)
+		const video = calls(s, 'nativeVideo').at(-1)
+		check('the playing chat video is told to the native half (for Picture-in-Picture)', video && /clip\.mp4/.test(video.args[0]) && video.args[3] === true, JSON.stringify(video))
+		s.nativePlayer.pauseAllMediaPlayers()
+		await sleep(5)
+		const mini = calls(s, 'miniOpen').at(-1)
+		check('changing chats while a video plays opens it in the small player at the same moment', mini && /clip\.mp4/.test(mini.args[0]) && mini.args[1] === 5000, JSON.stringify(mini))
+		check('and Discord’s own player is paused (no double sound)', s.nativePlayer.calls.includes('pause') && !s.nativePlayer.calls.includes('pauseAll'))
+		await running.stop()
+	}
+
+	// --- 0.3.0: the native half took the video for Picture-in-Picture: Discord's player pauses and is not started again
+	{
+		const s = setup()
+		const running = await startPlugin(loadPlugin('better-medias').definition, s.runtime, { storage: s.storage })
+		await sleep(10)
+		const clip = { id: 'c1', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/clip.mp4' }
+		s.emit('MediaPlayerPlaybackRateChanged', { source: clip, rate: 1 })
+		s.emit('MediaPlayerPlaybackProgressUpdated', { source: clip, time: 5000, duration: 60000 })
+		s.sendAction('handoff:native')
+		await sleep(5)
+		s.appState('background')
+		s.emit('MediaPlayerPlaybackRateChanged', { source: clip, rate: 0 })
+		check('hand-off to Picture-in-Picture pauses Discord’s player and it stays paused', s.nativePlayer.calls.includes('pause') && !s.nativePlayer.calls.includes('play'), String(s.nativePlayer.calls))
+		await running.stop()
+	}
+
+	// --- 0.3.0: several at once: starting something else hands what played to the small player
+	{
+		const s = setup()
+		const running = await startPlugin(loadPlugin('better-medias').definition, s.runtime, { storage: s.storage })
+		await sleep(10)
+		const song = { id: 'm1', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/song.mp3' }
+		const voice = { id: 'v1', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/voice-message.ogg', isVoiceMessage: true }
+		s.emit('MediaPlayerPlaybackRateChanged', { source: song, rate: 1 })
+		s.emit('MediaPlayerPlaybackProgressUpdated', { source: song, time: 20000, duration: 180000 })
+		s.emit('MediaPlayerPlaybackSourceChanged', { source: voice })
+		await sleep(5)
+		const mini = calls(s, 'miniOpen').at(-1)
+		check('a song playing when a voice message starts carries on in the small player', mini && /song\.mp3/.test(mini.args[0]) && mini.args[1] === 20000, JSON.stringify(mini))
+		s.nativeCalls.length = 0
+		const gif = { id: 'g1', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/loop.mp4' }
+		s.emit('MediaPlayerPlaybackRateChanged', { source: gif, rate: 1 })
+		s.emit('MediaPlayerPlaybackProgressUpdated', { source: gif, time: 500, duration: 2000 })
+		s.emit('MediaPlayerPlaybackSourceChanged', { source: song })
+		await sleep(5)
+		check('a very short clip is not carried on', calls(s, 'miniOpen').length === 0)
+		await s.storage.set({ simultaneous: false })
+		s.emit('MediaPlayerPlaybackRateChanged', { source: song, rate: 1 })
+		s.emit('MediaPlayerPlaybackProgressUpdated', { source: song, time: 20000, duration: 180000 })
+		s.emit('MediaPlayerPlaybackSourceChanged', { source: voice })
+		await sleep(5)
+		check('with "Play several at once" off nothing is carried on', calls(s, 'miniOpen').length === 0)
+		await running.stop()
+	}
+
 	// --- Settings screen and report
 	{
 		const s = setup()

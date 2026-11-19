@@ -56,6 +56,11 @@ export function miniCommand(command: 'play' | 'pause' | 'close'): void {
 	void call('mini', [command])
 }
 
+/** The chat video that plays now: when Discord is left, the small player shows it in Picture-in-Picture. */
+export function sendNativeVideo(url: string, positionMs: number, title: string, playing: boolean): void {
+	void call('nativeVideo', [url, Math.max(0, Math.round(positionMs)), title, playing])
+}
+
 export function setPip(wanted: boolean, width: number, height: number, inCall: boolean, by: string): void {
 	void call('pip', [wanted, Math.round(width) || 16, Math.round(height) || 9, inCall, by])
 }
@@ -69,6 +74,7 @@ export interface NativeBetterMedias {
 	mini: [[command: string], boolean]
 	miniState: [[], string]
 	pip: [[wanted: boolean, width: number, height: number, inCall: boolean, by: string], boolean]
+	nativeVideo: [[url: string, positionMs: number, title: string, playing: boolean], boolean]
 	status: [[], string]
 	report: [[], string]
 	nextAction: [[], string]

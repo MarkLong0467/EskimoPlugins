@@ -41,7 +41,7 @@ async function listen(nativePlayer: ReturnType<typeof startAudio>): Promise<void
 		try {
 			const [cmd, kind, id, ms] = action.split(':')
 			if (kind === 'video' && id) command(id, cmd ?? '', Number(ms ?? -1))
-			else if (kind === 'native') nativeCommand(nativePlayer, cmd ?? '')
+			else if (kind === 'native') nativeCommand(nativePlayer, cmd ?? '', Number(id ?? -1))
 		} catch (error) {
 			note(`command ${action}: ${String(error)}`)
 		}
