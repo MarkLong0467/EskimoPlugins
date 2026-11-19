@@ -61,6 +61,7 @@ import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -82,7 +83,7 @@ import kotlin.jvm.functions.Function2;
 public final class BetterMedias {
     static final String PREFIX = "marklong.bettermedias.";
     static final String REGISTRY_KEY = "marklong.bettermedias.instance";
-    static final String VERSION = "0.1.0";
+    static final String VERSION = "0.2.0";
     static final long WAIT_MS = 25000;
     static final String CHANNEL = "marklong_better_medias";
     static final int NOTIFICATION_ID = 0x4d454449; // "MEDI"
@@ -90,6 +91,7 @@ public final class BetterMedias {
     /** ActivityInfo.FLAG_SUPPORTS_PICTURE_IN_PICTURE, which Android keeps hidden. */
     static final int FLAG_SUPPORTS_PIP = 0x400000;
     static final String MINI = "mini";
+    static final String NATIVE = "native";
 
     // ---- Settings (sent by the JavaScript half) --------------------------------------------------------------
     static volatile boolean bgVideo = true;
@@ -157,16 +159,17 @@ public final class BetterMedias {
             if (pauses.size() >= 8) return;
             long since = SystemClock.elapsedRealtime() - lastPauseAt;
             StringBuilder line = new StringBuilder();
-            line.append(what).append(foreground ? " (Discord open" : " (Discord in background").append(", ").append(since).append(" ms after leaving): ");
+            line.append(what).append(foreground ? " (Discord open" : " (Discord in background").append(", ").append(since).append(" ms after leaving, thread ").append(Thread.currentThread().getName()).append("): ");
             StackTraceElement[] stack = Thread.currentThread().getStackTrace();
             int kept = 0;
             for (StackTraceElement frame : stack) {
                 String cls = frame.getClassName();
                 if (cls.startsWith("java.") || cls.startsWith("dalvik.") || cls.startsWith("android.") || cls.startsWith("com.android.")
-                    || cls.startsWith("de.robv.") || cls.startsWith("marklong.") || cls.contains("LSPHooker") || cls.contains("lsposed")) continue;
+                    || cls.startsWith("de.robv.") || cls.startsWith("marklong.") || cls.startsWith("org.matrix.") || cls.startsWith("org.lsposed.")
+                    || cls.contains("LSPHooker") || cls.contains("lsposed") || cls.contains("LSPatch") || cls.contains("lsplant") || cls.startsWith("kotlin.")) continue;
                 if (kept++ > 0) line.append(" < ");
                 line.append(cls).append('.').append(frame.getMethodName());
-                if (kept >= 7) break;
+                if (kept >= 10) break;
             }
             pauses.add(line.toString());
         }
@@ -185,6 +188,7 @@ public final class BetterMedias {
             out.append("hooks: ").append(hooks.isEmpty() ? "none" : hooks.toString()).append('\n');
             out.append("lifecycle listeners: ").append(listeners.isEmpty() ? "not seen yet (leave Discord once)" : listeners.toString()).append('\n');
             out.append("counts: ").append(counts.toString()).append('\n');
+            out.append("chat player: ").append(Media.describe()).append('\n');
             Session s = session;
             out.append("notification: ").append(s == null ? "not made yet" : s.describe()).append('\n');
             MiniView m = mini;
@@ -308,6 +312,7 @@ public final class BetterMedias {
         void update(String who, String newTitle, String newSubtitle, long duration, long position, boolean isPlaying, boolean seekable) {
             if (!notifyOn) { hide(); return; }
             if (target != null && !target.equals(who) && playing && !isPlaying) return;
+            if (NATIVE.equals(who)) seekable = Media.canSeek();
             // Android moves the seek bar by itself while playing; the notification is only made again when something changes.
             boolean same = shown && who.equals(target) && isPlaying == playing && seekable == canSeek && duration == durationMs
                 && String.valueOf(newTitle).equals(title) && String.valueOf(newSubtitle).equals(subtitle) && Math.abs(position() - position) < 1500;
@@ -343,6 +348,9 @@ public final class BetterMedias {
             if (MINI.equals(who)) {
                 MiniView m = mini;
                 if (m != null) m.command(cmd, to);
+            } else if (NATIVE.equals(who) && "seek".equals(cmd) && Media.seek(to)) {
+                diag.count("chat player seek");
+                show();
             } else {
                 Actions queue = actions;
                 if (queue != null) queue.send(cmd + ":" + who + ("seek".equals(cmd) ? ":" + to : ""));
@@ -853,6 +861,210 @@ public final class BetterMedias {
     }
 
     // =========================================================================================================
+    // Discord's player for media inside chats (NativeModules.MediaPlayerManager: audio files, voice messages, videos).
+    // Discord tells it to pause everything whenever another chat opens (pauseAllMediaPlayers); with "Keep videos playing
+    // across chats" on, that call is skipped. Its player is looked for so the notification can seek.
+    // =========================================================================================================
+    static final class Media {
+        static final String NAME = "MediaPlayerManager";
+        static volatile Object module;
+        static volatile String how = "not looked for yet (open Discord once)";
+        static volatile Object player;
+        static volatile Method seekMethod;
+        static volatile String playerInfo = "not looked for yet";
+        static volatile long lookedAt;
+        static final Set<Class<?>> hookedClasses = new LinkedHashSet<Class<?>>();
+
+        static boolean hasMethod(Class<?> cls, String name) {
+            for (Class<?> c = cls; c != null && c != Object.class; c = c.getSuperclass()) {
+                try { for (Method m : c.getDeclaredMethods()) if (m.getName().equals(name)) return true; } catch (Throwable ignored) {}
+            }
+            return false;
+        }
+
+        /** Is this lifecycle listener Discord's chat player (or a part of it)? */
+        static boolean isMediaListener(Object listener) {
+            if (listener == null) return false;
+            Object m = module;
+            if (m != null && listener == m) return true;
+            Class<?> cls = listener.getClass();
+            if (hasMethod(cls, "pauseAllMediaPlayers") || hasMethod(cls, "playCurrentPlayer")) {
+                adopt(listener, "lifecycle listeners");
+                return true;
+            }
+            try {
+                Class<?> outer = cls.getEnclosingClass();
+                if (m != null && outer != null && outer == m.getClass()) return true;
+            } catch (Throwable ignored) {}
+            return false;
+        }
+
+        static void find(Object reactContext) {
+            if (module != null || reactContext == null) return;
+            Object found = null;
+            try {
+                Method get = method(reactContext.getClass(), "getNativeModule", String.class);
+                if (get != null) found = get.invoke(reactContext, NAME);
+            } catch (Throwable ignored) {}
+            if (found == null) {
+                try {
+                    Method catalyst = method(reactContext.getClass(), "getCatalystInstance");
+                    Object instance = catalyst == null ? null : catalyst.invoke(reactContext);
+                    Method get = instance == null ? null : method(instance.getClass(), "getNativeModule", String.class);
+                    if (get != null) found = get.invoke(instance, NAME);
+                } catch (Throwable ignored) {}
+            }
+            if (found != null) adopt(found, "React context");
+            else how = "not found in the React context";
+        }
+
+        static synchronized void adopt(Object m, String where) {
+            if (module != null) return;
+            module = m;
+            how = m.getClass().getName() + " (from " + where + ")";
+            hookPauseAll(m.getClass());
+        }
+
+        static void hookPauseAll(Class<?> cls) {
+            synchronized (hookedClasses) { if (!hookedClasses.add(cls)) return; }
+            for (Class<?> c = cls; c != null && c != Object.class; c = c.getSuperclass()) {
+                Method[] methods;
+                try { methods = c.getDeclaredMethods(); } catch (Throwable error) { continue; }
+                for (Method m : methods) {
+                    if (!m.getName().equals("pauseAllMediaPlayers") || java.lang.reflect.Modifier.isAbstract(m.getModifiers())) continue;
+                    hook("MediaPlayerManager.pauseAllMediaPlayers", m, new XC_MethodHook() {
+                        @Override protected void beforeHookedMethod(MethodHookParam param) {
+                            if (!crossChat) return;
+                            param.setResult(null);
+                            diag.count("chat change: kept playing (native)");
+                        }
+                    });
+                }
+            }
+        }
+
+        static Method seekOf(Class<?> cls) {
+            Method best = null;
+            try {
+                for (Method m : cls.getMethods()) {
+                    if (!m.getName().equals("seekTo") || m.getParameterTypes().length != 1) continue;
+                    Class<?> t = m.getParameterTypes()[0];
+                    if (t == long.class) return m;
+                    if (t == int.class) best = m;
+                }
+            } catch (Throwable ignored) {}
+            return best;
+        }
+
+        static boolean skip(Object o) {
+            if (o == null || o instanceof String || o instanceof Number || o instanceof Boolean || o instanceof Character || o instanceof Class
+                || o instanceof Context || o instanceof View || o instanceof Thread || o instanceof ClassLoader || o instanceof Handler || o instanceof Looper) return true;
+            String n = o.getClass().getName();
+            return n.startsWith("com.facebook.react.") || n.startsWith("java.lang.reflect.") || n.startsWith("kotlin.jvm.");
+        }
+
+        static void scan(Object o, int depth, IdentityHashMap<Object, Boolean> seen, Object[] hit) {
+            if (hit[0] != null || depth > 4 || skip(o) || seen.containsKey(o) || seen.size() > 4000) return;
+            seen.put(o, Boolean.TRUE);
+            if (depth > 0) {
+                Method s = seekOf(o.getClass());
+                if (s != null) { hit[0] = o; hit[1] = s; return; }
+            }
+            if (o instanceof Collection) {
+                int i = 0;
+                try { for (Object v : (Collection<?>) o) { if (i++ > 30) break; scan(v, depth + 1, seen, hit); } } catch (Throwable ignored) {}
+                return;
+            }
+            if (o instanceof Map) {
+                int i = 0;
+                try { for (Object v : ((Map<?, ?>) o).values()) { if (i++ > 30) break; scan(v, depth + 1, seen, hit); } } catch (Throwable ignored) {}
+                return;
+            }
+            if (o instanceof Object[]) {
+                Object[] array = (Object[]) o;
+                for (int i = 0; i < array.length && i < 30; i++) scan(array[i], depth + 1, seen, hit);
+                return;
+            }
+            if (o.getClass().isArray()) return;
+            for (Class<?> c = o.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+                String n = c.getName();
+                if (n.startsWith("java.") || n.startsWith("android.")) break;
+                Field[] fields;
+                try { fields = c.getDeclaredFields(); } catch (Throwable error) { continue; }
+                for (Field f : fields) {
+                    if (f.getType().isPrimitive() || java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                    try {
+                        f.setAccessible(true);
+                        scan(f.get(o), depth + 1, seen, hit);
+                    } catch (Throwable ignored) {}
+                    if (hit[0] != null) return;
+                }
+            }
+        }
+
+        /** Looks for the chat player's own player (something with seekTo); at most every 3 seconds. */
+        static void look(boolean force) {
+            Object m = module;
+            if (m == null) { playerInfo = "chat player not found"; return; }
+            long now = SystemClock.elapsedRealtime();
+            if (!force && now - lookedAt < 3000) return;
+            lookedAt = now;
+            try {
+                IdentityHashMap<Object, Boolean> seen = new IdentityHashMap<Object, Boolean>();
+                Object[] hit = new Object[2];
+                scan(m, 0, seen, hit);
+                if (hit[0] != null) {
+                    player = hit[0];
+                    seekMethod = (Method) hit[1];
+                    playerInfo = player.getClass().getName() + "." + seekMethod.getName() + "(" + seekMethod.getParameterTypes()[0].getName() + ")";
+                } else {
+                    player = null;
+                    seekMethod = null;
+                    playerInfo = "nothing with seekTo found (" + seen.size() + " objects looked at)";
+                }
+            } catch (Throwable error) {
+                playerInfo = "error " + error;
+            }
+        }
+
+        static boolean canSeek() {
+            if (player == null) look(false);
+            return player != null && seekMethod != null;
+        }
+
+        static boolean seek(final long ms) {
+            if (ms < 0) return false;
+            look(true);
+            final Object p = player;
+            final Method s = seekMethod;
+            if (p == null || s == null) return false;
+            post(new Runnable() {
+                public void run() {
+                    try {
+                        if (s.getParameterTypes()[0] == long.class) s.invoke(p, ms);
+                        else s.invoke(p, (int) ms);
+                    } catch (Throwable error) {
+                        diag.error("chat player seek", error instanceof java.lang.reflect.InvocationTargetException && error.getCause() != null ? error.getCause() : error);
+                    }
+                }
+            });
+            return true;
+        }
+
+        static String describe() {
+            Object m = module;
+            StringBuilder out = new StringBuilder(how);
+            if (m != null) {
+                List<String> names = new ArrayList<String>();
+                try { for (Method x : m.getClass().getDeclaredMethods()) if (names.size() < 45 && !names.contains(x.getName())) names.add(x.getName()); } catch (Throwable ignored) {}
+                out.append("; methods ").append(names).append("; seek: ").append(playerInfo);
+            }
+            return out.toString();
+        }
+    }
+
+
+    // =========================================================================================================
     // Hooks
     // =========================================================================================================
     static void hook(String name, Member member, XC_MethodHook callback) {
@@ -901,6 +1113,7 @@ public final class BetterMedias {
     }
 
     static boolean keepsPlaying(String kind) {
+        if ("chat player".equals(kind)) return bgVideo || bgAudio || bgVoice;
         return ("video".equals(kind) && bgVideo) || ("audio".equals(kind) && bgAudio) || ("voice".equals(kind) && bgVoice);
     }
 
@@ -924,9 +1137,10 @@ public final class BetterMedias {
                     Collection<Object> all = (Collection<Object>) set;
                     synchronized (heldOut) {
                         heldOut.clear();
+                        Media.find(param.thisObject);
                         for (Object listener : all) {
                             String name = listener.getClass().getName();
-                            String kind = kind(name);
+                            String kind = Media.isMediaListener(listener) ? "chat player" : kind(name);
                             diag.listeners.add(name + (kind == null ? "" : " [" + kind + "]"));
                             if (kind != null && keepsPlaying(kind)) heldOut.add(listener);
                         }
@@ -954,7 +1168,10 @@ public final class BetterMedias {
             }
         });
         hook("ReactContext.onHostResume", method(reactContext, "onHostResume", Activity.class), new XC_MethodHook() {
-            @Override protected void afterHookedMethod(MethodHookParam param) { foreground = true; }
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                foreground = true;
+                try { Media.find(param.thisObject); } catch (Throwable error) { diag.error("find chat player", error); }
+            }
         });
 
         // --- Track Discord's window (for the mini player and Picture-in-Picture).

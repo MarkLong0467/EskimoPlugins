@@ -5,16 +5,14 @@
  * audio player to pause when Discord leaves the screen (and to play again when it comes back). With "Voice messages" on, that
  * one listener is swapped for one that skips it; every other part of Discord still hears APP_STATE_UPDATE.
  *
- * Media inside chats (audio files and voice messages are played by Discord's native player): Discord's native
- * `MediaPlayerManager` reports what plays, its position and its length. That feeds the notification, whose play and pause
- * use the same module. (Seeking it is not something the module offers, so its notification has no seek bar.)
+ * Media inside chats (audio files, voice messages and videos are played by Discord's native player): see below.
  */
 import { getModuleWithImportedPath } from '@valenced/discord/utils/modules/finders'
 import { lookupModule } from '@valenced/modules/finders'
 import { withProps } from '@valenced/modules/finders/filters'
-import { NativeEventEmitter, NativeModules } from 'react-native'
+import { AppState, NativeEventEmitter, NativeModules } from 'react-native'
 import { count, errorText, found, note } from './diag'
-import { clearMedia, sendUpdate } from './native'
+import { clearMedia, sendUpdate, setPip } from './native'
 import { on } from './config'
 import { titleOf } from './videos'
 
@@ -75,41 +73,141 @@ function startVoiceMessages(cleanup: Cleanup): void {
 	)
 }
 
-/** Discord's native player for media inside chats, when this build has it. */
+/**
+ * Discord's native player for media inside chats: audio files, voice messages and videos all play through it, one at a time.
+ * - It reports times in milliseconds.
+ * - Discord tells it to pause everything whenever another chat opens (`pauseAllMediaPlayers`): with "Keep videos playing
+ *   across chats" on, that call is skipped (here, and in the native half if this object cannot be changed).
+ * - It pauses itself a few milliseconds after Discord leaves the screen. Playing it again right away works (that is what the
+ *   notification's play button does), so when it was playing as Discord left, it is started again.
+ */
 interface NativePlayerModule {
 	playCurrentPlayer?: () => void
 	pauseCurrentPlayer?: () => void
+	pauseAllMediaPlayers?: (...args: unknown[]) => unknown
 }
 
-let nativeSource: any
-let nativeRate = 0
-let nativeTime = 0
-let nativeDuration = 0
-let nativeAt = 0
-let lastRaw = ''
+export type NativeKind = 'voice' | 'video' | 'audio'
 
-/** Seconds or milliseconds? Discord does not say: a "length" over 3 hours is taken as milliseconds. */
-const toMs = (value: number, duration: number) => (duration > 3 * 3600 ? value : value * 1000)
+const VIDEO_FILE = /\.(mp4|mov|webm|m4v|mkv|3gp)$/i
+const AUDIO_SETTING = { voice: 'backgroundVoice', video: 'backgroundVideo', audio: 'backgroundAudio' } as const
+
+let nativeModule: NativePlayerModule | undefined
+let nativeSource: any
+let nativeKind: NativeKind = 'audio'
+let nativeRate = 0
+let nativeTimeMs = 0
+let nativeDurationMs = 0
+let reportedAt = 0
+/** When it was last seen playing. */
+let playingAt = 0
+/** When Discord left the screen (0 while it is open), and whether something played then. */
+let leftAt = 0
+let leftWhilePlaying = false
+let resumes = 0
+/** When pause was last pressed in the notification (that pause is meant, it is not undone). */
+let userPausedAt = 0
+let pipWanted = false
+let lastRaw = ''
+let inCallNow = () => false
+
+const urlOf = (source: any) => String(source?.assetUrl ?? source?.url ?? source?.uri ?? '')
+
+/** What the chat player is playing: a voice message, a video or an audio file. */
+export function kindOf(source: any): NativeKind {
+	if (!source) return 'audio'
+	const path = urlOf(source).split('?')[0] ?? ''
+	if (source.isVoiceMessage ?? /voice-message|\.ogg$/i.test(path)) return 'voice'
+	const type = String(source.contentType ?? source.content_type ?? source.mediaType ?? source.type ?? '')
+	if (/video/i.test(type) || VIDEO_FILE.test(path)) return 'video'
+	return 'audio'
+}
 
 function nativeTitle(source: any): { title: string; subtitle: string } {
-	const voice = !!(source?.isVoiceMessage ?? /voice-message|\.ogg($|\?)/i.test(String(source?.assetUrl ?? source?.url ?? '')))
-	const url = String(source?.assetUrl ?? source?.url ?? source?.uri ?? '')
-	return voice ? { title: 'Voice message', subtitle: 'Discord' } : { title: url ? titleOf(url) : 'Audio', subtitle: 'Discord' }
+	if (nativeKind === 'voice') return { title: 'Voice message', subtitle: 'Discord' }
+	const url = urlOf(source)
+	return { title: url ? titleOf(url) : nativeKind === 'video' ? 'Video' : 'Audio', subtitle: 'Discord' }
 }
+
+const playing = () => nativeRate !== 0
 
 function reportNative(): void {
 	if (!nativeSource) return
-	const { title, subtitle } = nativeTitle(nativeSource)
+	updateNativePip()
 	if (!on('notification')) return
+	const { title, subtitle } = nativeTitle(nativeSource)
 	sendUpdate({
 		target: 'native',
 		title,
 		subtitle,
-		durationMs: nativeDuration > 0 ? Math.round(toMs(nativeDuration, nativeDuration)) : -1,
-		positionMs: Math.round(toMs(nativeTime, nativeDuration)),
-		playing: nativeRate !== 0,
+		durationMs: nativeDurationMs > 0 ? Math.round(nativeDurationMs) : -1,
+		positionMs: Math.max(0, Math.round(nativeTimeMs)),
+		playing: playing(),
+		// The native half decides: it can seek when it found the player behind Discord's.
 		canSeek: false,
 	})
+}
+
+/** A video playing in a chat: Picture-in-Picture when Discord is left. */
+function updateNativePip(): void {
+	const wanted = nativeKind === 'video' && playing() && on('pictureInPicture')
+	if (wanted === pipWanted) return
+	pipWanted = wanted
+	setPip(wanted, 16, 9, inCallNow(), 'native')
+}
+
+/** Starts the chat player again after Discord paused it for leaving the screen. */
+function resumeAfterLeaving(): void {
+	const now = Date.now()
+	if (!leftAt || !leftWhilePlaying || resumes >= 3 || now - leftAt > 4000) return
+	if (!on(AUDIO_SETTING[nativeKind]) || inCallNow() || now - userPausedAt < 4000) return
+	if (nativeDurationMs > 0 && nativeDurationMs - nativeTimeMs < 1000) return // it simply reached the end
+	resumes++
+	try {
+		nativeModule?.playCurrentPlayer?.()
+		count(`kept playing after leaving (${nativeKind})`)
+	} catch (error) {
+		note(`resume: ${errorText(error)}`)
+	}
+}
+
+function onAppState(state: string): void {
+	if (state === 'active') {
+		leftAt = 0
+		return
+	}
+	if (leftAt) return
+	leftAt = Date.now()
+	resumes = 0
+	leftWhilePlaying = playing() || leftAt - playingAt < 1500
+	if (leftWhilePlaying && !playing()) resumeAfterLeaving()
+}
+
+/** Discord pauses every chat player when another chat opens; with "across chats" on, that is skipped. */
+function keepAcrossChats(module: NativePlayerModule, cleanup: Cleanup): void {
+	const original = module.pauseAllMediaPlayers
+	if (typeof original !== 'function') {
+		found('pause on chat change', 'not in this build')
+		return
+	}
+	const instead = function (this: unknown, ...args: unknown[]) {
+		if (on('crossChat')) {
+			count('chat change: kept playing')
+			return undefined
+		}
+		return original.apply(this, args)
+	}
+	try {
+		module.pauseAllMediaPlayers = instead
+	} catch {}
+	const patched = module.pauseAllMediaPlayers === instead
+	found('pause on chat change', patched ? 'patched' : 'read-only here (the native half skips it)')
+	if (patched)
+		cleanup(() => {
+			try {
+				module.pauseAllMediaPlayers = original
+			} catch {}
+		})
 }
 
 function startNativePlayer(cleanup: Cleanup): NativePlayerModule | undefined {
@@ -118,27 +216,46 @@ function startNativePlayer(cleanup: Cleanup): NativePlayerModule | undefined {
 		found('native MediaPlayerManager', 'not in this build')
 		return undefined
 	}
+	nativeModule = module
 	found('native MediaPlayerManager', Object.keys(module).filter(k => typeof (module as any)[k] === 'function').join(',') || 'found')
+	keepAcrossChats(module, cleanup)
+	const setSource = (source: any) => {
+		if (!source) return
+		if (source.id !== nativeSource?.id || urlOf(source) !== urlOf(nativeSource)) {
+			nativeDurationMs = 0
+			nativeTimeMs = 0
+		}
+		nativeSource = source
+		nativeKind = kindOf(source)
+	}
 	try {
 		const emitter = new NativeEventEmitter(module as never)
 		const subs = [
 			emitter.addListener('MediaPlayerPlaybackSourceChanged', (event: any) => {
-				nativeSource = event?.source ?? null
-				if (!nativeSource) clearMedia('native')
+				if (!event?.source) {
+					nativeSource = null
+					nativeRate = 0
+					clearMedia('native')
+					updateNativePip()
+				} else setSource(event.source)
 				count('native source changed')
 			}),
 			emitter.addListener('MediaPlayerPlaybackRateChanged', (event: any) => {
-				if (event?.source) nativeSource = event.source
+				setSource(event?.source)
 				nativeRate = Number(event?.rate) || 0
+				if (playing()) playingAt = Date.now()
 				reportNative()
+				if (!playing()) resumeAfterLeaving()
 			}),
 			emitter.addListener('MediaPlayerPlaybackProgressUpdated', (event: any) => {
-				if (event?.source) nativeSource = event.source
-				nativeTime = Number(event?.time) || 0
-				nativeDuration = Number(event?.duration) || nativeDuration
-				if (!lastRaw) lastRaw = JSON.stringify({ time: event?.time, duration: event?.duration, source: Object.keys(event?.source ?? {}) }).slice(0, 200)
-				if (Date.now() - nativeAt > 2000) {
-					nativeAt = Date.now()
+				setSource(event?.source)
+				nativeTimeMs = Number(event?.time) || 0
+				nativeDurationMs = Number(event?.duration) || nativeDurationMs
+				if (playing()) playingAt = Date.now()
+				if (!lastRaw && Number(event?.duration) > 0)
+					lastRaw = JSON.stringify({ time: event?.time, duration: event?.duration, source: Object.keys(event?.source ?? {}) }).slice(0, 240)
+				if (Date.now() - reportedAt > 2000) {
+					reportedAt = Date.now()
 					reportNative()
 				}
 			}),
@@ -147,24 +264,36 @@ function startNativePlayer(cleanup: Cleanup): NativePlayerModule | undefined {
 	} catch (error) {
 		note(`native player events: ${errorText(error)}`)
 	}
+	const subscription = AppState.addEventListener('change', onAppState)
+	cleanup(() => subscription.remove())
+	cleanup(() => {
+		nativeModule = undefined
+		if (pipWanted) setPip(false, 16, 9, false, 'native')
+		pipWanted = false
+	})
 	return module
 }
 
-/** Runs a command from the notification on Discord's native player. */
+/** Runs a command from the notification on Discord's native player (seeking is done by the native half). */
 export function nativeCommand(module: NativePlayerModule | undefined, cmd: string): void {
 	try {
 		if (cmd === 'play') module?.playCurrentPlayer?.()
-		else if (cmd === 'pause' || cmd === 'stop') module?.pauseCurrentPlayer?.()
+		else if (cmd === 'pause' || cmd === 'stop') {
+			userPausedAt = Date.now()
+			module?.pauseCurrentPlayer?.()
+		}
 	} catch (error) {
 		note(`native ${cmd}: ${errorText(error)}`)
 	}
 }
 
 export function nativeReport(): string {
-	return `native player: ${nativeSource ? `${nativeRate !== 0 ? 'playing' : 'paused'} ${nativeTime}/${nativeDuration}` : 'nothing yet'}${lastRaw ? `, first progress ${lastRaw}` : ''}`
+	const state = nativeSource ? `${nativeKind} ${playing() ? 'playing' : 'paused'} ${nativeTimeMs}/${nativeDurationMs} ms` : 'nothing yet'
+	return `native player: ${state}${lastRaw ? `, first progress ${lastRaw}` : ''}`
 }
 
-export function startAudio(cleanup: Cleanup): NativePlayerModule | undefined {
+export function startAudio(cleanup: Cleanup, inCall: () => boolean = () => false): NativePlayerModule | undefined {
+	inCallNow = inCall
 	startVoiceMessages(cleanup)
 	return startNativePlayer(cleanup)
 }

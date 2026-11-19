@@ -64,7 +64,7 @@ export default plugin<{ jsonStorage: MediaSettings }>({
 			}),
 		)
 		startVideos(cleanup, inCall)
-		const nativePlayer = startAudio(cleanup)
+		const nativePlayer = startAudio(cleanup, inCall)
 		void listen(nativePlayer)
 		cleanup(() => {
 			running = false

@@ -10,7 +10,7 @@ const { createReporter, createRuntime, loadPlugin, startPlugin, findNodes, sleep
 const { check, done } = createReporter('Better Medias')
 
 /** Sets up a fresh runtime with every fake this plugin talks to. */
-function setup({ saved = {}, withNative = true } = {}) {
+function setup({ saved = {}, withNative = true, withSwitch = false } = {}) {
 	const nativeCalls = []
 	let waiting = null
 	const queued = []
@@ -37,7 +37,7 @@ function setup({ saved = {}, withNative = true } = {}) {
 	const modulesByPath = {}
 	const appListeners = []
 	const emitterHandlers = {}
-	const nativePlayer = { calls: [], playCurrentPlayer() { this.calls.push('play') }, pauseCurrentPlayer() { this.calls.push('pause') }, subscribeToPlaybackEvents() {} }
+	const nativePlayer = { calls: [], playCurrentPlayer() { this.calls.push('play') }, pauseCurrentPlayer() { this.calls.push('pause') }, pauseAllMediaPlayers() { this.calls.push('pauseAll') }, subscribeToPlaybackEvents() {} }
 
 	const runtime = createRuntime({
 		overrides: {
@@ -91,6 +91,12 @@ function setup({ saved = {}, withNative = true } = {}) {
 		return null
 	}
 	modulesByPath['components_native/common/Video.tsx'] = { VideoComponent }
+	// Discord's newer video switch (its own native player or react-native-video, same props).
+	function VideoSwitch(props) {
+		if (typeof props.ref === 'function') props.ref({ seek: s => seeks.push(s), setNativeProps() {} })
+		return null
+	}
+	if (withSwitch) modulesByPath['modules/media_playback/native/Video.tsx'] = { default: VideoSwitch }
 	runtime.finders.loadModule({ default: RNVideo, TextTrackType: {}, FilterType: {}, DRMType: {} })
 
 	// Discord's dispatcher and voice message manager.
@@ -110,7 +116,7 @@ function setup({ saved = {}, withNative = true } = {}) {
 	const storage = runtime.makeStorage({ ...saved })
 	const appState = state => appListeners.slice().forEach(fn => fn(state))
 	const emit = (type, payload) => (emitterHandlers[type] ?? []).forEach(fn => fn(payload))
-	return { runtime, storage, nativeCalls, sendAction, VideoComponent, RNVideo, seeks, dispatcher, manager, voiceCalls, nativePlayer, appState, emit }
+	return { runtime, storage, nativeCalls, sendAction, VideoComponent, RNVideo, VideoSwitch, seeks, dispatcher, manager, voiceCalls, nativePlayer, appState, emit }
 }
 
 const calls = (s, name) => s.nativeCalls.filter(c => c.name === name)
@@ -308,14 +314,126 @@ function findInner(view) {
 		const s = setup()
 		const running = await startPlugin(loadPlugin('better-medias').definition, s.runtime, { storage: s.storage })
 		await sleep(10)
-		s.emit('MediaPlayerPlaybackRateChanged', { source: { id: 'm1', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/song.mp3' }, rate: 1 })
-		s.emit('MediaPlayerPlaybackProgressUpdated', { source: { id: 'm1', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/song.mp3' }, time: 12, duration: 200 })
+		const song = { id: 'm1', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/song.mp3' }
+		s.emit('MediaPlayerPlaybackRateChanged', { source: song, rate: 1 })
+		s.emit('MediaPlayerPlaybackProgressUpdated', { source: song, time: 12000, duration: 200000 })
 		await sleep(5)
 		const u = updates(s).filter(x => x.target === 'native').at(-1)
-		check('audio playing in a chat shows in the notification (no seek bar: Discord’s player cannot seek)', u && u.title === 'song.mp3' && u.playing === true && u.canSeek === false && u.durationMs === 200000, JSON.stringify(u))
+		check('audio playing in a chat shows in the notification, its times in milliseconds as Discord sends them', u && u.title === 'song.mp3' && u.playing === true && u.durationMs === 200000 && u.positionMs === 12000, JSON.stringify(u))
 		s.sendAction('pause:native')
 		await sleep(5)
 		check('pause from the notification pauses Discord’s player', s.nativePlayer.calls.includes('pause'))
+
+		// The phone's report: a 7 second voice message came as time 2734, duration 7125 (it showed 38:40 before).
+		s.nativeCalls.length = 0
+		const voice = { id: 'v1', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/voice-message.ogg', isVoiceMessage: true }
+		s.emit('MediaPlayerPlaybackSourceChanged', { source: voice })
+		s.emit('MediaPlayerPlaybackRateChanged', { source: voice, rate: 1 })
+		s.emit('MediaPlayerPlaybackProgressUpdated', { source: voice, time: 2734, duration: 7125 })
+		await sleep(2100)
+		s.emit('MediaPlayerPlaybackProgressUpdated', { source: voice, time: 4800, duration: 7125 })
+		await sleep(5)
+		const v = updates(s).filter(x => x.target === 'native').at(-1)
+		check('a voice message shows its real length (7 s, not 1 h 58 min)', v && v.title === 'Voice message' && v.durationMs === 7125 && v.positionMs === 4800, JSON.stringify(v))
+		const next = { id: 'm2', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/other.mp3' }
+		s.emit('MediaPlayerPlaybackSourceChanged', { source: next })
+		s.emit('MediaPlayerPlaybackRateChanged', { source: next, rate: 1 })
+		await sleep(5)
+		const n = updates(s).filter(x => x.target === 'native').at(-1)
+		check('a new file does not keep the last one’s length', n && n.title === 'other.mp3' && n.durationMs === -1, JSON.stringify(n))
+		await running.stop()
+	}
+
+	// --- Leaving Discord: Discord pauses its chat player a moment later; it is started again
+	{
+		const s = setup()
+		const running = await startPlugin(loadPlugin('better-medias').definition, s.runtime, { storage: s.storage })
+		await sleep(10)
+		const plays = () => s.nativePlayer.calls.filter(c => c === 'play').length
+		const song = { id: 'm1', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/song.flac' }
+		s.emit('MediaPlayerPlaybackRateChanged', { source: song, rate: 1 })
+		s.emit('MediaPlayerPlaybackProgressUpdated', { source: song, time: 8000, duration: 19000 })
+		s.appState('background')
+		s.emit('MediaPlayerPlaybackRateChanged', { source: song, rate: 0 })
+		check('an audio file playing when Discord is left is started again', plays() === 1, String(s.nativePlayer.calls))
+
+		// Paused in the notification while away: stays paused.
+		s.sendAction('pause:native')
+		await sleep(5)
+		s.emit('MediaPlayerPlaybackRateChanged', { source: song, rate: 0 })
+		check('pausing it from the notification is not undone', plays() === 1, String(s.nativePlayer.calls))
+
+		// Coming back and leaving again with it paused: nothing starts.
+		s.appState('active')
+		await sleep(1600)
+		s.appState('background')
+		s.emit('MediaPlayerPlaybackRateChanged', { source: song, rate: 0 })
+		check('something that was paused when Discord was left stays paused', plays() === 1, String(s.nativePlayer.calls))
+		s.appState('active')
+
+		// The pause can come just before Discord says it left.
+		await sleep(4100)
+		s.emit('MediaPlayerPlaybackRateChanged', { source: song, rate: 1 })
+		s.emit('MediaPlayerPlaybackRateChanged', { source: song, rate: 0 })
+		s.appState('background')
+		check('also when the pause comes just before Discord says it left', plays() === 2, String(s.nativePlayer.calls))
+		s.appState('active')
+
+		// With Audio files off, it pauses as Discord wants.
+		await s.storage.set({ backgroundAudio: false })
+		s.emit('MediaPlayerPlaybackRateChanged', { source: song, rate: 1 })
+		s.appState('background')
+		s.emit('MediaPlayerPlaybackRateChanged', { source: song, rate: 0 })
+		check('with Audio files off it is not started again', plays() === 2, String(s.nativePlayer.calls))
+		s.appState('active')
+		await running.stop()
+	}
+
+	// --- Changing chats: Discord pauses every chat player; with "across chats" on it keeps playing
+	{
+		const s = setup()
+		const original = s.nativePlayer.pauseAllMediaPlayers
+		const running = await startPlugin(loadPlugin('better-medias').definition, s.runtime, { storage: s.storage })
+		await sleep(10)
+		s.nativePlayer.pauseAllMediaPlayers()
+		check('opening another chat no longer pauses what plays', !s.nativePlayer.calls.includes('pauseAll'))
+		await s.storage.set({ crossChat: false })
+		s.nativePlayer.pauseAllMediaPlayers()
+		check('with "across chats" off it pauses as before', s.nativePlayer.calls.includes('pauseAll'))
+		await running.stop()
+		check('after the plugin stops Discord’s own pause is back', s.nativePlayer.pauseAllMediaPlayers === original)
+	}
+
+	// --- A video playing in a chat asks for Picture-in-Picture
+	{
+		const s = setup()
+		const running = await startPlugin(loadPlugin('better-medias').definition, s.runtime, { storage: s.storage })
+		await sleep(10)
+		const clip = { id: 'c1', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/clip.mp4?ex=1' }
+		s.emit('MediaPlayerPlaybackRateChanged', { source: clip, rate: 1 })
+		await sleep(5)
+		const pip = calls(s, 'pip').at(-1)
+		check('a video playing in a chat asks for Picture-in-Picture', pip && pip.args[0] === true && pip.args[4] === 'native', JSON.stringify(pip))
+		s.emit('MediaPlayerPlaybackRateChanged', { source: clip, rate: 0 })
+		await sleep(5)
+		check('and lets it go when paused', calls(s, 'pip').at(-1).args[0] === false)
+		const song = { id: 'm1', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/song.mp3' }
+		s.emit('MediaPlayerPlaybackRateChanged', { source: song, rate: 1 })
+		await sleep(5)
+		check('an audio file does not ask for it', calls(s, 'pip').at(-1).args[0] === false)
+		await running.stop()
+	}
+
+	// --- Discord's newer video switch (modules/media_playback/native/Video.tsx) is followed instead of react-native-video
+	{
+		const s = setup({ withSwitch: true })
+		const running = await startPlugin(loadPlugin('better-medias').definition, s.runtime, { storage: s.storage })
+		await sleep(10)
+		const jsx = s.runtime.valenced.react.ReactJSXRuntime.jsx
+		const el = jsx(s.VideoSwitch, { source: { uri: 'https://cdn.discordapp.com/attachments/1/2/clip.mp4' }, muted: false, paused: false })
+		check('Discord’s video switch is wrapped so its videos can be followed', el.props.__bmType === s.VideoSwitch, String(el.type && el.type.name))
+		const inner = jsx(s.RNVideo, { source: { uri: 'x' } })
+		check('react-native-video inside it is not wrapped a second time', inner.type === s.RNVideo)
 		await running.stop()
 	}
 

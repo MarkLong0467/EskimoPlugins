@@ -21,6 +21,8 @@ type Cleanup = (...fns: Array<() => unknown>) => unknown
 
 /** Where Discord's video component is defined. */
 const VIDEO_PATH = 'components_native/common/Video.tsx'
+/** Discord's newer video switch: its own native player, or react-native-video. */
+const SWITCH_PATH = 'modules/media_playback/native/Video.tsx'
 
 /** One video that is drawn right now. */
 export interface VideoEntry {
@@ -296,16 +298,42 @@ export function startVideos(cleanup: Cleanup, inCall: () => boolean): void {
 		}),
 	)
 
-	// 2. react-native-video's player: tracked, and given the background and side-by-side switches.
+	// 2. Discord's video switch (modules/media_playback/native/Video.tsx) draws its own native player or react-native-video,
+	// with the same props either way: wrapping it covers both.
+	let switchWrapped = false
+	cleanup(
+		getModuleWithImportedPath<{ default?: ComponentType<any> }>(SWITCH_PATH, module => {
+			const Switch = module?.default
+			if (!Switch) {
+				found('media playback Video', 'module loaded, no default')
+				return
+			}
+			switchWrapped = true
+			found('media playback Video', 'found')
+			cleanup(
+				insteadJSX(Switch, ([type, props, key], jsx) => {
+					if (!props) return jsx(type, props as never, key)
+					const { ref, ...rest } = props as Record<string, any>
+					return jsx(Tracked as never, { ...rest, __bmType: type, __bmRef: ref } as never, key)
+				}),
+				() => {
+					switchWrapped = false
+				},
+			)
+		}),
+	)
+
+	// 3. react-native-video's player (older builds): tracked, and given the background and side-by-side switches.
 	try {
 		const [module] = lookupModule(withProps('TextTrackType', 'FilterType', 'DRMType'))
 		const RNVideo = (module as { default?: ComponentType<any> } | undefined)?.default
-		if (!RNVideo) found('react-native-video', 'not found')
+		if (!RNVideo) found('react-native-video', 'not found (fine when the media playback Video is found)')
 		else {
 			found('react-native-video', 'found')
 			cleanup(
 				insteadJSX(RNVideo, ([type, props, key], jsx) => {
-					if (!props) return jsx(type, props as never, key)
+					// Already wrapped one level up (Discord's video switch).
+					if (!props || switchWrapped) return jsx(type, props as never, key)
 					const { ref, ...rest } = props as Record<string, any>
 					return jsx(Tracked as never, { ...rest, __bmType: type, __bmRef: ref } as never, key)
 				}),
