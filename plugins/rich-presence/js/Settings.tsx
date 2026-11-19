@@ -16,6 +16,8 @@ import { MAX_ACTIVE_LIMIT, STANDING_TEXT, TIME_MODES, TYPES } from './constants'
 import { diag } from './diag'
 import EditProfile from './EditProfile'
 import Field from './Field'
+import { profileFromApp } from './known'
+import KnownApps from './KnownApps'
 import { HomePreview } from './Preview'
 import {
 	maxActive,
@@ -57,6 +59,7 @@ export default function Settings({ api }: Props) {
 	setStorage(store)
 	const settings = merge(store.use() as Partial<RichPresenceSettings>)
 	const [editing, setEditing] = useState<string | null>(null)
+	const [picking, setPicking] = useState(false)
 	const chosen = settings.profiles.find(p => p.id === editing)
 
 	if (chosen)
@@ -75,15 +78,28 @@ export default function Settings({ api }: Props) {
 			/>
 		)
 
-	const { shown } = planNow(settings)
-	const limit = maxActive(settings)
-	const hasSoundCloud = !!soundCloudProfile(settings)
-
 	/** Adds a profile and opens it, so it can be filled in straight away. */
 	const addAndOpen = (added: Profile) => {
 		addProfile(added)
+		setPicking(false)
 		setEditing(added.id)
 	}
+
+	if (picking)
+		return (
+			<KnownApps
+				profiles={settings.profiles}
+				onBack={() => setPicking(false)}
+				onPick={app => {
+					addAndOpen(profileFromApp(app))
+					toast(`${app.name} added. Turn it on in the list`)
+				}}
+			/>
+		)
+
+	const { shown } = planNow(settings)
+	const limit = maxActive(settings)
+	const hasSoundCloud = !!soundCloudProfile(settings)
 
 	const problems = warnings(settings)
 	const names = new Map(
@@ -137,6 +153,12 @@ export default function Settings({ api }: Props) {
 				'Add a presence',
 				'Start from a blank one',
 				() => addAndOpen(blankProfile()),
+				true,
+			),
+			row(
+				'Add a known game or app',
+				'Search Discord’s list of games and apps and add one, with its name, ID and icon',
+				() => setPicking(true),
 				true,
 			),
 			hasSoundCloud

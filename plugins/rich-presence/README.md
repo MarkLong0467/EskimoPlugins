@@ -17,6 +17,9 @@ Show up to three presences at once on your Discord profile, and the SoundCloud t
 - **Many timers.** Since switched on, since Discord opened, since a date, until a date (repeating daily, weekly, monthly or
   yearly), countdown (can start over), until midnight, time of day, a progress bar between two times each day, your own start
   and end (loops when both are set), or from the SoundCloud track. Date fields say how they read what you typed.
+- **Known games and apps.** "Add a known game or app" searches Discord's own list of the games it can detect (about
+  25,000, from `discord.com/api/v10/applications/detectable`, fetched once while Discord is open). Pick one and it is added
+  to your presences with its name, Application ID, "Playing" and its icon, just like one you made yourself.
 - **Schedule.** Show a presence only on chosen days and between two times; it appears and goes by itself.
 - **Text with variables.** `{time}` `{time12}` `{seconds}` `{date}` `{day}` `{month}` `{year}` `{user}` `{username}`
   `{uptime}` and `{sc_title}` `{sc_artist}` `{sc_url}` `{sc_art}` `{sc_button}`.
