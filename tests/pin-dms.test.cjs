@@ -211,6 +211,13 @@ const expand = (n) => (Array.isArray(n) ? n.map(expand) : n && typeof n === 'obj
 		const lab = kidsOf(rowFor('c2')).filter((k) => k.type && k.type.name === 'CompactLabel')[0]
 		c.setCur('lab'); const ltxt = texts(expand(lab.type(lab.props))).join('')
 		check('compact: the label shows just the section name', ltxt === 'BOYS', ltxt)
+		c.data.cache.sectionsJson = secs.replace('"name":"Boys","color":"#00d4ff"', '"name":"Lads","color":"#ff0000"')
+		c.setCur('lab'); const renamed = expand(lab.type(lab.props))
+		check('compact: after a rename the label draws the new name and colour', texts(renamed).join('') === 'LADS' && JSON.stringify(renamed).indexOf('#ff0000') >= 0, texts(renamed).join(''))
+		const stripe = kidsOf(rowFor('c2')).filter((k) => k.type && k.type.name === 'SectionStripe')[0]
+		c.setCur('stripe'); const st = stripe && stripe.type(stripe.props)
+		check('compact: the stripe follows the section colour too', !!st && st.props.style.backgroundColor === '#ff0000', st && JSON.stringify(st.props.style))
+		c.data.cache.sectionsJson = secs
 		const z = load({ sectionsJson: secs, assignJson: asg2, hdClear: 0 })
 		z.runtime.jsx(MessagesFastestList, { data: { channels: mk(), sections: [0, 1, 6] } })
 		const zr = z.runtime.jsx(PressableHighlight, { onLongPress: () => {}, children: { type: 'V', props: { channelId: LONG.c2 } }, style: { height: 55 } })

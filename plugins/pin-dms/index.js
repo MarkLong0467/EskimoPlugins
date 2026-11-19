@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.15.7'
+	var VERSION = '1.15.8'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -1092,7 +1092,33 @@
 		})
 		return labels
 	}
+	/**
+	 * Discord keeps a chat row as it was drawn, so a label or stripe on it would keep an old name or colour after the section
+	 * is renamed. These redraw themselves when the sections or pins change.
+	 */
+	function useSectionsWatch() {
+		var React = valenced.react.React
+		var keyOf = function () { var st = read(); return JSON.stringify([st.sections, st.assign]) }
+		var key = React.useState(keyOf)
+		React.useEffect(function () {
+			var live = true
+			var update = function () {
+				setTimeout(function () { if (!live) return; var k = keyOf(); key[1](function (old) { return old === k ? old : k }) }, 0)
+			}
+			listeners.push(update)
+			return function () { live = false; listeners = listeners.filter(function (l) { return l !== update }) }
+		}, [])
+	}
+	function SectionStripe(props) {
+		useSectionsWatch()
+		var RN = valenced.react.ReactNative
+		var state = read()
+		var section = state.pins.indexOf(props.chatId) >= 0 ? sectionOf(state, props.chatId) : undefined
+		if (!section) return null
+		return h(RN.View, { pointerEvents: 'none', style: { position: 'absolute', left: 0, top: 8, bottom: 8, width: 4, borderRadius: 2, backgroundColor: section.color } })
+	}
 	function CompactLabel(props) {
+		useSectionsWatch()
 		var RN = valenced.react.ReactNative
 		var Design = valenced.discord.design.Design
 		var state = read()
@@ -1105,8 +1131,8 @@
 		return h(
 			RN.Pressable,
 			{ onPress: sec ? function () { toggleFold(sec.id) } : undefined, onLongPress: sec ? function () { openEditSection(sec) } : undefined, hitSlop: { top: 8, bottom: 6, left: 8, right: 8 }, style: { position: 'absolute', top: 0, left: 16, right: 16, height: 10, flexDirection: 'row', alignItems: 'center', gap: 6 } },
-			h(Design.Text, { variant: 'text-xs/bold', style: { color: color, fontSize: 8, lineHeight: 9 } }, label),
-			h(RN.View, { style: { flex: 1, height: 1, backgroundColor: color, opacity: sec ? 0.5 : 0.3 } }),
+			h(Design.Text, { variant: 'text-xs/bold', numberOfLines: 1, style: { color: color, fontSize: 8, lineHeight: 9, flexShrink: 0, maxWidth: '80%' } }, label),
+			h(RN.View, { style: { flex: 1, minWidth: 8, height: 1, backgroundColor: color, opacity: sec ? 0.5 : 0.3 } }),
 		)
 	}
 	/** How many heading rows sit above each row (a heading counts the ones before it, a chat counts the one above it too). */
@@ -1456,7 +1482,7 @@
 			if (section) {
 				status.rowHeaders++
 				if (!status.headers) { status.headers = true; status.list = 'found, tags added'; changed() }
-				extra.push(React.createElement(RN.View, { key: 'pin-stripe', pointerEvents: 'none', style: { position: 'absolute', left: 0, top: 8, bottom: 8, width: 4, borderRadius: 2, backgroundColor: section.color } }))
+				extra.push(React.createElement(SectionStripe, { key: 'pin-stripe', chatId: id }))
 				if (!headingsOn) {
 					extra.push(React.createElement(
 						RN.View,
