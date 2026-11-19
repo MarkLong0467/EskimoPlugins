@@ -159,7 +159,7 @@ function updateNativePip(): void {
 	const wanted = nativeKind === 'video' && playing() && on('pictureInPicture')
 	if (wanted === pipWanted) return
 	pipWanted = wanted
-	setPip(wanted, 16, 9, inCallNow(), 'native')
+	setPip(wanted, 0, 0, inCallNow(), 'native')
 }
 
 /** Starts the chat player again after Discord paused it for leaving the screen. */

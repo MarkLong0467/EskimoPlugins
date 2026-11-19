@@ -84,7 +84,7 @@ import kotlin.jvm.functions.Function2;
 public final class BetterMedias {
     static final String PREFIX = "marklong.bettermedias.";
     static final String REGISTRY_KEY = "marklong.bettermedias.instance";
-    static final String VERSION = "0.6.0";
+    static final String VERSION = "0.7.0";
     static final long WAIT_MS = 25000;
     static final String CHANNEL = "marklong_better_medias";
     static final int NOTIFICATION_ID = 0x4d454449; // "MEDI"
@@ -141,6 +141,7 @@ public final class BetterMedias {
         final Map<String, Integer> counts = new LinkedHashMap<String, Integer>();
         long lastPauseAt;
         volatile String lastHandOff = "none yet";
+        volatile String lastVideoSize = "none yet";
 
         synchronized void note(String text) {
             if (notes.size() < 40) notes.add(text);
@@ -192,7 +193,7 @@ public final class BetterMedias {
             out.append("counts: ").append(counts.toString()).append('\n');
             out.append("chat player: ").append(Media.describe()).append('\n');
             out.append("ExoPlayer: ").append(Exo.info).append('\n');
-            out.append("last Picture-in-Picture hand-off: ").append(lastHandOff).append('\n');
+            out.append("last Picture-in-Picture hand-off: ").append(lastHandOff).append(", chat video size: ").append(lastVideoSize).append('\n');
             Session s = session;
             out.append("notification: ").append(s == null ? "not made yet" : s.describe()).append('\n');
             MiniView m = mini;
@@ -927,6 +928,36 @@ public final class BetterMedias {
         /** What Discord's chat player plays now (from the JavaScript half), to find its ExoPlayer. */
         static volatile String sourceUrl = "";
 
+        static volatile String probedUrl = "";
+
+        /** The video's own width and height (read from the file in the background), so Picture-in-Picture opens in its shape. */
+        static void probeSize(final String url) {
+            if (url.equals(probedUrl)) return;
+            probedUrl = url;
+            new Thread(new Runnable() {
+                public void run() {
+                    android.media.MediaMetadataRetriever r = new android.media.MediaMetadataRetriever();
+                    try {
+                        r.setDataSource(url, new java.util.HashMap<String, String>());
+                        int w = Integer.parseInt(String.valueOf(r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)));
+                        int h = Integer.parseInt(String.valueOf(r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)));
+                        String rot = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);
+                        if ("90".equals(rot) || "270".equals(rot)) { int t = w; w = h; h = t; }
+                        if (w > 0 && h > 0 && url.equals(videoUrl)) {
+                            pip.w = w;
+                            pip.h = h;
+                            diag.lastVideoSize = w + "x" + h;
+                            post(new Runnable() { public void run() { pip.apply(); } });
+                        }
+                    } catch (Throwable error) {
+                        diag.lastVideoSize = "could not read: " + error.getClass().getSimpleName();
+                    } finally {
+                        try { r.release(); } catch (Throwable ignored) {}
+                    }
+                }
+            }, "BetterMedias-probe").start();
+        }
+
         static long videoPosition() {
             return videoPlaying ? videoPosMs + (SystemClock.elapsedRealtime() - videoAt) : videoPosMs;
         }
@@ -1205,8 +1236,11 @@ public final class BetterMedias {
                     @Override protected void beforeHookedMethod(MethodHookParam param) {
                         try {
                             Object msg = param.args != null && param.args.length > 0 ? param.args[0] : null;
-                            if (msg instanceof android.os.Message && ((android.os.Message) msg).what == 2) {
-                                synchronized (lastWork) { lastWork.put(param.thisObject, SystemClock.elapsedRealtime()); }
+                            if (msg instanceof android.os.Message) {
+                                android.os.Message m = (android.os.Message) msg;
+                                if (m.getTarget() != null) synchronized (handlers) { handlers.put(param.thisObject, m.getTarget()); }
+                                if (m.what == 3 && m.obj != null && seekPositionClass == null) seekPositionClass = m.obj.getClass();
+                                if (m.what == 2) synchronized (lastWork) { lastWork.put(param.thisObject, SystemClock.elapsedRealtime()); }
                             }
                         } catch (Throwable ignored) {}
                     }
@@ -1356,6 +1390,65 @@ public final class BetterMedias {
             return activeInternal();
         }
         static volatile String pickedHow = "";
+        static final java.util.WeakHashMap<Object, Handler> handlers = new java.util.WeakHashMap<Object, Handler>();
+        /** The class of ExoPlayer's seek message (message 3), when Discord has sent one itself. */
+        static volatile Class<?> seekPositionClass;
+
+        /**
+         * ExoPlayer's seek message is message 3 with a small "seek position" object: (timeline, item index, position in
+         * microseconds). Its class is found by shape among the handler's own field and parameter types: a class with exactly a
+         * constructor (T, int, long) and three fields of those types, T being an abstract class (the timeline).
+         */
+        static java.lang.reflect.Constructor<?> seekPositionMaker(Class<?> internal) {
+            List<Class<?>> types = new ArrayList<Class<?>>();
+            Class<?> known = seekPositionClass;
+            if (known != null) types.add(known);
+            try { for (Field f : internal.getDeclaredFields()) types.add(f.getType()); } catch (Throwable ignored) {}
+            try { for (Method m : internal.getDeclaredMethods()) for (Class<?> t : m.getParameterTypes()) types.add(t); } catch (Throwable ignored) {}
+            for (Class<?> type : types) {
+                if (type.isPrimitive() || type.isArray() || type.getName().startsWith("java.") || type.getName().startsWith("android.")) continue;
+                java.lang.reflect.Constructor<?>[] makers;
+                try { makers = type.getDeclaredConstructors(); } catch (Throwable error) { continue; }
+                for (java.lang.reflect.Constructor<?> maker : makers) {
+                    Class<?>[] t = maker.getParameterTypes();
+                    if (t.length != 3 || t[1] != int.class || t[2] != long.class || t[0].isPrimitive() || t[0].getName().startsWith("java.")) continue;
+                    if (!java.lang.reflect.Modifier.isAbstract(t[0].getModifiers())) continue;
+                    int timelines = 0, ints = 0, longs = 0, others = 0;
+                    for (Field f : type.getDeclaredFields()) {
+                        if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                        if (f.getType() == t[0]) timelines++;
+                        else if (f.getType() == int.class) ints++;
+                        else if (f.getType() == long.class) longs++;
+                        else others++;
+                    }
+                    if (timelines == 1 && ints == 1 && longs == 1 && others == 0) {
+                        maker.setAccessible(true);
+                        return maker;
+                    }
+                }
+            }
+            return null;
+        }
+
+        static boolean messageSeek(Object internal, long ms) {
+            Handler handler;
+            synchronized (handlers) { handler = handlers.get(internal); }
+            if (handler == null) { info = "no handler seen for the player yet"; return false; }
+            java.lang.reflect.Constructor<?> maker = seekPositionMaker(internal.getClass());
+            if (maker == null) { info = "seek message shape not found on " + internal.getClass().getName(); return false; }
+            Object timeline = instanceOf(internal, maker.getParameterTypes()[0]);
+            if (timeline == null) { info = "no timeline found for " + maker.getDeclaringClass().getName(); return false; }
+            try {
+                Object position = maker.newInstance(timeline, 0, ms * 1000L);
+                android.os.Message.obtain(handler, 3, position).sendToTarget();
+                info = "seek message " + maker.getDeclaringClass().getName() + " to " + internal.getClass().getName() + " (" + pickedHow + ")";
+                diag.count("seek through ExoPlayer (message)");
+                return true;
+            } catch (Throwable error) {
+                info = "seek message: " + error;
+                return false;
+            }
+        }
 
         /**
          * The playback handler's own seek: seekTo(Timeline, int item, long positionUs). It only queues a message on the playback
@@ -1444,11 +1537,14 @@ public final class BetterMedias {
                     diag.error("ExoPlayer seek", error instanceof java.lang.reflect.InvocationTargetException && error.getCause() != null ? error.getCause() : error);
                 }
             }
+            // ExoPlayer's own seek message.
+            try { if (messageSeek(internal, ms)) return true; } catch (Throwable error) { info = "seek message: " + error; }
+            final String messageInfo = info;
             // The player object, if it can be reached from the handler: seekTo(int item, long ms, int command, boolean).
             final Object[] found;
             try { found = findPlayer(internal); } catch (Throwable error) { info = "looking for the player: " + error; return false; }
             if (found == null) {
-                info = "no seek found on " + internal.getClass().getName() + (way == null ? "" : way[1] == null ? " (seek found, no timeline)" : "") + "; methods with a long: " + longMethods(internal);
+                info = messageInfo + "; no seek found on " + internal.getClass().getName() + (way == null ? "" : way[1] == null ? " (seek found, no timeline)" : "") + "; methods with a long: " + longMethods(internal);
                 return false;
             }
             final Method seek = (Method) found[1];
@@ -1842,7 +1938,9 @@ public final class BetterMedias {
         });
         register(bridge, "nativeVideo", new Function1<List<?>, Object>() {
             public Object invoke(List<?> args) {
-                Media.videoUrl = str(args, 0);
+                String url = str(args, 0);
+                if (!url.isEmpty() && !url.equals(Media.videoUrl)) Media.probeSize(url);
+                Media.videoUrl = url;
                 Media.videoPosMs = num(args, 1, 0);
                 Media.videoTitle = str(args, 2);
                 Media.videoPlaying = bool(args, 3, false) && !Media.videoUrl.isEmpty();

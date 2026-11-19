@@ -5,7 +5,7 @@
 	"description": "Videos, audio files and voice messages keep playing in the background and with the screen locked. Play/pause and a seek bar in your notifications, Picture-in-Picture, several things playing at once, and videos that keep playing while you move between chats. Each has its own switch.",
 	"icon": "VideoIcon",
 	"author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
-	"version": "0.6.0",
+	"version": "0.7.0",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"

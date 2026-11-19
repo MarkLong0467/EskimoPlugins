@@ -67,7 +67,8 @@ export function sendNativeVideo(url: string, positionMs: number, title: string, 
 }
 
 export function setPip(wanted: boolean, width: number, height: number, inCall: boolean, by: string): void {
-	void call('pip', [wanted, Math.round(width) || 16, Math.round(height) || 9, inCall, by])
+	// 0 x 0: size not known here (the native half reads the video's own size).
+	void call('pip', [wanted, Math.max(0, Math.round(width) || 0), Math.max(0, Math.round(height) || 0), inCall, by])
 }
 
 /** The bridge methods of the native half: [arguments, result]. */
