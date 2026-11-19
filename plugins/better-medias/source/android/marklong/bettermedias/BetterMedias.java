@@ -83,7 +83,7 @@ import kotlin.jvm.functions.Function2;
 public final class BetterMedias {
     static final String PREFIX = "marklong.bettermedias.";
     static final String REGISTRY_KEY = "marklong.bettermedias.instance";
-    static final String VERSION = "0.4.0";
+    static final String VERSION = "0.5.0";
     static final long WAIT_MS = 25000;
     static final String CHANNEL = "marklong_better_medias";
     static final int NOTIFICATION_ID = 0x4d454449; // "MEDI"
@@ -139,6 +139,7 @@ public final class BetterMedias {
         final List<String> pauses = new ArrayList<String>();
         final Map<String, Integer> counts = new LinkedHashMap<String, Integer>();
         long lastPauseAt;
+        volatile String lastHandOff = "none yet";
 
         synchronized void note(String text) {
             if (notes.size() < 40) notes.add(text);
@@ -189,6 +190,8 @@ public final class BetterMedias {
             out.append("lifecycle listeners: ").append(listeners.isEmpty() ? "not seen yet (leave Discord once)" : listeners.toString()).append('\n');
             out.append("counts: ").append(counts.toString()).append('\n');
             out.append("chat player: ").append(Media.describe()).append('\n');
+            out.append("ExoPlayer: ").append(Exo.info).append('\n');
+            out.append("last Picture-in-Picture hand-off: ").append(lastHandOff).append('\n');
             Session s = session;
             out.append("notification: ").append(s == null ? "not made yet" : s.describe()).append('\n');
             MiniView m = mini;
@@ -880,6 +883,7 @@ public final class BetterMedias {
         static volatile long videoPosMs;
         static volatile long videoAt;
         static volatile boolean videoPlaying;
+        static volatile long videoPlayedAt;
 
         static long videoPosition() {
             return videoPlaying ? videoPosMs + (SystemClock.elapsedRealtime() - videoAt) : videoPosMs;
@@ -887,11 +891,16 @@ public final class BetterMedias {
 
         /** Leaving Discord while a chat video plays: the small player takes it over (it fills the Picture-in-Picture window). */
         static void handOffForPip(Activity a) {
-            if (!pipOn || inCall || !videoPlaying || videoUrl.isEmpty() || !Pip.supported(a)) return;
-            if (SystemClock.elapsedRealtime() - videoAt > 6000) return; // stale
+            long now = SystemClock.elapsedRealtime();
+            boolean recently = videoPlaying || now - videoPlayedAt < 5000;
+            if (!pipOn || inCall || !recently || videoUrl.isEmpty() || !Pip.supported(a)) {
+                diag.lastHandOff = "skipped: pip=" + pipOn + " inCall=" + inCall + " playing=" + videoPlaying + " playedAgo=" + (now - videoPlayedAt) + " url=" + !videoUrl.isEmpty();
+                return;
+            }
             MiniView m = mini;
             if (m != null && videoUrl.equals(m.url)) return;
             openMini(videoUrl, videoPosition(), videoTitle, true);
+            diag.lastHandOff = "handed over at " + videoPosition() + " ms";
             Actions queue = actions;
             if (queue != null) queue.send("handoff:native");
             videoPlaying = false;
@@ -1064,6 +1073,7 @@ public final class BetterMedias {
 
         static boolean seek(final long ms) {
             if (ms < 0) return false;
+            if (Exo.seek(ms)) return true;
             look(true);
             final Object p = player;
             final Method s = seekMethod;
@@ -1119,6 +1129,143 @@ public final class BetterMedias {
         }
     }
 
+
+    // =========================================================================================================
+    // Discord's chat player is ExoPlayer (its "ExoPlayer:Playback" thread shows in the pause stacks). Its names are
+    // shortened, so it is found by shape:
+    // - The playback thread's handler (the class whose handleMessage is on that thread's stack) is hooked to learn which
+    //   player instances are busy playing: message 2 is ExoPlayer's "do some work", sent over and over while playing.
+    // - The player itself is reached from there (fields) and has seekTo(int item, long ms, int command, boolean).
+    // =========================================================================================================
+    static final class Exo {
+        static volatile Class<?> internalClass;
+        static volatile String info = "not seen yet (play something once)";
+        static final java.util.WeakHashMap<Object, Long> lastWork = new java.util.WeakHashMap<Object, Long>();
+        static final java.util.WeakHashMap<Object, Object[]> players = new java.util.WeakHashMap<Object, Object[]>();
+
+        /** Called on an ExoPlayer thread (from the AudioTrack hooks): finds and hooks the playback handler once. */
+        static void discover() {
+            if (internalClass != null) return;
+            String name = Thread.currentThread().getName();
+            if (name == null || !name.startsWith("ExoPlayer")) return;
+            for (StackTraceElement frame : Thread.currentThread().getStackTrace()) {
+                String cls = frame.getClassName();
+                if (!"handleMessage".equals(frame.getMethodName()) || cls.startsWith("android.") || cls.startsWith("java.")) continue;
+                Class<?> c = find(cls);
+                if (c == null) continue;
+                synchronized (Exo.class) {
+                    if (internalClass != null) return;
+                    internalClass = c;
+                }
+                Method handle = method(c, "handleMessage", android.os.Message.class);
+                if (handle == null) { info = "playback handler " + cls + " has no handleMessage(Message)"; return; }
+                hook("ExoPlayer handler " + cls + ".handleMessage", handle, new XC_MethodHook() {
+                    @Override protected void beforeHookedMethod(MethodHookParam param) {
+                        try {
+                            Object msg = param.args != null && param.args.length > 0 ? param.args[0] : null;
+                            if (msg instanceof android.os.Message && ((android.os.Message) msg).what == 2) {
+                                synchronized (lastWork) { lastWork.put(param.thisObject, SystemClock.elapsedRealtime()); }
+                            }
+                        } catch (Throwable ignored) {}
+                    }
+                });
+                info = "playback handler " + cls;
+                return;
+            }
+        }
+
+        /** The busiest player handler: the one that did work last (within a few seconds if possible). */
+        static Object activeInternal() {
+            Object best = null;
+            long bestAt = -1;
+            synchronized (lastWork) {
+                for (Map.Entry<Object, Long> e : lastWork.entrySet()) {
+                    if (e.getKey() != null && e.getValue() > bestAt) { best = e.getKey(); bestAt = e.getValue(); }
+                }
+            }
+            return best;
+        }
+
+        static Method seekMethodOf(Class<?> cls) {
+            for (Class<?> c = cls; c != null && c != Object.class; c = c.getSuperclass()) {
+                String n = c.getName();
+                if (n.startsWith("java.") || n.startsWith("android.")) break;
+                Method[] methods;
+                try { methods = c.getDeclaredMethods(); } catch (Throwable error) { continue; }
+                for (Method m : methods) {
+                    Class<?>[] t = m.getParameterTypes();
+                    if (t.length == 4 && t[0] == int.class && t[1] == long.class && t[2] == int.class && t[3] == boolean.class
+                        && m.getReturnType() == void.class && !java.lang.reflect.Modifier.isAbstract(m.getModifiers())
+                        && !java.lang.reflect.Modifier.isStatic(m.getModifiers())) {
+                        m.setAccessible(true);
+                        return m;
+                    }
+                }
+            }
+            return null;
+        }
+
+        /** From the playback handler to the player: its fields, a few levels deep, for something with that seekTo. */
+        static Object[] findPlayer(Object internal) {
+            synchronized (players) {
+                Object[] cached = players.get(internal);
+                if (cached != null) return cached;
+            }
+            IdentityHashMap<Object, Boolean> seen = new IdentityHashMap<Object, Boolean>();
+            java.util.ArrayDeque<Object[]> queue = new java.util.ArrayDeque<Object[]>();
+            queue.add(new Object[] {internal, 0});
+            while (!queue.isEmpty() && seen.size() < 1500) {
+                Object[] item = queue.poll();
+                Object o = item[0];
+                int depth = (Integer) item[1];
+                if (o == null || seen.containsKey(o) || Media.skip(o)) continue;
+                seen.put(o, Boolean.TRUE);
+                if (o != internal) {
+                    Method s = seekMethodOf(o.getClass());
+                    if (s != null) {
+                        Object[] found = {o, s};
+                        synchronized (players) { players.put(internal, found); }
+                        return found;
+                    }
+                }
+                if (depth >= 3 || o.getClass().isArray()) continue;
+                for (Class<?> c = o.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+                    String n = c.getName();
+                    if (n.startsWith("java.") || n.startsWith("android.")) break;
+                    Field[] fields;
+                    try { fields = c.getDeclaredFields(); } catch (Throwable error) { continue; }
+                    for (Field f : fields) {
+                        if (f.getType().isPrimitive() || java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                        try { f.setAccessible(true); queue.add(new Object[] {f.get(o), depth + 1}); } catch (Throwable ignored) {}
+                    }
+                }
+            }
+            return null;
+        }
+
+        /** Seeks the chat player that played last. False when it cannot be found (the JavaScript half then tries). */
+        static boolean seek(final long ms) {
+            Object internal = activeInternal();
+            if (internal == null) { info = internalClass == null ? info : "no player has played yet"; return false; }
+            final Object[] found;
+            try { found = findPlayer(internal); } catch (Throwable error) { info = "looking for the player: " + error; return false; }
+            if (found == null) { info = "player not found from " + internal.getClass().getName(); return false; }
+            final Method seek = (Method) found[1];
+            info = "player " + found[0].getClass().getName() + "." + seek.getName() + "(int,long,int,boolean)";
+            post(new Runnable() {
+                public void run() {
+                    try {
+                        // Item 0 (Discord's chat player plays one file), command 5 = seek in the current item.
+                        seek.invoke(found[0], 0, ms, 5, false);
+                        diag.count("seek through ExoPlayer");
+                    } catch (Throwable error) {
+                        diag.error("ExoPlayer seek", error instanceof java.lang.reflect.InvocationTargetException && error.getCause() != null ? error.getCause() : error);
+                    }
+                }
+            });
+            return true;
+        }
+    }
 
     // =========================================================================================================
     // Hooks
@@ -1291,7 +1438,15 @@ public final class BetterMedias {
 
         // --- Report: who pauses a player (the stack of the first few pauses).
         hook("AudioTrack.pause", method(AudioTrack.class, "pause"), new XC_MethodHook() {
-            @Override protected void beforeHookedMethod(MethodHookParam param) { diag.pausedBy("AudioTrack"); }
+            @Override protected void beforeHookedMethod(MethodHookParam param) {
+                try { Exo.discover(); } catch (Throwable ignored) {}
+                diag.pausedBy("AudioTrack");
+            }
+        });
+        hook("AudioTrack.play", method(AudioTrack.class, "play"), new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) {
+                if (Exo.internalClass == null) try { Exo.discover(); } catch (Throwable ignored) {}
+            }
         });
         hook("MediaPlayer.pause", method(MediaPlayer.class, "pause"), new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam param) {
@@ -1488,6 +1643,7 @@ public final class BetterMedias {
                 Media.videoTitle = str(args, 2);
                 Media.videoPlaying = bool(args, 3, false) && !Media.videoUrl.isEmpty();
                 Media.videoAt = SystemClock.elapsedRealtime();
+                if (Media.videoPlaying) Media.videoPlayedAt = Media.videoAt;
                 return Boolean.TRUE;
             }
         });
