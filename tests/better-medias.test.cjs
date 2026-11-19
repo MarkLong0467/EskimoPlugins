@@ -549,6 +549,29 @@ function findInner(view) {
 		await running.stop()
 	}
 
+	// --- 0.9.0: no notification for a kind of media that is not kept playing in the background
+	{
+		const s = setup({ saved: { backgroundVideo: false } })
+		const running = await startPlugin(loadPlugin('better-medias').definition, s.runtime, { storage: s.storage })
+		await sleep(10)
+		const clip = { id: 'c1', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/clip.mp4' }
+		s.emit('MediaPlayerPlaybackRateChanged', { source: clip, rate: 1 })
+		s.emit('MediaPlayerPlaybackProgressUpdated', { source: clip, time: 1000, duration: 51504 })
+		await sleep(5)
+		check('with Videos off, a chat video gets no notification', updates(s).filter(x => x.target === 'native').length === 0 && calls(s, 'clear').some(c => c.args[0] === 'native'))
+		const song = { id: 'm1', assetUrl: 'https://cdn.discordapp.com/attachments/1/2/song.mp3' }
+		s.emit('MediaPlayerPlaybackSourceChanged', { source: song })
+		s.emit('MediaPlayerPlaybackRateChanged', { source: song, rate: 1 })
+		await sleep(5)
+		check('while an audio file (Audio files on) still gets one', updates(s).some(x => x.target === 'native' && x.title === 'song.mp3'))
+		await s.storage.set({ backgroundAudio: false })
+		s.nativeCalls.length = 0
+		s.emit('MediaPlayerPlaybackRateChanged', { source: song, rate: 0 })
+		await sleep(5)
+		check('turning Audio files off takes its notification away', updates(s).length === 0 && calls(s, 'clear').some(c => c.args[0] === 'native'))
+		await running.stop()
+	}
+
 	// --- Settings screen and report
 	{
 		const s = setup()

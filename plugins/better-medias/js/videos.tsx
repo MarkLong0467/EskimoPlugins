@@ -96,7 +96,9 @@ function report(entry: VideoEntry, force = false): void {
 	const key = `${playing}|${state.durationMs}|${Math.round(entry.time / 2)}`
 	if (!force && key === entry.lastSent) return
 	entry.lastSent = key
-	if (on('notification')) sendUpdate(state)
+	// No notification while videos are not kept playing in the background: it would not work once Discord is left.
+	if (on('notification') && on('backgroundVideo')) sendUpdate(state)
+	else if (on('notification')) clearMedia(state.target)
 	updatePip()
 }
 

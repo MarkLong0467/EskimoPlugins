@@ -39,7 +39,7 @@ const PLAYBACK: Row[] = [
 ]
 
 const CONTROLS: Row[] = [
-	{ key: 'notification', label: 'Notification controls', subLabel: 'Play, pause, a seek bar and the time in your notifications', icon: 'BellIcon' },
+	{ key: 'notification', label: 'Notification controls', subLabel: 'Play, pause, a seek bar and the time in your notifications, for the kinds of media kept playing in the background', icon: 'BellIcon' },
 	{ key: 'pictureInPicture', label: 'Picture-in-Picture', subLabel: 'A playing video goes to a floating window when you leave Discord', icon: 'ScreenIcon' },
 ]
 

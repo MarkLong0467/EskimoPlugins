@@ -142,6 +142,11 @@ function reportNative(): void {
 	updateNativePip()
 	if (nativeKind === 'video') sendNativeVideo(urlOf(nativeSource), nativeTimeMs, nativeTitle(nativeSource).title, playing())
 	if (!on('notification')) return
+	// No notification for a kind of media that is not kept playing in the background: it would not work once Discord is left.
+	if (!on(AUDIO_SETTING[nativeKind])) {
+		clearMedia('native')
+		return
+	}
 	const { title, subtitle } = nativeTitle(nativeSource)
 	sendUpdate({
 		target: 'native',
