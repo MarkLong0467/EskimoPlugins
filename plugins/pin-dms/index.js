@@ -5,7 +5,7 @@
 	 * Pinned chats go to the top of the DM list. They can be put in coloured sections that can be folded away.
 	 * Keep `(function` as the first thing in this file: Valenced loads it as `return <file>`.
 	 */
-	var VERSION = '1.16.2'
+	var VERSION = '1.16.3'
 	var INSTANCE = {}
 	var defaults = { pinsJson: '[]', sectionsJson: '[]', assignJson: '{}', pins: [], stripOn2: false, stripBelow2: false, hidePinned2: false }
 	var DM = 1
@@ -1714,6 +1714,21 @@
 			return typeof l === 'string' && /^(un)?pin$/i.test(l.trim())
 		} catch (e) { return false }
 	}
+	/** Labels only this plugin puts in the menu. */
+	var OWN_LABEL = /^(✓ )?(Pin to .+|Pin \(no group\)|Pin to the top|Pin in Discord|Unpin in Discord)$/
+	/** A row (or a piece wrapping one, a few levels down) made by this plugin. */
+	function isOwnRow(el, depth) {
+		depth = depth || 0
+		try {
+			if (!el || typeof el !== 'object' || depth > 3) return false
+			if (Array.isArray(el)) return el.some(function (x) { return isOwnRow(x, depth) })
+			var p = el.props
+			if (!p) return false
+			if (p.__pinDmsRow) return true
+			if (typeof p.label === 'string' && OWN_LABEL.test(p.label.trim())) return true
+			return isOwnRow(p.children, depth + 1)
+		} catch (e) { return false }
+	}
 	function dotIcon(color) {
 		return valenced.react.React.createElement(valenced.react.ReactNative.View, { style: { width: 22, height: 22, borderRadius: 11, backgroundColor: color } })
 	}
@@ -1725,8 +1740,9 @@
 			if (!props || props.__pinGroup || !props.children) return result
 			var rows = (Array.isArray(props.children) ? props.children : [props.children]).filter(function (r) { return r && typeof r === 'object' })
 			if (!rows.length || rows.length > 3 || !rows.some(isPinRow)) return result
-			// Discord wraps each row of a group in its own small piece; the rows made here must not be swapped again.
-			if (rows.some(function (r) { return r.props && r.props.__pinDmsRow })) return result
+			// Discord wraps and rebuilds the rows of a group, and the marker on the rows made here can be lost on the way.
+			// So a group that already holds one of this plugin's rows (by marker or by its text) is left alone.
+			if (rows.some(isOwnRow)) return result
 			var nativeRow = rows.filter(isPinRow)[0]
 			if (!status.pinRow) { status.pinRow = nameOf(result) + ' > ' + nameOf(nativeRow) + ' ' + describe(nativeRow.props, 0); changed() }
 			if (!lastMenu.id || Date.now() - lastMenu.at > 5000 || lastMenu.message) return result

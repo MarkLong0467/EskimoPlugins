@@ -425,6 +425,22 @@ const later = []
 	const again = rowsOf(wg).map((r) => wrap.runtime.jsx(RowWrapper, { children: [r] }))
 	check('the rows made for the menu are not swapped for the whole list again', again.every((w, i) => w.props.children.length === 1 && w.props.children[0] === rowsOf(wg)[i]), again.map((w) => w.props.children.length).join())
 	const regroup = wrap.runtime.jsx(TableRowGroup, { children: rowsOf(wg).slice(-2) })
+	{
+		// Discord can rebuild the rows of a group (new rows with the same look and text, but without the plugin's marker),
+		// and wrap each in its own piece. Groups of those must be left alone, or the menu repeats itself.
+		const rb = load({ sectionsJson: secs, pinsJson: JSON.stringify([LONG.c3]), assignJson: JSON.stringify({ [LONG.c3]: 's2' }) })
+		const made = rowsOf(mkGroup(rb))
+		const rebuilt = made.map((r) => rb.runtime.jsx(TableRow, { label: r.props.label, icon: r.props.icon, onPress: r.props.onPress }))
+		const last3 = rb.runtime.jsx(TableRowGroup, { children: rebuilt.slice(-3) })
+		check('rebuilt rows without the marker are not replaced again', labelsOf(last3).join('|') === rebuilt.slice(-3).map((r) => r.props.label).join('|'), labelsOf(last3).join('|'))
+		const first2 = rb.runtime.jsx(TableRowGroup, { children: rebuilt.slice(0, 2) })
+		check('the first rebuilt rows are not replaced again either', labelsOf(first2).length === 2, labelsOf(first2).join('|'))
+		function RowPiece() {}
+		const wrapped = rb.runtime.jsx(TableRowGroup, { children: rebuilt.slice(-2).map((r) => rb.runtime.jsx(RowPiece, { children: r })) })
+		check('rebuilt rows wrapped in pieces are not replaced again', rowsOf(wrapped).length === 2 && rowsOf(wrapped).every((w) => w.type === RowPiece))
+		const discord = rb.runtime.jsx(TableRowGroup, { children: [rb.runtime.jsx(TableRow, { label: 'Pin', icon: rb.runtime.jsx(PinIcon, {}), onPress: () => {} })] })
+		check('Discord\'s own Pin group is still replaced once, with each row once', labelsOf(discord).join('|') === 'Pin to Boys|✓ Pin to Girls|Pin (no group)|Unpin|Pin in Discord', labelsOf(discord).join('|'))
+	}
 	check('a small group of the menu\'s own Pin rows is left alone', labelsOf(regroup).join('|') === 'Unpin|Pin in Discord', labelsOf(regroup).join('|'))
 }
 
