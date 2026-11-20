@@ -37,7 +37,7 @@ public final class AlwaysAnimateNative {
   private static final Map<Object,WeakReference<Decoration>> decorations = new WeakHashMap<Object,WeakReference<Decoration>>();
   private static String decorationDetail="";
   private static String decorationState="not-resolved";
-  private static int decorationCreates, decorationLoads, decorationReady, decorationErrors, decorationFrameCount;
+  private static int decorationCreates, decorationLoads, decorationReady, decorationErrors, decorationFrameCount, decorationRetries;
 
   private static final ThreadLocal<Boolean> probing=new ThreadLocal<Boolean>();
   private static final Map<Object,ImageProbe> imageProbes=new WeakHashMap<Object,ImageProbe>();
@@ -496,12 +496,15 @@ public final class AlwaysAnimateNative {
     String url;
     float originalAlpha;
     boolean shown, closed, loaded;
+    int attempts;
     Decoration(final Object view) throws Exception {
       source=new WeakReference<Object>(view);
-      originalAlpha=((Number)call(view,"getAlpha")).floatValue();
+      // A row that is fading in can start fully transparent: that is not the alpha to give the frame (it never showed).
+      float alpha=((Number)call(view,"getAlpha")).floatValue();
+      originalAlpha=alpha>0?alpha:1f;
       player=new BundledFramePlayer(call(view,"getContext"),call(view,"getResources"),storageDir,new BundledFramePlayer.Events(){
         public void loaded(String url){completed(url);}
-        public void failed(Throwable error){decorationFailure(error);}
+        public void failed(Throwable error){decorationFailure(error);retry();}
       });
       widget=player.view;
       ClassLoader loader=view.getClass().getClassLoader();
@@ -521,13 +524,27 @@ public final class AlwaysAnimateNative {
     void completed(String completed) {
       Object original=source.get();
       if(original!=null && !closed && allowed() && url!=null && url.equals(completed)) {
-        loaded=true;decorationReady++;decorationFrameCount=player.frameCount;
-        try{if(shown){call(original,"setAlpha",new Class<?>[]{float.class},0f);ownsAlpha=true;syncPresentation();}}catch(Exception e){decorationFailure(e);}
+        loaded=true;attempts=0;decorationReady++;decorationFrameCount=player.frameCount;
+        try{if(shown){takeAlpha(original);syncPresentation();}}catch(Exception e){decorationFailure(e);}
         writeStatus(false);
       }
     }
     void load() throws Exception {
       player.load(url);decorationLoads++;bounds();
+    }
+    /** A failed load (network, busy queue) is tried again, up to 3 times, while the frame is still on screen. */
+    void retry() {
+      if(closed || !shown || loaded || url==null || attempts>=3)return;
+      attempts++;final String wanted=url;
+      player.later(new Runnable(){public void run(){
+        if(closed || !shown || loaded || !wanted.equals(url))return;
+        try{decorationRetries++;load();}catch(Exception e){decorationFailure(e);}
+      }},1500L*attempts);
+    }
+    /** Hides Discord's own (still) frame under the playing one, remembering its alpha to give back. */
+    void takeAlpha(Object view) throws Exception {
+      if(!ownsAlpha){float alpha=((Number)call(view,"getAlpha")).floatValue();if(alpha>0)originalAlpha=alpha;}
+      call(view,"setAlpha",new Class<?>[]{float.class},0f);ownsAlpha=true;
     }
     public Object invoke(Object proxy,Method method,Object[] args) {
       String name=method.getName();
@@ -550,6 +567,7 @@ public final class AlwaysAnimateNative {
       call(widget,"layout",new Class<?>[]{int.class,int.class,int.class,int.class},left,top,left+width,top+height);
       call(widget,"setTranslationX",new Class<?>[]{float.class},((Number)call(view,"getTranslationX")).floatValue());
       call(widget,"setTranslationY",new Class<?>[]{float.class},((Number)call(view,"getTranslationY")).floatValue());
+      if(!ownsAlpha){float alpha=((Number)call(view,"getAlpha")).floatValue();if(alpha>0)originalAlpha=alpha;}
       call(widget,"setAlpha",new Class<?>[]{float.class},originalAlpha);
       syncPresentation();
     }
@@ -614,11 +632,11 @@ public final class AlwaysAnimateNative {
         observeVisibility(view);bounds();
         load();
       }else bounds();
-      if(loaded){call(view,"setAlpha",new Class<?>[]{float.class},0f);ownsAlpha=true;}
+      if(loaded)takeAlpha(view);
     }
     void setUrl(String next) throws Exception {
       if(!next.equals(url)) {
-        detach();url=next;loaded=false;
+        detach();url=next;loaded=false;attempts=0;
       }
       attach();
     }
@@ -815,7 +833,7 @@ public final class AlwaysAnimateNative {
       hooks.clear();
       XposedBridge.log("AlwaysAnimate: native avatar hook unavailable: " + e.getClass().getSimpleName());
     }
-    decorationCreates=decorationLoads=decorationReady=decorationErrors=decorationFrameCount=0;
+    decorationCreates=decorationLoads=decorationReady=decorationErrors=decorationFrameCount=decorationRetries=0;
     resolveDecorations(ctx);
     installChatHooks(ctx);
     installChatImageSetters(ctx);
@@ -829,7 +847,7 @@ public final class AlwaysAnimateNative {
     try {
       storageDir.mkdirs();
       String json = "{\"state\":\""+state+"\",\"detail\":\""+detail.replace("\\","\\\\").replace("\"","\\\"").replace("\n"," ").replace("\r"," ")+"\",\"hooks\":"+hooks.size()+",\"avatarLoads\":"+builds+",\"animationStarts\":"+starts+",\"controllersInspected\":"+inspections+",\"avatarRequestUris\":"+requestUris+",\"nativeGifRewrites\":"+rewrites+",\"chatHooks\":"+chatHooks+",\"chatBinds\":"+chatBinds+",\"chatAvatarUrls\":"+chatUrls+",\"chatGifRewrites\":"+chatRewrites+",\"chatAvatarViews\":"+chatViews+",\"chatImageSetterHooks\":"+chatSetHooks+",\"chatImageLoads\":"+chatSourceSets+",\"chatAnimatedImageLoads\":"+chatSourceAnimated+",\"errors\":"+errors+"}";
-      json=json.substring(0,json.length()-1)+",\"decorationState\":\""+decorationState+"\",\"decorationViews\":"+decorationCreates+",\"decorationLoads\":"+decorationLoads+",\"decorationLoaded\":"+decorationReady+",\"decorationErrors\":"+decorationErrors+"}";
+      json=json.substring(0,json.length()-1)+",\"decorationState\":\""+decorationState+"\",\"decorationViews\":"+decorationCreates+",\"decorationLoads\":"+decorationLoads+",\"decorationLoaded\":"+decorationReady+",\"decorationErrors\":"+decorationErrors+",\"decorationRetries\":"+decorationRetries+"}";
       json=json.substring(0,json.length()-1)+",\"decorationDetail\":\""+decorationDetail.replace("\\","\\\\").replace("\"","\\\"").replace("\n"," ").replace("\r"," ")+"\"}";
       json=json.substring(0,json.length()-1)+",\"decorationFrameCount\":"+decorationFrameCount+"}";
       json=json.substring(0,json.length()-1)+",\"chatImageReport\":\""+imageReportText().replace("\\","\\\\").replace("\"","\\\"").replace("\n","\\n").replace("\r","")+"\"}";

@@ -12,8 +12,11 @@ public final class BundledFramePlayer {
   public interface Events {void loaded(String url);void failed(Throwable error);}
   private static final LinkedHashMap<String,Cached> cache=new LinkedHashMap<String,Cached>(16,.75f,true);
   private static long cacheBytes;
-  private static final ThreadPoolExecutor workers=new ThreadPoolExecutor(2,2,30,TimeUnit.SECONDS,new ArrayBlockingQueue<Runnable>(32),new ThreadFactory(){public Thread newThread(Runnable task){Thread t=new Thread(task,"AlwaysAnimate-PNG");t.setDaemon(true);return t;}});
+  private static final ThreadPoolExecutor workers=new ThreadPoolExecutor(2,2,30,TimeUnit.SECONDS,new ArrayBlockingQueue<Runnable>(64),new ThreadFactory(){public Thread newThread(Runnable task){Thread t=new Thread(task,"AlwaysAnimate-PNG");t.setDaemon(true);return t;}});
   static {workers.allowCoreThreadTimeOut(true);}
+  /** Loads in progress, by asset: every message of one person shares one download and one decode. */
+  private static final HashMap<String,List<Waiter>> pending=new HashMap<String,List<Waiter>>();
+  private static final class Waiter {final BundledFramePlayer player;final int token;Waiter(BundledFramePlayer p,int t){player=p;token=t;}}
   private static final class Cached {final Object state;final long bytes;final int frames;Cached(Object s,long b,int n){state=s;bytes=b;frames=n;}}
   public final Object view;
   public int frameCount;
@@ -21,7 +24,6 @@ public final class BundledFramePlayer {
   private final Events events;
   private final File storage;
   private volatile int generation;
-  private Future<?> future;
   private Object animation;
   private static Class<?> cls(String name)throws Exception{return Class.forName(name);}
   private static Object call(Object object,String name,Class<?>[] types,Object... args)throws Exception {Method method=object.getClass().getMethod(name,types);method.setAccessible(true);return method.invoke(object,args);}
@@ -43,23 +45,50 @@ public final class BundledFramePlayer {
   public void load(final String url)throws Exception {
     stop();final int token=generation;
     final int target=Math.max(32,Math.min(192,((Number)call(view,"getWidth")).intValue()));
-    try{future=workers.submit(new Runnable(){public void run(){
-      try {
-        final Cached cached=asset(url,target,storage);
-        if(token!=generation)return;
-        post(new Runnable(){public void run(){
-          if(token!=generation)return;
-          try {
-            animation=cls("android.graphics.drawable.Drawable$ConstantState").getMethod("newDrawable",cls("android.content.res.Resources")).invoke(cached.state,resources);
-            call(animation,"mutate");call(view,"setImageDrawable",new Class<?>[]{cls("android.graphics.drawable.Drawable")},animation);
-            call(animation,"start");frameCount=cached.frames;events.loaded(url);
-          }catch(Throwable error){events.failed(error);}
-        }});
-      }catch(final Throwable error){
-        if(token!=generation)return;
-        try{post(new Runnable(){public void run(){if(token==generation)events.failed(error);}});}catch(Exception ignored){}
-      }
-    }});}catch(RejectedExecutionException error){events.failed(new IOException("frame loading queue is busy"));}
+    final String key=url+":"+target;
+    // Already decoded: shown at once, without waiting for a worker.
+    Cached hit;synchronized(cache){hit=cache.get(key);}
+    if(hit!=null){show(hit,url);return;}
+    boolean start;
+    synchronized(pending) {
+      List<Waiter> list=pending.get(key);start=list==null;
+      if(start){list=new ArrayList<Waiter>();pending.put(key,list);}
+      list.add(new Waiter(this,token));
+    }
+    if(!start)return;
+    try{workers.submit(new Runnable(){public void run(){
+      Cached cached=null;Throwable failure=null;
+      boolean wanted=false;
+      synchronized(pending){List<Waiter> list=pending.get(key);if(list!=null)for(Waiter w:list)if(w.token==w.player.generation)wanted=true;}
+      if(wanted){try{cached=asset(url,target,storage);}catch(Throwable error){failure=error;}}
+      List<Waiter> list;synchronized(pending){list=pending.remove(key);}
+      if(list==null)return;
+      for(Waiter w:list)w.player.deliver(w.token,url,cached,wanted?failure:null);
+    }});}catch(RejectedExecutionException error){
+      synchronized(pending){pending.remove(key);}
+      events.failed(new IOException("frame loading queue is busy"));
+    }
+  }
+  private void deliver(final int token,final String url,final Cached cached,final Throwable failure) {
+    if(token!=generation)return;
+    try{post(new Runnable(){public void run(){
+      if(token!=generation)return;
+      if(cached!=null)show(cached,url);
+      else if(failure!=null)events.failed(failure);
+      // Joined a load that was skipped (nobody wanted it when it started): start it again.
+      else try{load(url);}catch(Throwable error){events.failed(error);}
+    }});}catch(Exception ignored){}
+  }
+  private void show(Cached cached,String url) {
+    try {
+      animation=cls("android.graphics.drawable.Drawable$ConstantState").getMethod("newDrawable",cls("android.content.res.Resources")).invoke(cached.state,resources);
+      call(animation,"mutate");call(view,"setImageDrawable",new Class<?>[]{cls("android.graphics.drawable.Drawable")},animation);
+      call(animation,"start");frameCount=cached.frames;events.loaded(url);
+    }catch(Throwable error){events.failed(error);}
+  }
+  /** Runs a task on the main thread after a delay (a retry). */
+  public void later(Runnable task,long delay) {
+    try{call(handler,"postDelayed",new Class<?>[]{Runnable.class,long.class},task,delay);}catch(Exception ignored){}
   }
   public void pause()throws Exception {
     if(animation==null)return;
@@ -72,7 +101,7 @@ public final class BundledFramePlayer {
     call(animation,"start");
   }
   public void stop()throws Exception {
-    generation++;if(future!=null){future.cancel(false);future=null;workers.purge();}
+    generation++;
     if(animation!=null){call(animation,"stop");animation=null;}
     call(view,"setImageDrawable",new Class<?>[]{cls("android.graphics.drawable.Drawable")},(Object)null);
   }
@@ -97,7 +126,7 @@ public final class BundledFramePlayer {
         Cached prior=cache.get(key);if(prior!=null)return prior;
         cache.put(key,item);cacheBytes+=item.bytes;
         Iterator<Cached> iterator=cache.values().iterator();
-        while(cacheBytes>16*1024*1024 && iterator.hasNext()){cacheBytes-=iterator.next().bytes;iterator.remove();}
+        while(cacheBytes>32*1024*1024 && iterator.hasNext()){cacheBytes-=iterator.next().bytes;iterator.remove();}
       }
       return item;
     }catch(Exception error){for(Object image:frames.images)new AndroidPixels().release(image);throw error;}

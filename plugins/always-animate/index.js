@@ -8,7 +8,7 @@
  * Uses Valenced's documented runtime API; no desktop webpack patches.
  */
   'use strict';
-  var VERSION = '4.1.4';
+  var VERSION = '4.1.5';
   var defaults = { images: true, emojis: true, stickers: true, cosmetics: true, gifs: true, motion: true };
   var storage;
   var stats = {};
@@ -361,6 +361,7 @@
           detail('Version', VERSION),
           detail('Frame player', data && data.decorationState === 'ready' ? 'Ready' : loading[0] ? 'Checking' : 'Unavailable'),
           detail('Frame images loaded', data && data.decorationLoaded || 0),
+          detail('Frame retries', data && data.decorationRetries || 0),
           detail('Playback errors', (data && data.errors || 0) + (data && data.decorationErrors || 0) + (stats.errors || 0)),
           h(RN.View, { style: { flexDirection: 'row', gap: 10, marginTop: 10 } },
             h(RN.View, { style: { flex: 1 } }, button('Copy report', copyReport, loading[0])),
