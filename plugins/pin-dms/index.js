@@ -130,14 +130,30 @@
 		if (deepCache.has(entry)) return deepCache.get(entry)
 		var found
 		try {
-			var text = JSON.stringify(entry, function (k, v) { return typeof v === 'function' ? undefined : v }) || ''
+			var text = JSON.stringify(entry, skipMessages) || ''
 			var all = text.slice(0, 3000).match(/\d{17,20}/g) || []
 			for (var i = 0; i < all.length; i++) { if (isDm(all[i])) { found = all[i]; break } }
 		} catch (e) {}
 		deepCache.set(entry, found)
 		return found
 	}
+	/**
+	 * Leaves out functions, and messages with what hangs off them. A search result (Media, Pins, Links, Files of a chat) carries
+	 * its message, and the message carries the chat's id; that does not make the result a row of the DM list.
+	 */
+	var MESSAGE_KEY = /^(message|messages|messageId|attachment|attachments|embed|embeds|referencedMessage|messageReference)$/
+	function skipMessages(k, v) { return typeof v === 'function' || MESSAGE_KEY.test(k) ? undefined : v }
 	function chatId(entry) { return idOf(entry, 0) || deepId(entry) }
+	/** A list of DM rows holds each chat once. A list where a chat comes back more than once (search results of one chat) is not one. */
+	function distinctIds(ids) {
+		var seen = {}
+		for (var i = 0; i < ids.length; i++) {
+			if (!ids[i]) continue
+			if (seen[ids[i]]) return false
+			seen[ids[i]] = 1
+		}
+		return true
+	}
 	function looksLikeChat(id) {
 		return /^\d{15,}$/.test(id) || isDm(id)
 	}
@@ -1313,7 +1329,7 @@
 				var v = props[k]
 				if (!Array.isArray(v) || v.length < 2) return
 				var ids = v.map(chatId).filter(Boolean)
-				if (ids.length < 2 || ids.length < v.length * 0.5) return
+				if (ids.length < 2 || ids.length < v.length * 0.5 || !distinctIds(ids)) return
 				var ordered = hideOn() ? v.filter(function (e) { var id = chatId(e); return !(id && state.pins.indexOf(id) >= 0) }) : reorderRows(v)
 				if (ordered !== v && ordered.length !== undefined && (ordered.length !== v.length || !hideOn())) { next[k] = ordered; any = true; if (status.listKey.indexOf('fast.' + k) < 0) { status.listKey.push('fast.' + k); changed() } }
 			})
@@ -1437,6 +1453,7 @@
 		})
 		if (entries.length < 2) return data
 		var ids = entries.map(chatId)
+		if (!distinctIds(ids)) return data
 		var first = pinnedOrder(ids)
 		if (!first.length) return data
 		var byId = {}
@@ -1502,7 +1519,7 @@
 	function listProp(props) {
 		for (var i = 0; i < LIST_PROPS.length; i++) {
 			var list = props[LIST_PROPS[i]]
-			if (Array.isArray(list) && list.length >= 2 && list.slice(0, 10).map(chatId).some(Boolean)) return LIST_PROPS[i]
+			if (Array.isArray(list) && list.length >= 2 && list.slice(0, 10).map(chatId).some(Boolean) && distinctIds(list.slice(0, 50).map(chatId))) return LIST_PROPS[i]
 		}
 		return null
 	}
@@ -1602,7 +1619,7 @@
 			var list = props[key]
 			if (list.some(function (e) { return e && e.__pinHeader })) return result
 			var ids = list.map(chatId).filter(Boolean)
-			if (ids.length < 2) return result
+			if (ids.length < 2 || !distinctIds(ids)) return result
 			if (ids.length < list.length * 0.5) return result
 			status.lists++
 			if (status.listKey.indexOf(key) < 0) { status.listKey.push(key); changed() }

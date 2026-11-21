@@ -516,6 +516,26 @@ const later = []
 	}, 30)))
 }
 
+// Search tabs of a pinned DM (Media, Pins, Links, Files): their result lists carry the DM's id in every entry. They are not
+// the DM list and must be left exactly as they are (1.16.4 collapsed them and left empty rows, which crashed the app).
+{
+	const a = load({ hidePinned2: false })
+	function SearchResults() {}
+	const media = Array.from({ length: 12 }, (_, i) => ({ attachment: { url: 'https://x/' + i }, message: { id: String(1200000000000000000n + BigInt(i)), channel_id: LONG.c2 } }))
+	const el = a.runtime.jsx(SearchResults, { data: media, renderItem: () => null })
+	check('search: a media grid of a pinned DM keeps every entry', el.props.data.length === 12 && el.props.data.every((x) => x), el.props.data.filter((x) => !x).length + ' empty')
+	check('search: a media grid of a pinned DM is left as it was', el.props.data === media)
+	const two = media.slice(0, 2)
+	check('search: two results of a pinned DM are left alone', a.runtime.jsx(SearchResults, { data: two }).props.data === two)
+	const msgs = Array.from({ length: 6 }, (_, i) => ({ id: String(1300000000000000000n + BigInt(i)), channel_id: LONG.c4, content: 'hi' }))
+	check('search: message results of a pinned DM are left as they were', a.runtime.jsx(SearchResults, { data: msgs }).props.data === msgs)
+	const secs = load({ hidePinned2: false, sectionsJson: '[{"id":"s1","name":"Boys","color":"#00d4ff"}]', assignJson: JSON.stringify({ [LONG.c2]: 's1' }) })
+	const el2 = secs.runtime.jsx(SearchResults, { data: media, renderItem: () => null })
+	check('search: no section headings are put into results of a DM in a section', el2.props.data === media && el2.props.renderItem === el.props.renderItem || el2.props.data === media)
+	const tile = secs.runtime.jsx(function PressableHighlight() {}, { onLongPress: () => {}, children: { type: 'V', props: { message: media[0].message } } })
+	check('search: a result tile of a DM in a section gets no section stripe', !Array.isArray(tile.props.children))
+}
+
 Promise.all(later).then(() => {
 console.log(failed ? '\n' + failed + ' check(s) failed' : '\nAll checks passed')
 process.exit(failed ? 1 : 0)
