@@ -11,6 +11,8 @@ Discord is in the background.
 - Drag the bubble to move it.
 - Needs Android's "Display over other apps" permission (the plugin's settings page has a shortcut to it).
 - The on/off switch is in the plugin's settings and in Discord's voice settings, above "Change audio output".
+- If something goes wrong in the bubble it is switched off instead of closing Discord, and the settings page shows a
+  "Last error" section with a button to copy the report (0.3.1).
 
 Based on [Mute Bubble](https://github.com/il1ll/ValencedPlugins) 3.3.3 by coder.gg (GPL-3.0). Turn Mute Bubble off
 while using this one, or you get two bubbles.

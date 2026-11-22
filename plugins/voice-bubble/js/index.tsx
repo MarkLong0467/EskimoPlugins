@@ -7,6 +7,7 @@ import Page from '@valenced/components/Page'
 import TableRowAssetIcon from '@valenced/components/TableRowAssetIcon'
 import { Design } from '@valenced/discord/design'
 import { getStore } from '@valenced/discord/flux'
+import { Clipboard } from '@valenced/externals/react-native-clipboard'
 import { lookupModule } from '@valenced/modules/finders'
 import { withProps } from '@valenced/modules/finders/filters'
 import { callNativeMethod } from '@valenced/modules/native'
@@ -48,17 +49,41 @@ interface BubbleSettings {
 
 const defaults: BubbleSettings = { enabled: true }
 
-const BUTTONS: Array<{ value: Button; label: string; subLabel: string; icon: string }> = [
-	{ value: 'mute', label: 'Mute', subLabel: 'Mute or unmute your mic', icon: 'MicrophoneIcon' },
-	{ value: 'deafen', label: 'Deafen', subLabel: 'Deafen or undeafen', icon: 'HeadphonesIcon' },
+const BUTTONS: Array<{
+	value: Button
+	label: string
+	subLabel: string
+	icon: string
+}> = [
+	{
+		value: 'mute',
+		label: 'Mute',
+		subLabel: 'Mute or unmute your mic',
+		icon: 'MicrophoneIcon',
+	},
+	{
+		value: 'deafen',
+		label: 'Deafen',
+		subLabel: 'Deafen or undeafen',
+		icon: 'HeadphonesIcon',
+	},
 	{
 		value: 'screenshare',
 		label: 'Screen share',
-		subLabel: 'Start or stop sharing your screen (opens Discord so Android can ask)',
+		subLabel:
+			'Start or stop sharing your screen (opens Discord so Android can ask)',
 		icon: 'ScreenArrowIcon',
 	},
-	{ value: 'disconnect', label: 'Disconnect', subLabel: 'Leave the call', icon: 'PhoneHangUpIcon' },
+	{
+		value: 'disconnect',
+		label: 'Disconnect',
+		subLabel: 'Leave the call',
+		icon: 'PhoneHangUpIcon',
+	},
 ]
+
+/** Shown in copied error reports. Keep in step with manifest.json. */
+const VERSION = '0.3.1'
 
 let running = false
 let storage: JsonStorage<BubbleSettings> | undefined
@@ -66,7 +91,10 @@ let storage: JsonStorage<BubbleSettings> | undefined
 const bubbleEnabled = () => storage?.cache?.enabled ?? defaults.enabled
 
 /** Whether a button is on: its saved switch, else what the 0.2 choice meant. Buttons new in 0.3 start on. */
-function isShown(settings: Partial<BubbleSettings> | undefined, button: Button): boolean {
+function isShown(
+	settings: Partial<BubbleSettings> | undefined,
+	button: Button,
+): boolean {
 	const saved = settings?.show?.[button]
 	if (typeof saved === 'boolean') return saved
 	const old = settings?.buttons
@@ -76,8 +104,12 @@ function isShown(settings: Partial<BubbleSettings> | undefined, button: Button):
 }
 
 /** The buttons the bubble shows, top to bottom. Never empty: with every switch off, mute and deafen show. */
-function bubbleButtons(settings: Partial<BubbleSettings> | undefined = storage?.cache): Button[] {
-	const shown = BUTTONS.map(button => button.value).filter(button => isShown(settings, button))
+function bubbleButtons(
+	settings: Partial<BubbleSettings> | undefined = storage?.cache,
+): Button[] {
+	const shown = BUTTONS.map(button => button.value).filter(button =>
+		isShown(settings, button),
+	)
 	return shown.length ? shown : ['mute', 'deafen']
 }
 
@@ -104,7 +136,8 @@ function isSharing() {
 }
 
 /** Discord's own screen share functions (its call screen and Go Live sheet use them). */
-const screenshareUtils = () => lookupModule(withProps<any>('stopScreenshare', 'startStream'))[0]
+const screenshareUtils = () =>
+	lookupModule(withProps<any>('stopScreenshare', 'startStream'))[0]
 
 /** Starts sharing as Discord's screen share button does; Android then asks for permission. */
 async function startScreenshare() {
@@ -113,27 +146,43 @@ async function startScreenshare() {
 		await new Promise(resolve => setTimeout(resolve, 100))
 	const utils = screenshareUtils()
 	const channelId = voiceStore?.getVoiceChannelId()
-	const [ChannelStore] = lookupModule(withProps<any>('getChannel', 'getDMFromUserId'))
+	const [ChannelStore] = lookupModule(
+		withProps<any>('getChannel', 'getDMFromUserId'),
+	)
 	const channel = channelId ? ChannelStore?.getChannel?.(channelId) : null
 	// tryStartScreenShare checks the channel's video permission and the Android version first.
-	if (channel && typeof utils?.tryStartScreenShare === 'function') utils.tryStartScreenShare(channel)
+	if (channel && typeof utils?.tryStartScreenShare === 'function')
+		utils.tryStartScreenShare(channel)
 	else if (typeof utils?.startStream === 'function') utils.startStream()
 }
 
 function stopScreenshare() {
 	const utils = screenshareUtils()
 	if (typeof utils?.stopScreenshare === 'function') utils.stopScreenshare()
-	else if (typeof utils?.handleCloseScreenshare === 'function') utils.handleCloseScreenshare()
+	else if (typeof utils?.handleCloseScreenshare === 'function')
+		utils.handleCloseScreenshare()
 }
 
 /** Leaves the call, as Discord's disconnect button does. */
 function disconnect() {
-	const [ChannelActions] = lookupModule(withProps<any>('selectVoiceChannel', 'disconnect'))
-	if (typeof ChannelActions?.disconnect === 'function') ChannelActions.disconnect()
+	const [ChannelActions] = lookupModule(
+		withProps<any>('selectVoiceChannel', 'disconnect'),
+	)
+	if (typeof ChannelActions?.disconnect === 'function')
+		ChannelActions.disconnect()
 	else ChannelActions?.selectVoiceChannel?.(null)
 }
 
+/** Store listeners run inside Discord's own updates: nothing here may throw. */
 function sendState() {
+	try {
+		sendStateNow()
+	} catch {
+		lastState = ''
+	}
+}
+
+function sendStateNow() {
 	if (!running) return
 	const inCall = !!voiceStore?.getVoiceChannelId()
 	const deafened = !!mediaStore?.isSelfDeaf()
@@ -167,16 +216,30 @@ function act(action: () => unknown) {
 		})
 }
 
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+/**
+ * Asks the native half for bubble taps. It answers at once, so this asks a few times a second during a call (when the
+ * bubble can be there) and every few seconds otherwise.
+ */
 async function listenForTaps() {
 	while (running) {
 		let action: string | null = 'none'
 		try {
 			action = await callNativeMethod('marklong.voicebubble.nextAction', [])
 		} catch {
-			await new Promise(resolve => setTimeout(resolve, 2000))
+			await wait(2000)
 			continue
 		}
 		if (!running || action === 'stop') return
+		if (!action || action === 'none') {
+			let inCall = false
+			try {
+				inCall = !!voiceStore?.getVoiceChannelId() && bubbleEnabled()
+			} catch {}
+			await wait(inCall ? 250 : 3000)
+			continue
+		}
 		if (action === 'toggleMute') act(() => toggle('toggleSelfMute'))
 		else if (action === 'toggleDeaf') act(() => toggle('toggleSelfDeaf'))
 		else if (action === 'startShare') act(startScreenshare)
@@ -213,7 +276,9 @@ const isAudioOutputRow = (element: ReactElement<any>) =>
 
 function ButtonsGroup({ store }: { store: JsonStorage<BubbleSettings> }) {
 	const settings = store.use() ?? store.cache
-	const onCount = BUTTONS.filter(button => isShown(settings, button.value)).length
+	const onCount = BUTTONS.filter(button =>
+		isShown(settings, button.value),
+	).length
 	return (
 		<Design.TableRowGroup
 			title="Buttons"
@@ -231,7 +296,8 @@ function ButtonsGroup({ store }: { store: JsonStorage<BubbleSettings> }) {
 						disabled={on && onCount === 1}
 						onValueChange={(value: boolean) => {
 							const show = {} as Record<Button, boolean>
-							for (const each of BUTTONS) show[each.value] = isShown(store.cache, each.value)
+							for (const each of BUTTONS)
+								show[each.value] = isShown(store.cache, each.value)
 							show[button.value] = value
 							if (!Object.values(show).some(Boolean)) return
 							void store.set({ show }).then(sendState)
@@ -240,6 +306,37 @@ function ButtonsGroup({ store }: { store: JsonStorage<BubbleSettings> }) {
 				)
 			})}
 		</Design.TableRowGroup>
+	)
+}
+
+/** The last error the native half caught (it no longer closes the app), with a button to copy it for a bug report. */
+function ErrorGroup() {
+	const { TableRowGroup, TableRow } = Design
+	const [error, setError] = useState('')
+	const [copied, setCopied] = useState(false)
+	useEffect(() => {
+		callNativeMethod('marklong.voicebubble.lastError', [])
+			.then(value => setError(typeof value === 'string' ? value : ''))
+			.catch(() => {})
+	}, [])
+	if (!error) return null
+	return (
+		<TableRowGroup
+			title="Last error"
+			description="Something went wrong in the bubble. It was stopped instead of closing Discord. Copy this into a bug report."
+		>
+			<TableRow
+				label={copied ? 'Copied' : 'Copy error report'}
+				subLabel={error.split('\n')[0]}
+				icon={<TableRowAssetIcon name="CopyIcon" />}
+				onPress={() => {
+					try {
+						Clipboard.setString(`Mute & Deafen Bubble ${VERSION}\n${error}`)
+						setCopied(true)
+					} catch {}
+				}}
+			/>
+		</TableRowGroup>
 	)
 }
 
@@ -306,6 +403,7 @@ function SettingsPage() {
 						}
 					/>
 				</TableRowGroup>
+				<ErrorGroup />
 			</Page>
 		</ScrollView>
 	)
@@ -327,6 +425,7 @@ declare module '@valenced/modules/native' {
 		'marklong.voicebubble.nextAction': [args: [], returnValue: string]
 		'marklong.voicebubble.canDrawOverlays': [args: [], returnValue: boolean]
 		'marklong.voicebubble.openOverlaySettings': [args: [], returnValue: boolean]
+		'marklong.voicebubble.lastError': [args: [], returnValue: string]
 	}
 }
 
@@ -361,7 +460,10 @@ export default plugin<{ jsonStorage: BubbleSettings }>({
 				}),
 			)
 
-		const watch = <T extends ChangeStore>(name: string, keep: (store: T) => void) =>
+		const watch = <T extends ChangeStore>(
+			name: string,
+			keep: (store: T) => void,
+		) =>
 			getStore<T>(name, store => {
 				keep(store)
 				store.addChangeListener(sendState)
@@ -370,9 +472,15 @@ export default plugin<{ jsonStorage: BubbleSettings }>({
 			})
 
 		cleanup(
-			watch<VoiceChannelStore>('SelectedVoiceChannelStore', store => { voiceStore = store }),
-			watch<MediaEngineStore>('MediaEngineStore', store => { mediaStore = store }),
-			watch<StreamingStore>('ApplicationStreamingStore', store => { streamStore = store }),
+			watch<VoiceChannelStore>('SelectedVoiceChannelStore', store => {
+				voiceStore = store
+			}),
+			watch<MediaEngineStore>('MediaEngineStore', store => {
+				mediaStore = store
+			}),
+			watch<StreamingStore>('ApplicationStreamingStore', store => {
+				streamStore = store
+			}),
 		)
 
 		void listenForTaps()

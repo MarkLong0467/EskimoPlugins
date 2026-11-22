@@ -8,7 +8,7 @@
 	"contributors": [
 		"coder.gg <1099039269391171765> (Mute Bubble, which this is based on) (https://github.com/il1ll \"GitHub\")"
 	],
-	"version": "0.3.0",
+	"version": "0.3.1",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"

@@ -44,10 +44,7 @@ import app.valenced.bridge.ValencedBridge;
 import app.valenced.plugins.PluginBuilder;
 import app.valenced.plugins.PluginScope;
 import kotlin.Unit;
-import kotlin.coroutines.Continuation;
-import kotlin.coroutines.intrinsics.IntrinsicsKt;
 import kotlin.jvm.functions.Function1;
-import kotlin.jvm.functions.Function2;
 
 public final class VoiceBubble {
     private static final String PREFIX = "marklong.voicebubble.";
@@ -55,8 +52,34 @@ public final class VoiceBubble {
     private static final int GAP_DP = 8;
     private static final int PAD_DP = 4;
     private static final long POLL_MS = 3000L;
-    private static final long WAIT_MS = 25000L;
     private static final String REGISTRY_KEY = "marklong.voicebubble.active";
+
+    /**
+     * The last error the native half caught, for the settings page. Nothing here may throw into Android: an exception
+     * on the main thread (a posted Runnable, a draw, a touch, an activity callback) closes the whole app.
+     */
+    static volatile String lastError = "";
+
+    static void note(String where, Throwable error) {
+        try {
+            StringBuilder text = new StringBuilder(where).append(": ").append(error);
+            StackTraceElement[] trace = error.getStackTrace();
+            for (int i = 0; i < trace.length && i < 8; i++) text.append("\n  at ").append(trace[i]);
+            text.append("\nAndroid ").append(Build.VERSION.RELEASE).append(" (SDK ").append(Build.VERSION.SDK_INT).append("), ")
+                .append(Build.MANUFACTURER).append(' ').append(Build.MODEL);
+            lastError = text.toString();
+            android.util.Log.e("VoiceBubble", where, error);
+        } catch (Throwable ignored) {}
+    }
+
+    /** A Runnable that can never throw. */
+    static Runnable safe(final String where, final Runnable body) {
+        return new Runnable() {
+            public void run() {
+                try { body.run(); } catch (Throwable error) { note(where, error); }
+            }
+        };
+    }
 
     static final int MUTE = 0;
     static final int DEAF = 1;
@@ -133,12 +156,16 @@ public final class VoiceBubble {
 
         @Override
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-            int count = buttons.length;
+            int count = Math.max(1, buttons.length);
             setMeasuredDimension((int) (button() + 2 * pad()), (int) (count * button() + (count - 1) * gap() + 2 * pad()));
         }
 
         @Override
         protected void onDraw(Canvas canvas) {
+            try { paint(canvas); } catch (Throwable error) { note("draw", error); }
+        }
+
+        private void paint(Canvas canvas) {
             float w = getWidth(), h = getHeight(), r = w / 2f;
             fill.setColor(0xF01E1F22);
             canvas.drawRoundRect(new RectF(0, 0, w, h), r, r, fill);
@@ -212,84 +239,19 @@ public final class VoiceBubble {
     }
 
     // ---------------------------------------------------------------------------------------------------------------
-    // Taps waiting for the JS half. nextAction answers at once when a tap is waiting, otherwise it suspends (no thread
-    // is held) until a tap comes or WAIT_MS passes.
+    // Taps waiting for the JS half, which asks for them (nextAction) several times a second during a call. A plain queue:
+    // 0.3 suspended a Kotlin coroutine by hand from Java here, which is easy to get subtly wrong, so it is gone.
     // ---------------------------------------------------------------------------------------------------------------
     static final class Actions {
-        private final Handler handler;
         private final ArrayDeque<String> queue = new ArrayDeque<String>();
-        private Continuation<Object> waiting;
-        private Runnable timeout;
 
-        Actions(Handler handler) { this.handler = handler; }
-
-        void send(String action) {
-            Continuation<Object> resume;
-            synchronized (this) {
-                resume = takeWaiter();
-                if (resume == null) {
-                    if (queue.size() < 32) queue.add(action);
-                    return;
-                }
-            }
-            resume.resumeWith(action);
+        synchronized void send(String action) {
+            if (queue.size() < 32) queue.add(action);
         }
 
-        @SuppressWarnings("unchecked")
-        Object next(Continuation<?> continuation) {
-            Continuation<Object> previous;
-            synchronized (this) {
-                String ready = queue.poll();
-                if (ready != null) return ready;
-                previous = takeWaiter();
-                waiting = intercepted((Continuation<Object>) continuation);
-                final Continuation<Object> mine = waiting;
-                timeout = new Runnable() {
-                    public void run() {
-                        boolean expired;
-                        synchronized (Actions.this) {
-                            expired = waiting == mine;
-                            if (expired) { waiting = null; timeout = null; }
-                        }
-                        if (expired) mine.resumeWith("none");
-                    }
-                };
-                handler.postDelayed(timeout, WAIT_MS);
-            }
-            // A JS reload can leave an older call waiting: it is answered so it can finish.
-            if (previous != null) previous.resumeWith("none");
-            return suspended();
-        }
-
-        /** Resume on the caller's own dispatcher; on Discord's main thread if the helper is missing from this build. */
-        private static Continuation<Object> intercepted(Continuation<Object> continuation) {
-            try {
-                return IntrinsicsKt.intercepted(continuation);
-            } catch (LinkageError missing) {
-                return continuation;
-            }
-        }
-
-        /** Kotlin's "this call has not finished yet" marker. */
-        @SuppressWarnings({"unchecked", "rawtypes"})
-        private static Object suspended() {
-            try {
-                return IntrinsicsKt.getCOROUTINE_SUSPENDED();
-            } catch (LinkageError missing) {
-                try {
-                    return Enum.valueOf((Class) Class.forName("kotlin.coroutines.intrinsics.CoroutineSingletons"), "COROUTINE_SUSPENDED");
-                } catch (Throwable error) {
-                    throw new IllegalStateException("Kotlin coroutines are not available", error);
-                }
-            }
-        }
-
-        private Continuation<Object> takeWaiter() {
-            Continuation<Object> current = waiting;
-            waiting = null;
-            if (timeout != null) handler.removeCallbacks(timeout);
-            timeout = null;
-            return current;
+        synchronized String next() {
+            String ready = queue.poll();
+            return ready != null ? ready : "none";
         }
     }
 
@@ -301,7 +263,7 @@ public final class VoiceBubble {
         final Handler handler = new Handler(Looper.getMainLooper());
         final WindowManager windowManager;
         final AudioManager audio;
-        final Actions actions = new Actions(handler);
+        final Actions actions = new Actions();
 
         final Set<Activity> startedActivities = new HashSet<Activity>();
         boolean reportedInCall, muted, deafened, sharing, enabled = true, bubbleEnabled = true, attached;
@@ -314,17 +276,21 @@ public final class VoiceBubble {
 
         final Runnable poll = new Runnable() {
             public void run() {
-                refresh();
+                try { refresh(); } catch (Throwable error) { note("poll", error); }
                 if (bubble != null || startedActivities.isEmpty()) handler.postDelayed(this, POLL_MS);
             }
         };
 
         final Application.ActivityLifecycleCallbacks callbacks = new Application.ActivityLifecycleCallbacks() {
-            public void onActivityStarted(Activity activity) { startedActivities.add(activity); refresh(); }
+            public void onActivityStarted(Activity activity) {
+                try { startedActivities.add(activity); refresh(); } catch (Throwable error) { note("activity started", error); }
+            }
             public void onActivityStopped(Activity activity) {
-                startedActivities.remove(activity);
-                refresh();
-                if (startedActivities.isEmpty()) { handler.removeCallbacks(poll); handler.postDelayed(poll, POLL_MS); }
+                try {
+                    startedActivities.remove(activity);
+                    refresh();
+                    if (startedActivities.isEmpty()) { handler.removeCallbacks(poll); handler.postDelayed(poll, POLL_MS); }
+                } catch (Throwable error) { note("activity stopped", error); }
             }
             public void onActivityCreated(Activity activity, Bundle savedInstanceState) {}
             public void onActivityResumed(Activity activity) {}
@@ -340,7 +306,7 @@ public final class VoiceBubble {
         }
 
         void attach(final Activity activity) {
-            handler.post(new Runnable() {
+            handler.post(safe("attach", new Runnable() {
                 public void run() {
                     if (activity != null && !activity.isFinishing() && isProcessForeground()) startedActivities.add(activity);
                     if (attached) return;
@@ -348,11 +314,11 @@ public final class VoiceBubble {
                     Context app = context.getApplicationContext();
                     if (app instanceof Application) ((Application) app).registerActivityLifecycleCallbacks(callbacks);
                 }
-            });
+            }));
         }
 
         void detach() {
-            handler.post(new Runnable() {
+            handler.post(safe("detach", new Runnable() {
                 public void run() {
                     Context app = context.getApplicationContext();
                     if (attached && app instanceof Application) ((Application) app).unregisterActivityLifecycleCallbacks(callbacks);
@@ -362,17 +328,25 @@ public final class VoiceBubble {
                     enabled = false;
                     hide();
                 }
-            });
+            }));
         }
 
         boolean isProcessForeground() {
-            ActivityManager.RunningAppProcessInfo info = new ActivityManager.RunningAppProcessInfo();
-            ActivityManager.getMyMemoryState(info);
-            return info.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND;
+            try {
+                ActivityManager.RunningAppProcessInfo info = new ActivityManager.RunningAppProcessInfo();
+                ActivityManager.getMyMemoryState(info);
+                return info.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND;
+            } catch (Throwable error) {
+                return false;
+            }
         }
 
         boolean canDraw() {
-            return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context);
+            try {
+                return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context);
+            } catch (Throwable error) {
+                return false;
+            }
         }
 
         void openPermissionSettings() {
@@ -386,7 +360,7 @@ public final class VoiceBubble {
         }
 
         void setState(final boolean inCall, final boolean isMuted, final boolean isDeafened, final boolean isEnabled, final int[] which, final boolean isSharing) {
-            handler.post(new Runnable() {
+            handler.post(safe("setState", new Runnable() {
                 public void run() {
                     bubbleEnabled = isEnabled;
                     reportedInCall = inCall;
@@ -406,17 +380,30 @@ public final class VoiceBubble {
                     }
                     refresh();
                 }
-            });
+            }));
         }
 
         boolean inCall() {
-            return reportedInCall || audio.getMode() == AudioManager.MODE_IN_COMMUNICATION;
+            if (reportedInCall) return true;
+            try { return audio != null && audio.getMode() == AudioManager.MODE_IN_COMMUNICATION; } catch (Throwable error) { return false; }
         }
 
+        /** Set when making the bubble failed: it is not tried again until the plugin restarts. */
+        boolean broken;
+
         void refresh() {
-            boolean show = enabled && bubbleEnabled && startedActivities.isEmpty() && inCall() && canDraw()
-                && System.currentTimeMillis() >= hiddenUntil;
-            if (show) show(); else hide();
+            // Discord on screen (by Android's own account too, in case an activity was missed): no bubble.
+            boolean show = !broken && enabled && bubbleEnabled && startedActivities.isEmpty() && inCall()
+                && System.currentTimeMillis() >= hiddenUntil && canDraw() && !isProcessForeground();
+            try {
+                if (show) show(); else hide();
+            } catch (Throwable error) {
+                note(show ? "show" : "hide", error);
+                if (show) {
+                    broken = true;
+                    try { hide(); } catch (Throwable ignored) {}
+                }
+            }
         }
 
         @SuppressWarnings("deprecation")
@@ -451,6 +438,11 @@ public final class VoiceBubble {
                 boolean dragging;
 
                 public boolean onTouch(View v, MotionEvent event) {
+                    try { touch(event); } catch (Throwable error) { note("touch", error); }
+                    return true;
+                }
+
+                private void touch(MotionEvent event) {
                     switch (event.getActionMasked()) {
                         case MotionEvent.ACTION_DOWN:
                             downX = event.getRawX();
@@ -493,7 +485,6 @@ public final class VoiceBubble {
                             view.invalidate();
                             break;
                     }
-                    return true;
                 }
             });
 
@@ -524,7 +515,7 @@ public final class VoiceBubble {
                 reportedInCall = false;
                 hiddenUntil = System.currentTimeMillis() + 5000L;
                 hide();
-                handler.postDelayed(new Runnable() { public void run() { refresh(); } }, 5100L);
+                handler.postDelayed(safe("refresh", new Runnable() { public void run() { refresh(); } }), 5100L);
                 return;
             }
             if (which == SHARE) {
@@ -610,15 +601,20 @@ public final class VoiceBubble {
     }
 
     private static void start(final PluginScope ctx) {
-        ensureController(null);
+        try { ensureController(null); } catch (Throwable error) { note("start", error); }
         ctx.withAppContext(new Function1<Context, Unit>() {
             public Unit invoke(Context context) {
-                final Controller bubble = ensureController(context);
-                if (bubble != null) {
-                    ctx.withAppActivity(new Function1<Activity, Unit>() {
-                        public Unit invoke(Activity activity) { bubble.attach(activity); return Unit.INSTANCE; }
-                    });
-                }
+                try {
+                    final Controller bubble = ensureController(context);
+                    if (bubble != null) {
+                        ctx.withAppActivity(new Function1<Activity, Unit>() {
+                            public Unit invoke(Activity activity) {
+                                try { bubble.attach(activity); } catch (Throwable error) { note("activity", error); }
+                                return Unit.INSTANCE;
+                            }
+                        });
+                    }
+                } catch (Throwable error) { note("context", error); }
                 return Unit.INSTANCE;
             }
         });
@@ -647,11 +643,14 @@ public final class VoiceBubble {
                 return Boolean.TRUE;
             }
         });
-        bridge.registerAsyncMethod(PREFIX + "nextAction", new Function2<List<?>, Continuation<?>, Object>() {
-            public Object invoke(List<?> args, Continuation<?> continuation) {
+        register(bridge, "nextAction", new Function1<List<?>, Object>() {
+            public Object invoke(List<?> args) {
                 Controller bubble = ensureController(null);
-                return bubble == null ? "none" : bubble.actions.next(continuation);
+                return bubble == null ? "none" : bubble.actions.next();
             }
+        });
+        register(bridge, "lastError", new Function1<List<?>, Object>() {
+            public Object invoke(List<?> args) { return lastError; }
         });
     }
 

@@ -37,7 +37,7 @@ function store(methods) {
 	}
 }
 
-async function setup({ inCall = true } = {}) {
+async function setup({ inCall = true, instant = false, lastError = '' } = {}) {
 	const state = { channel: inCall ? '123' : null, mute: false, deaf: false, sharing: false }
 	const voice = store({ getVoiceChannelId: () => state.channel })
 	const media = store({ isSelfMute: () => state.mute || state.deaf, isSelfDeaf: () => state.deaf })
@@ -77,9 +77,12 @@ async function setup({ inCall = true } = {}) {
 						if (name === 'marklong.voicebubble.setState') { calls.setState.push(args); return true }
 						if (name === 'marklong.voicebubble.nextAction') {
 							if (taps.length) return taps.shift()
+							// 0.3.1's native half answers at once ("none" when nothing was tapped).
+							if (instant) return 'none'
 							return new Promise(resolve => { waiter = resolve })
 						}
 						if (name === 'marklong.voicebubble.canDrawOverlays') return true
+						if (name === 'marklong.voicebubble.lastError') return lastError
 						return true
 					},
 				},
@@ -272,6 +275,41 @@ const buttonRows = tree => {
 		mute.props.onValueChange(false)
 		await wait(5)
 		if (t.plugin.storage.cache.show.mute !== true) throw new Error('the last button was turned off')
+		view.unmount()
+		await t.plugin.stop()
+	})
+
+	await test('with a native half that answers at once, a tap during a call still mutes within a moment', async () => {
+		const t = await setup({ instant: true })
+		t.tap('toggleMute')
+		await wait(400)
+		if (t.calls.toggles.join() !== 'mute') throw new Error(JSON.stringify(t.calls.toggles))
+		await t.plugin.stop()
+	})
+
+	await test("a store that throws does not throw out of Discord's change listener", async () => {
+		const t = await setup()
+		t.media.isSelfDeaf = () => { throw new Error('boom') }
+		t.media.emit()
+		t.media.isSelfDeaf = () => false
+		t.media.emit()
+		await wait(5)
+		await t.plugin.stop()
+	})
+
+	await test('a native error shows in the settings with a copy button; none, no group', async () => {
+		const clean = await setup()
+		const v1 = clean.runtime.mount(clean.runtime.React.createElement(clean.definition.SettingsComponent))
+		if (findNode(await v1.settle(), node => node.props && node.props.title === 'Last error')) throw new Error('shown without an error')
+		v1.unmount()
+		await clean.plugin.stop()
+		const t = await setup({ lastError: 'show: java.lang.RuntimeException: x\n  at a.b' })
+		const view = t.runtime.mount(t.runtime.React.createElement(t.definition.SettingsComponent))
+		const tree = await view.settle()
+		const group = findNode(tree, node => node.props && node.props.title === 'Last error')
+		if (!group) throw new Error('no Last error group')
+		const row = findNode(group, node => node.props && node.props.label === 'Copy error report')
+		if (!row || row.props.subLabel !== 'show: java.lang.RuntimeException: x') throw new Error(JSON.stringify(row && row.props.subLabel))
 		view.unmount()
 		await t.plugin.stop()
 	})
