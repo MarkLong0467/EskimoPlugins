@@ -4798,7 +4798,7 @@
       "description": "Floating mute, deafen, screen share and disconnect buttons over other apps while you're in a call and Discord is in the background. Pick which buttons show. Drag to move.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "0.3.0"
+        "latest": "0.3.1"
       },
       "versions": {
         "0.1.0": {
@@ -4831,6 +4831,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.voice-bubble@0.3.0.zip",
           "sha256": "4fc8c430ca9cd6a90315f812189c136acd4a8cb70af0844d4de65846e1ca0c3b",
           "size": 15627,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "0.3.1": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.voice-bubble@0.3.1.zip",
+          "sha256": "1c6d68a9cf0f4e026d160425fb95efddc0f1e0defc83f8aea3e00723cce02017",
+          "size": 15944,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
