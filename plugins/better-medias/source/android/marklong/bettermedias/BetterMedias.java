@@ -317,6 +317,13 @@ public final class BetterMedias {
         void update(String who, String newTitle, String newSubtitle, long duration, long position, boolean isPlaying, boolean seekable) {
             if (!notifyOn) { hide(); return; }
             if (target != null && !target.equals(who) && playing && !isPlaying) return;
+            // Paused while Discord is on screen (not from the notification): the notification goes away, it is only kept for
+            // media paused while Discord is in the background. Playing again brings it back.
+            if (!isPlaying && foreground && SystemClock.elapsedRealtime() - commandAt > 3000) {
+                if (shown && who.equals(target)) hideLater(who);
+                else if (!who.equals(target)) return;
+                if (!shown) return;
+            }
             if (NATIVE.equals(who)) seekable = seekable || Media.canSeek();
             // Android moves the seek bar by itself while playing; the notification is only made again when something changes.
             boolean same = shown && who.equals(target) && isPlaying == playing && seekable == canSeek && duration == durationMs
@@ -337,10 +344,29 @@ public final class BetterMedias {
             if (who != null && who.equals(target)) hide();
         }
 
+        /** When a command last came from the notification (a pause from there keeps the notification). */
+        long commandAt;
+
+        /** Hides the notification of media paused inside Discord, once it is clear Discord was not just being left. */
+        void hideLater(final String who) {
+            main.postDelayed(new Runnable() {
+                public void run() {
+                    try {
+                        if (!foreground || playing || !who.equals(target) || SystemClock.elapsedRealtime() - commandAt < 3000) return;
+                        hide();
+                        diag.count("notification removed: paused inside Discord");
+                    } catch (Throwable error) {
+                        diag.error("hide after pause", error);
+                    }
+                }
+            }, 1200);
+        }
+
         void command(String cmd, long arg) {
             String who = target;
             if (who == null) return;
             diag.count("notification " + cmd);
+            commandAt = SystemClock.elapsedRealtime();
             long to = -1;
             if ("back10".equals(cmd)) { to = Math.max(0, position() - 10000); cmd = "seek"; }
             else if ("fwd10".equals(cmd)) { to = durationMs > 0 ? Math.min(durationMs, position() + 10000) : position() + 10000; cmd = "seek"; }
