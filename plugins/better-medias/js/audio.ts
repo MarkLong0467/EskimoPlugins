@@ -170,10 +170,7 @@ function updateNativePip(): void {
 /** Starts the chat player again after Discord paused it for leaving the screen. */
 function resumeAfterLeaving(): void {
 	const now = Date.now()
-	// Videos: Discord keeps pausing them in the background (their view is gone), so they are restarted for as long as
-	// Discord stays in the background (the native half also drops those pauses). Audio / voice: the first few seconds only.
-	const video = nativeKind === 'video'
-	if (!leftAt || !leftWhilePlaying || resumes >= (video ? 40 : 3) || (!video && now - leftAt > 4000)) return
+	if (!leftAt || !leftWhilePlaying || resumes >= 3 || now - leftAt > 4000) return
 	if (!on(AUDIO_SETTING[nativeKind]) || inCallNow() || now - userPausedAt < 4000) return
 	if (nativeDurationMs > 0 && nativeDurationMs - nativeTimeMs < 1000) return // it simply reached the end
 	resumes++
@@ -415,17 +412,7 @@ function startNativePlayer(cleanup: Cleanup): NativePlayerModule | undefined {
 /** Runs a command from the notification (or the native half) on Discord's native player. */
 export function nativeCommand(module: NativePlayerModule | undefined, cmd: string, ms = -1): void {
 	try {
-		if (cmd === 'play') {
-			// Play pressed in the notification while Discord is in the background (even if it was left paused): from now on
-			// Discord's own pauses of it are undone like after leaving while it played.
-			if (!appActive) {
-				leftAt = Date.now()
-				leftWhilePlaying = true
-				resumes = 0
-				userPausedAt = 0
-			}
-			module?.playCurrentPlayer?.()
-		}
+		if (cmd === 'play') module?.playCurrentPlayer?.()
 		else if (cmd === 'seek') nativeSeek(ms)
 		else if (cmd === 'handoff') {
 			// The small player took the video over for Picture-in-Picture.
@@ -434,7 +421,6 @@ export function nativeCommand(module: NativePlayerModule | undefined, cmd: strin
 		}
 		else if (cmd === 'pause' || cmd === 'stop') {
 			userPausedAt = Date.now()
-			leftWhilePlaying = false // the user's pause stays: nothing restarts it until play is pressed again
 			module?.pauseCurrentPlayer?.()
 		}
 	} catch (error) {

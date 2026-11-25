@@ -5,7 +5,7 @@ Better media playback for Discord on Android. Every feature has its own switch i
 ## What you get
 
 - **Background playback.** Videos (with their sound), audio files and voice messages keep playing when you leave Discord or
-  lock the screen, with or without Picture-in-Picture. A switch for each.
+  lock the screen. A switch for each.
 - **Notification controls.** Android's media notification, like Spotify's: play/pause, back and forward 10 seconds, a seek
   bar, the position and the length. Pausing inside Discord removes the notification, and so does Discord stopping a video
   by itself (scrolled past, or its chat left); it stays for media paused while Discord is in the background (from the
