@@ -70,7 +70,7 @@
     {
       "id": "marklong.better-medias",
       "name": "Better Medias",
-      "version": "0.9.4",
+      "version": "0.9.5",
       "short": "Videos, audio files and voice messages keep playing in the background and with the screen locked",
       "suffix": ""
     },

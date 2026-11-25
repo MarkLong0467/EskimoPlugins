@@ -4863,7 +4863,7 @@
       "description": "Videos, audio files and voice messages keep playing in the background and with the screen locked. Play/pause and a seek bar in your notifications, Picture-in-Picture, several things playing at once, and videos that keep playing while you move between chats. Each has its own switch.",
       "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
       "channels": {
-        "latest": "0.9.4"
+        "latest": "0.9.5"
       },
       "versions": {
         "0.1.0": {
@@ -5026,6 +5026,19 @@
           "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.better-medias@0.9.4.zip",
           "sha256": "864e4167fd5096346bc04a8b427604e8e64ecba750db0c51943f1027cf4369a8",
           "size": 43310,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "0.9.5": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.better-medias@0.9.5.zip",
+          "sha256": "17978ba0e8cdc24ea99052ac61bff6baa52617012ed108760ba4c22f2ff44340",
+          "size": 43041,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
