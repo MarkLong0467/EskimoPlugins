@@ -84,7 +84,7 @@ import kotlin.jvm.functions.Function2;
 public final class BetterMedias {
     static final String PREFIX = "marklong.bettermedias.";
     static final String REGISTRY_KEY = "marklong.bettermedias.instance";
-    static final String VERSION = "0.9.2";
+    static final String VERSION = "0.9.3";
     static final long WAIT_MS = 25000;
     static final String CHANNEL = "marklong_better_medias";
     static final int NOTIFICATION_ID = 0x4d454449; // "MEDI"
@@ -105,6 +105,8 @@ public final class BetterMedias {
 
     /** Discord's window is on screen (between its onResume and onPause). */
     static volatile boolean foreground = true;
+    /** A chat video was playing when Discord was left: Discord's own pauses of it in the background are blocked (no PiP needed). */
+    static volatile boolean videoAtLeave;
     /** In a voice or video call: Discord's own Picture-in-Picture is left to Discord. */
     static volatile boolean inCall = false;
 
@@ -367,6 +369,7 @@ public final class BetterMedias {
             if (who == null) return;
             diag.count("notification " + cmd);
             commandAt = SystemClock.elapsedRealtime();
+            if ("pause".equals(cmd) || "stop".equals(cmd) || ("toggle".equals(cmd) && playing)) videoAtLeave = false;
             long to = -1;
             if ("back10".equals(cmd)) { to = Math.max(0, position() - 10000); cmd = "seek"; }
             else if ("fwd10".equals(cmd)) { to = durationMs > 0 ? Math.min(durationMs, position() + 10000) : position() + 10000; cmd = "seek"; }
@@ -1286,6 +1289,15 @@ public final class BetterMedias {
                                 if (m.getTarget() != null) synchronized (handlers) { handlers.put(param.thisObject, m.getTarget()); }
                                 if (m.what == 3 && m.obj != null && seekPositionClass == null) seekPositionClass = m.obj.getClass();
                                 if (m.what == 2) synchronized (lastWork) { lastWork.put(param.thisObject, SystemClock.elapsedRealtime()); }
+                                // Message 1 = setPlayWhenReady(arg1). In the background Discord keeps pausing a chat video (its view
+                                // goes away); with "Videos" on that pause is dropped, unless it came from the notification / lock screen.
+                                if (m.what == 1 && m.arg1 == 0 && !foreground && videoAtLeave && bgVideo && mini == null) {
+                                    Session ses = session;
+                                    if (ses == null || SystemClock.elapsedRealtime() - ses.commandAt > 3000) {
+                                        param.setResult(null);
+                                        diag.count("video kept playing: Discord's background pause dropped");
+                                    }
+                                }
                             }
                         } catch (Throwable ignored) {}
                     }
@@ -1676,6 +1688,7 @@ public final class BetterMedias {
                 try {
                     foreground = false;
                     diag.lastPauseAt = SystemClock.elapsedRealtime();
+                    videoAtLeave = bgVideo && (Media.videoPlaying || SystemClock.elapsedRealtime() - Media.videoPlayedAt < 1500);
                     if (listenersField == null) return;
                     Object set = listenersField.get(param.thisObject);
                     if (!(set instanceof Collection)) return;
@@ -1715,6 +1728,7 @@ public final class BetterMedias {
         hook("ReactContext.onHostResume", method(reactContext, "onHostResume", Activity.class), new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
                 foreground = true;
+                videoAtLeave = false;
                 try { Media.find(param.thisObject); } catch (Throwable error) { diag.error("find chat player", error); }
             }
         });

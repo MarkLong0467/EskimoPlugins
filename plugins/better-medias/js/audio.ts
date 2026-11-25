@@ -170,7 +170,10 @@ function updateNativePip(): void {
 /** Starts the chat player again after Discord paused it for leaving the screen. */
 function resumeAfterLeaving(): void {
 	const now = Date.now()
-	if (!leftAt || !leftWhilePlaying || resumes >= 3 || now - leftAt > 4000) return
+	// Videos: Discord keeps pausing them in the background (their view is gone), so they are restarted for as long as
+	// Discord stays in the background (the native half also drops those pauses). Audio / voice: the first few seconds only.
+	const video = nativeKind === 'video'
+	if (!leftAt || !leftWhilePlaying || resumes >= (video ? 40 : 3) || (!video && now - leftAt > 4000)) return
 	if (!on(AUDIO_SETTING[nativeKind]) || inCallNow() || now - userPausedAt < 4000) return
 	if (nativeDurationMs > 0 && nativeDurationMs - nativeTimeMs < 1000) return // it simply reached the end
 	resumes++
