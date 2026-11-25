@@ -387,6 +387,17 @@ function startNativePlayer(cleanup: Cleanup): NativePlayerModule | undefined {
 	} catch (error) {
 		note(`native player events: ${errorText(error)}`)
 	}
+	// Discord stops a chat video without a pause event when its view goes away (scrolled past, chat left): the progress
+	// updates just stop. While Discord is open, a "playing" player that has been silent for 3 s is treated as stopped, so
+	// its notification goes away like after a pause. (In the background the plugin keeps media playing, so it is left alone.)
+	const watchdog = setInterval(() => {
+		if (!appActive || !playing() || !nativeSource || Date.now() - userPausedAt < 3000) return
+		if (Date.now() - playingAt < 3000) return
+		nativeRate = 0
+		count(`stopped by Discord without a pause (${nativeKind})`)
+		reportNative()
+	}, 1000)
+	cleanup(() => clearInterval(watchdog))
 	appActive = AppState.currentState === 'active' || AppState.currentState == null
 	const subscription = AppState.addEventListener('change', onAppState)
 	cleanup(() => subscription.remove())
