@@ -41,7 +41,7 @@ Updates arrive through the same link.
 | [Better Command Popout](plugins/better-command-popout) | 1.0.0 | copy a slash command's mention or ID from its popout |
 | [Better Devices](plugins/better-devices) | 1.0.4 | multi-select logout, new-device alerts and clearer device details |
 | [Better Folders](plugins/better-folders) | 1.2.1 | hide the server icons in collapsed folders and auto-collapse folders as you open different ones (port of fres's BetterFolders) |
-| [Better Medias](plugins/better-medias) | 0.9.2 | Videos, audio files and voice messages keep playing in the background and with the screen locked. |
+| [Better Medias](plugins/better-medias) | 0.9.3 | Videos, audio files and voice messages keep playing in the background and with the screen locked. |
 | [Bypass Status](plugins/bypass-status) | 3.0.1 | get notifications from chosen people (or everyone) while on Do Not Disturb |
 | [Channel Tabs](plugins/channel-tabs) | 1.4.0 | Keep channels, DMs and threads open as tabs, like a browser. |
 | [Chat Bubbles](plugins/chatbubbles) | 1.1.5 | customizable chat bubbles with rounded corners and your own color |
