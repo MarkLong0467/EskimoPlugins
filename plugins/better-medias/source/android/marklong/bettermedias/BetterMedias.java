@@ -84,7 +84,7 @@ import kotlin.jvm.functions.Function2;
 public final class BetterMedias {
     static final String PREFIX = "marklong.bettermedias.";
     static final String REGISTRY_KEY = "marklong.bettermedias.instance";
-    static final String VERSION = "0.9.3";
+    static final String VERSION = "0.9.4";
     static final long WAIT_MS = 25000;
     static final String CHANNEL = "marklong_better_medias";
     static final int NOTIFICATION_ID = 0x4d454449; // "MEDI"
@@ -348,6 +348,8 @@ public final class BetterMedias {
 
         /** When a command last came from the notification (a pause from there keeps the notification). */
         long commandAt;
+        /** When pause was last pressed in the notification / lock screen (0 after a play). */
+        volatile long pauseCmdAt;
 
         /** Hides the notification of media paused inside Discord, once it is clear Discord was not just being left. */
         void hideLater(final String who) {
@@ -369,12 +371,16 @@ public final class BetterMedias {
             if (who == null) return;
             diag.count("notification " + cmd);
             commandAt = SystemClock.elapsedRealtime();
-            if ("pause".equals(cmd) || "stop".equals(cmd) || ("toggle".equals(cmd) && playing)) videoAtLeave = false;
             long to = -1;
             if ("back10".equals(cmd)) { to = Math.max(0, position() - 10000); cmd = "seek"; }
             else if ("fwd10".equals(cmd)) { to = durationMs > 0 ? Math.min(durationMs, position() + 10000) : position() + 10000; cmd = "seek"; }
             else if ("seek".equals(cmd)) to = arg;
             if ("toggle".equals(cmd)) cmd = playing ? "pause" : "play";
+            // Only a PAUSE from the notification is the user's: it lets Discord's pause through and ends the keep-playing.
+            // A PLAY from the notification (also when Discord was left with the video paused) turns the keep-playing on, so
+            // Discord's own pause right after it is still dropped.
+            if ("pause".equals(cmd) || "stop".equals(cmd)) { pauseCmdAt = SystemClock.elapsedRealtime(); videoAtLeave = false; }
+            else if ("play".equals(cmd)) { pauseCmdAt = 0; if (!foreground && bgVideo && NATIVE.equals(who) && !Media.videoUrl.isEmpty()) videoAtLeave = true; }
             if ("seek".equals(cmd)) {
                 positionMs = to;
                 positionAt = SystemClock.elapsedRealtime();
@@ -1293,7 +1299,7 @@ public final class BetterMedias {
                                 // goes away); with "Videos" on that pause is dropped, unless it came from the notification / lock screen.
                                 if (m.what == 1 && m.arg1 == 0 && !foreground && videoAtLeave && bgVideo && mini == null) {
                                     Session ses = session;
-                                    if (ses == null || SystemClock.elapsedRealtime() - ses.commandAt > 3000) {
+                                    if (ses == null || SystemClock.elapsedRealtime() - ses.pauseCmdAt > 3000) {
                                         param.setResult(null);
                                         diag.count("video kept playing: Discord's background pause dropped");
                                     }

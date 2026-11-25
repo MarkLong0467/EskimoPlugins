@@ -415,7 +415,17 @@ function startNativePlayer(cleanup: Cleanup): NativePlayerModule | undefined {
 /** Runs a command from the notification (or the native half) on Discord's native player. */
 export function nativeCommand(module: NativePlayerModule | undefined, cmd: string, ms = -1): void {
 	try {
-		if (cmd === 'play') module?.playCurrentPlayer?.()
+		if (cmd === 'play') {
+			// Play pressed in the notification while Discord is in the background (even if it was left paused): from now on
+			// Discord's own pauses of it are undone like after leaving while it played.
+			if (!appActive) {
+				leftAt = Date.now()
+				leftWhilePlaying = true
+				resumes = 0
+				userPausedAt = 0
+			}
+			module?.playCurrentPlayer?.()
+		}
 		else if (cmd === 'seek') nativeSeek(ms)
 		else if (cmd === 'handoff') {
 			// The small player took the video over for Picture-in-Picture.
@@ -424,6 +434,7 @@ export function nativeCommand(module: NativePlayerModule | undefined, cmd: strin
 		}
 		else if (cmd === 'pause' || cmd === 'stop') {
 			userPausedAt = Date.now()
+			leftWhilePlaying = false // the user's pause stays: nothing restarts it until play is pressed again
 			module?.pauseCurrentPlayer?.()
 		}
 	} catch (error) {
