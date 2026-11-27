@@ -5049,6 +5049,32 @@
           }
         }
       }
+    },
+    "marklong.call-battery-saver": {
+      "name": "Call Battery Saver",
+      "description": "Uses less battery in voice calls while you are muted or deafened: skips noise cancellation (Krisp) while muted, can pause the rest of the mic processing, pauses other people's cameras while deafened, and can remind you or leave the call after a while.",
+      "author": "MarkLong0467 (https://github.com/MarkLong0467 \"GitHub\")",
+      "channels": {
+        "latest": "0.1.0"
+      },
+      "versions": {
+        "0.1.0": {
+          "url": "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/pool/marklong.call-battery-saver@0.1.0.zip",
+          "sha256": "926d6f80c901c6f7c07425b806fac92a72045fb8b24113f415f42de15ac85824",
+          "size": 8282,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      },
+      "contributors": [
+        "Found with the decompiled Discord app by Wumpus-Central (discord-mobile-datamining)"
+      ]
     }
   }
 }

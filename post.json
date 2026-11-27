@@ -82,6 +82,13 @@
       "suffix": ""
     },
     {
+      "id": "marklong.call-battery-saver",
+      "name": "Call Battery Saver",
+      "version": "0.1.0",
+      "short": "Uses less battery in voice calls while you are muted or deafened: skips noise cancellation (Krisp)…",
+      "suffix": ""
+    },
+    {
       "id": "marklong.channel-tabs",
       "name": "Channel Tabs",
       "version": "1.4.0",
