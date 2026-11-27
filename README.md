@@ -29,7 +29,7 @@ Updates arrive through the same link.
 ## Plugins
 
 <!-- plugins:start -->
-49 plugins. Tap a name for what it does and how it works.
+50 plugins. Tap a name for what it does and how it works.
 
 | Plugin | Version | What it does |
 | ------ | ------- | ------------ |
@@ -43,6 +43,7 @@ Updates arrive through the same link.
 | [Better Folders](plugins/better-folders) | 1.2.1 | hide the server icons in collapsed folders and auto-collapse folders as you open different ones (port of fres's BetterFolders) |
 | [Better Medias](plugins/better-medias) | 0.9.5 | Videos, audio files and voice messages keep playing in the background and with the screen locked. |
 | [Bypass Status](plugins/bypass-status) | 3.0.1 | get notifications from chosen people (or everyone) while on Do Not Disturb |
+| [Call Battery Saver](plugins/call-battery-saver) | 0.1.0 | Uses less battery in voice calls while you are muted or deafened: skips noise cancellation (Krisp) while muted, can pause the rest of the mic processing, pauses other people's cameras while deafened, and can remind you or leave the call after a while. |
 | [Channel Tabs](plugins/channel-tabs) | 1.4.0 | Keep channels, DMs and threads open as tabs, like a browser. |
 | [Chat Bubbles](plugins/chatbubbles) | 1.1.5 | customizable chat bubbles with rounded corners and your own color |
 | [Chatbox Avatar](plugins/chatbox-avatar) | 1.2.6 | a button in the chatbox to view your profile or open your account sheet |
